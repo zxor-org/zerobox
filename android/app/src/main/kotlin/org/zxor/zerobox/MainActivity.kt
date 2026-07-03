@@ -21,16 +21,20 @@ import io.flutter.plugin.common.MethodChannel
 import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 class MainActivity : FlutterActivity() {
+    @Volatile
     private var sppSocket: BluetoothSocket? = null
     private var readThread: Thread? = null
     private var eventSink: EventChannel.EventSink? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val sppUuid: UUID = UUID.fromString("00001101-0000-1000-8000-00805f9b34fb")
     private val sendLock = Object()
+    private val sendExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -119,7 +123,7 @@ class MainActivity : FlutterActivity() {
             return
         }
 
-        Thread {
+        sendExecutor.execute {
             try {
                 val out = socket.outputStream
                 synchronized(sendLock) {
@@ -137,7 +141,7 @@ class MainActivity : FlutterActivity() {
                     result.error("SEND_FAILED", e.message ?: e.toString(), null)
                 }
             }
-        }.start()
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -305,4 +309,9 @@ class MainActivity : FlutterActivity() {
         val socket: BluetoothSocket,
         val channel: Int,
     )
+
+    override fun onDestroy() {
+        sendExecutor.shutdownNow()
+        super.onDestroy()
+    }
 }

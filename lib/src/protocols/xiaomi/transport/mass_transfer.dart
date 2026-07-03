@@ -110,13 +110,13 @@ class ReverseMassWaiter {
 
 class ReverseMassPacket {
   ReverseMassPacket()
-      : file = {},
-        fileName = '',
-        header = Uint8List(0),
-        totalPart = 0,
-        curPart = 0,
-        error = false,
-        empty = true;
+    : file = {},
+      fileName = '',
+      header = Uint8List(0),
+      totalPart = 0,
+      curPart = 0,
+      error = false,
+      empty = true;
 
   String fileName;
   int totalPart;
@@ -154,9 +154,7 @@ class ReverseMassPacket {
     } else {
       if (total != totalPart) {
         error = true;
-        throw ProtocolException(
-          'Invalid total $total != $totalPart',
-        );
+        throw ProtocolException('Invalid total $total != $totalPart');
       }
       skipOffset = 6;
     }
@@ -166,17 +164,14 @@ class ReverseMassPacket {
         error = true;
         throw ProtocolException('Invalid reverse mass final packet');
       }
-      file[cur] = Uint8List.sublistView(
-        packet,
-        skipOffset,
-        packet.length - 4,
-      );
+      file[cur] = Uint8List.sublistView(packet, skipOffset, packet.length - 4);
 
       final checkData = BytesBuilder()
         ..add(header)
         ..add(assembleFile());
 
-      final crc32 = packet[packet.length - 4] |
+      final crc32 =
+          packet[packet.length - 4] |
           (packet[packet.length - 3] << 8) |
           (packet[packet.length - 2] << 16) |
           (packet[packet.length - 1] << 24);
@@ -271,7 +266,8 @@ class MassTransfer {
       );
     }
 
-    final sliceLength = expectedSliceLength ??
+    final sliceLength =
+        expectedSliceLength ??
         (prepareResponse.hasExpectedSliceLength()
             ? prepareResponse.expectedSliceLength
             : 244);
@@ -286,13 +282,18 @@ class MassTransfer {
       );
     }
 
-    return _sendFileWithSliceLength(
-      fileData: fileData,
-      dataType: dataType,
-      expectedSliceLength: sliceLength,
-      sentLength: sentLength,
-      onProgress: onProgress,
-    );
+    try {
+      return await _sendFileWithSliceLength(
+        fileData: fileData,
+        dataType: dataType,
+        expectedSliceLength: sliceLength,
+        sentLength: sentLength,
+        onProgress: onProgress,
+      );
+    } catch (e) {
+      sar.abortPendingTransmissions(e);
+      rethrow;
+    }
   }
 
   Future<ReverseMassReceiveResult> beginReverseMassReceive(
@@ -430,21 +431,30 @@ class MassTransfer {
     }
 
     final totalParts =
-        ((massInnerPayloadWithCrc32.length / massFragmentMaxLen).ceil())
-            .clamp(0, 65535);
+        ((massInnerPayloadWithCrc32.length / massFragmentMaxLen).ceil()).clamp(
+          0,
+          65535,
+        );
     if (totalParts == 0 && massInnerPayloadWithCrc32.isNotEmpty) {
-      throw ProtocolException('Calculated total_parts is 0 for non-empty payload.');
+      throw ProtocolException(
+        'Calculated total_parts is 0 for non-empty payload.',
+      );
     }
 
+    final txWindowHint = sar.txWindowSize;
+    final rawTxWindow = sar.rawTxWindowSize;
     final sendTimeoutHintMs = sar.sendTimeoutMs;
-
-    // 经验值：一次不要发太多，4 个一批比较稳；backlog 也不要太大。
-    const batchLimit = 4;
-    const backlogSoftLimit = 12;
-    final ackStallDeadline = _computeAckStallDeadline(8, sendTimeoutHintMs);
+    final batchLimit = _computeBatchLimit(txWindowHint);
+    final backlogSoftLimit = _computeBacklogSoftLimit(txWindowHint);
+    final ackStallDeadline = _computeAckStallDeadline(
+      txWindowHint,
+      sendTimeoutHintMs,
+    );
 
     _log.info(
-      '[Mass] send setup: total_parts=$totalParts, '
+      '[Mass] send setup: tx_window_soft_hint=$txWindowHint, '
+      'tx_window_raw_hint=$rawTxWindow, send_timeout_hint_ms=$sendTimeoutHintMs, '
+      'total_parts=$totalParts, '
       'fragment_max_len=$massFragmentMaxLen, batch_limit=$batchLimit, backlog_limit=$backlogSoftLimit',
     );
 
@@ -457,7 +467,8 @@ class MassTransfer {
     for (var i = 0; i < totalParts; i++) {
       final currentPartNum = i + 1;
       final startIndex = i * massFragmentMaxLen;
-      final endIndex = (startIndex + massFragmentMaxLen < massInnerPayloadWithCrc32.length)
+      final endIndex =
+          (startIndex + massFragmentMaxLen < massInnerPayloadWithCrc32.length)
           ? startIndex + massFragmentMaxLen
           : massInnerPayloadWithCrc32.length;
       final fragment = Uint8List.sublistView(
@@ -479,13 +490,6 @@ class MassTransfer {
       );
       batchPayloads.add(l2.toBytes());
       batchMeta.add((currentPartNum, actualDataPayloadLen));
-
-      onProgress?.call(SendMassCallbackData(
-        progress: progressBase + (1.0 - progressBase) * (currentPartNum / totalParts),
-        totalParts: totalParts,
-        currentPartNum: currentPartNum,
-        actualDataPayloadLen: actualDataPayloadLen,
-      ));
 
       if (batchPayloads.length >= batchLimit) {
         flushCount += 1;
@@ -528,9 +532,18 @@ class MassTransfer {
       lastProgressAt: lastProgressAt,
     );
 
-    // 已把所有 part 入队；剩余的 ACK 由 SAR 层异步处理/重传，
-    // 不再在这里阻塞等待，避免安装结果超时。
-    _log.info('[Mass] All mass data parts queued; returning without waiting for ACKs.');
+    while (pendingParts.isNotEmpty) {
+      final frontSeq = pendingParts.first.seq;
+      await _waitForSeqAck(frontSeq);
+      await _consumeAckedParts(
+        pendingParts: pendingParts,
+        totalParts: totalParts,
+        progressBase: progressBase,
+        onProgress: onProgress,
+      );
+    }
+
+    _log.info('[Mass] All mass data parts acknowledged.');
   }
 
   Future<void> _flushMassBatch({
@@ -555,16 +568,16 @@ class MassTransfer {
 
     for (var i = 0; i < meta.length; i++) {
       final (partNum, payloadLen) = meta[i];
-      pendingParts.add(_PendingMassPart(
-        partNum: partNum,
-        seq: seqs[i],
-        payloadLen: payloadLen,
-      ));
+      pendingParts.add(
+        _PendingMassPart(
+          partNum: partNum,
+          seq: seqs[i],
+          payloadLen: payloadLen,
+        ),
+      );
     }
 
-    _log.fine(
-      '[Mass] flush_batch round=$flushRound payloads=${meta.length}',
-    );
+    _log.fine('[Mass] flush_batch round=$flushRound payloads=${meta.length}');
   }
 
   Future<void> _enforceFlowControl({
@@ -582,20 +595,27 @@ class MassTransfer {
       progressBase: progressBase,
       onProgress: onProgress,
     );
-    final mutableLastProgressAt = consumed > 0 ? DateTime.now() : lastProgressAt;
+    final mutableLastProgressAt = consumed > 0
+        ? DateTime.now()
+        : lastProgressAt;
 
     if (pendingParts.isEmpty) return;
 
     final now = DateTime.now();
     var shouldWait = pendingParts.length >= backlogSoftLimit;
-    if (!shouldWait && now.difference(mutableLastProgressAt) >= ackStallDeadline) {
+    if (!shouldWait &&
+        now.difference(mutableLastProgressAt) >= ackStallDeadline) {
       shouldWait = true;
     }
 
     if (shouldWait) {
       final frontSeq = pendingParts.first.seq;
-      final waitReason = pendingParts.length >= backlogSoftLimit ? 'backlog' : 'stall';
-      _log.fine('[Mass] flow_wait reason=$waitReason pending=${pendingParts.length}');
+      final waitReason = pendingParts.length >= backlogSoftLimit
+          ? 'backlog'
+          : 'stall';
+      _log.fine(
+        '[Mass] flow_wait reason=$waitReason pending=${pendingParts.length}',
+      );
       await _waitForSeqAck(frontSeq);
       await _consumeAckedParts(
         pendingParts: pendingParts,
@@ -632,6 +652,7 @@ class MassTransfer {
     required void Function(SendMassCallbackData)? onProgress,
   }) async {
     var consumed = 0;
+    SendMassCallbackData? latestProgress;
     while (pendingParts.isNotEmpty) {
       final front = pendingParts.first;
       if (!front.acked) {
@@ -640,17 +661,45 @@ class MassTransfer {
         sar.markAckConsumed(front.seq);
       }
       pendingParts.removeFirst();
+      final localProgress = totalParts == 0 ? 1.0 : front.partNum / totalParts;
+      latestProgress = SendMassCallbackData(
+        progress: (progressBase + (1.0 - progressBase) * localProgress).clamp(
+          0.0,
+          1.0,
+        ),
+        totalParts: totalParts,
+        currentPartNum: front.partNum,
+        actualDataPayloadLen: front.payloadLen,
+      );
       consumed++;
+    }
+    if (latestProgress != null) {
+      onProgress?.call(latestProgress);
     }
     return consumed;
   }
 
-  Duration _computeAckStallDeadline(int? windowHint, int sendTimeoutMs) {
+  int _computeBatchLimit(int? windowHint) {
+    return (windowHint != null
+            ? windowHint.max(1).min(config.maxBatchParts)
+            : config.fallbackBatchParts)
+        .max(1);
+  }
+
+  int _computeBacklogSoftLimit(int? windowHint) {
+    final limit = windowHint != null
+        ? windowHint.max(1) * config.backlogMultiplier
+        : config.fallbackBacklogLimit;
+    return limit.clamp(config.backlogMultiplier, 256);
+  }
+
+  Duration _computeAckStallDeadline(int? windowHint, int? sendTimeoutMs) {
     final fromWindow = windowHint != null
-        ? windowHint * config.ackPollIntervalMs * 3
+        ? windowHint.max(1) * config.ackPollIntervalMs * 3
         : config.ackStallDefaultMs;
 
-    final timeoutCandidate = sendTimeoutMs > 0 && sendTimeoutMs < 0xFFFFFFFF
+    final timeoutCandidate =
+        sendTimeoutMs != null && sendTimeoutMs > 0 && sendTimeoutMs < 0xFFFFFFFF
         ? (sendTimeoutMs ~/ 8).max(config.ackStallMinMs)
         : fromWindow;
 
@@ -690,6 +739,7 @@ void _writeUint16LE(BytesBuilder builder, int value) {
 }
 
 int _crc32(Uint8List data) {
+  // dart format off
   const table = [
     0x00000000, 0x77073096, 0xee0e612c, 0x990951ba,
     0x076dc419, 0x706af48f, 0xe963a535, 0x9e6495a3,
@@ -756,6 +806,7 @@ int _crc32(Uint8List data) {
     0xb3667a2e, 0xc4614ab8, 0x5d681b02, 0x2a6f2b94,
     0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d,
   ];
+  // dart format on
 
   var crc = 0xFFFFFFFF;
   for (final byte in data) {

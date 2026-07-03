@@ -13,6 +13,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <algorithm>
 #include <cstdio>
 #include <memory>
 #include <mutex>
@@ -39,6 +40,7 @@ struct EventPayload {
 struct SendRequest {
   std::vector<uint8_t> data;
   FlMethodCall* method_call;
+  std::string error_message;
 };
 
 std::thread g_send_thread;
@@ -62,7 +64,8 @@ gboolean send_completed_on_main(gpointer user_data) {
 gboolean send_failed_on_main(gpointer user_data) {
   auto* request = static_cast<SendRequest*>(user_data);
   respond_error(request->method_call, "send_failed",
-                request->data.empty() ? "send failed" : strerror(errno));
+                request->error_message.empty() ? "send failed"
+                                               : request->error_message);
   g_object_unref(request->method_call);
   delete request;
   return G_SOURCE_REMOVE;
@@ -90,12 +93,22 @@ void send_worker_loop() {
     }
 
     const uint8_t* data = request->data.data();
-    size_t length = request->data.size();
+    const size_t length = request->data.size();
     size_t written = 0;
     while (written < length) {
-      ssize_t n = send(fd, data + written, length - written, 0);
+      const size_t chunk = std::min<size_t>(512, length - written);
+      ssize_t n = send(fd, data + written, chunk, 0);
       if (n < 0) {
         if (errno == EINTR) continue;
+        request->error_message =
+            std::string("send failed after ") + std::to_string(written) +
+            "/" + std::to_string(length) + " bytes: " + strerror(errno);
+        break;
+      }
+      if (n == 0) {
+        request->error_message =
+            std::string("send returned 0 after ") + std::to_string(written) +
+            "/" + std::to_string(length) + " bytes";
         break;
       }
       written += static_cast<size_t>(n);
@@ -105,7 +118,7 @@ void send_worker_loop() {
         nullptr,
         [](gpointer data) -> gboolean {
           auto* req = static_cast<SendRequest*>(data);
-          if (req->data.empty()) {
+          if (!req->error_message.empty()) {
             send_failed_on_main(data);
           } else {
             send_completed_on_main(data);
@@ -129,6 +142,17 @@ void stop_send_worker() {
   g_send_cv.notify_all();
   if (g_send_thread.joinable()) {
     g_send_thread.join();
+  }
+  std::queue<std::unique_ptr<SendRequest>> pending;
+  {
+    std::lock_guard<std::mutex> lock(g_send_mutex);
+    pending.swap(g_send_queue);
+  }
+  while (!pending.empty()) {
+    auto request = std::move(pending.front());
+    pending.pop();
+    request->error_message = "SPP send cancelled";
+    g_main_context_invoke(nullptr, send_failed_on_main, request.release());
   }
 }
 
@@ -184,8 +208,8 @@ void stop_reader_and_socket() {
 }
 
 void stop_all() {
-  stop_send_worker();
   stop_reader_and_socket();
+  stop_send_worker();
 }
 
 bool connect_rfcomm(const std::string& addr, uint8_t channel, int timeout_sec,

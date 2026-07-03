@@ -26,7 +26,7 @@ import 'package:zerobox/src/protocols/xiaomi/transport/mass_transfer.dart';
 
 class XiaomiInstallSystem extends XiaomiPbSystem {
   static final _log = getLogger('XiaomiInstallSystem');
-  final _inProgress = <MassDataType, Completer<void>>{};
+  final _inProgress = <MassDataType>{};
 
   XiaomiMassSystem get _massSystem => entity.system<XiaomiMassSystem>()!;
   XiaomiInfoSystem get _infoSystem => entity.system<XiaomiInfoSystem>()!;
@@ -74,24 +74,19 @@ class XiaomiInstallSystem extends XiaomiPbSystem {
           throw ProtocolException('App prepare not READY: $status');
         }
 
-        final resultFuture = _waitProto(
-          pb.WearPacket_Type.THIRDPARTY_APP.value,
-          pb_thirdparty
+        final result = await _sendMassAndWaitResult(
+          dataType: MassDataType.thirdPartyApp,
+          fileData: packageBytes,
+          onProgress: onProgress,
+          resultType: pb.WearPacket_Type.THIRDPARTY_APP.value,
+          resultId: pb_thirdparty
               .ThirdpartyApp_ThirdpartyAppID
               .REPORT_INSTALL_RESULT
               .value,
           timeout: const Duration(seconds: 60),
         );
 
-        await _massSystem.sendFile(
-          fileData: packageBytes,
-          dataType: MassDataType.thirdPartyApp,
-          onProgress: (data) =>
-              _emitProgress(MassDataType.thirdPartyApp, data, onProgress),
-        );
-
-        final result = await resultFuture;
-        final code = result.thirdpartyApp.installResult.code;
+        final code = result!.thirdpartyApp.installResult.code;
         _log.info('[${entity.id}] app install result: $code');
         if (code != pb_thirdparty.AppInstaller_Result_Code.INSTALL_SUCCESS) {
           throw ProtocolException('App install failed: $code');
@@ -111,7 +106,10 @@ class XiaomiInstallSystem extends XiaomiPbSystem {
       onProgress: onProgress,
       run: () async {
         final fileData = Uint8List.fromList(watchfaceBytes);
-        final effectiveWatchfaceId = _normalizeWatchfaceId(watchfaceId, fileData);
+        final effectiveWatchfaceId = _normalizeWatchfaceId(
+          watchfaceId,
+          fileData,
+        );
         final idBytes = Uint8List.fromList(effectiveWatchfaceId.codeUnits);
         final paddedIdBytes = Uint8List(12);
         for (var i = 0; i < 12 && i < idBytes.length; i++) {
@@ -151,21 +149,17 @@ class XiaomiInstallSystem extends XiaomiPbSystem {
           throw ProtocolException('Watchface prepare not READY: $status');
         }
 
-        final resultFuture = _waitProto(
-          pb.WearPacket_Type.WATCH_FACE.value,
-          pb_watchface.WatchFace_WatchFaceID.REPORT_INSTALL_RESULT.value,
-          timeout: const Duration(seconds: 30),
-        );
-
-        await _massSystem.sendFile(
-          fileData: fileData,
+        final result = await _sendMassAndWaitResult(
           dataType: MassDataType.watchface,
-          onProgress: (data) =>
-              _emitProgress(MassDataType.watchface, data, onProgress),
+          fileData: fileData,
+          onProgress: onProgress,
+          resultType: pb.WearPacket_Type.WATCH_FACE.value,
+          resultId:
+              pb_watchface.WatchFace_WatchFaceID.REPORT_INSTALL_RESULT.value,
+          timeout: const Duration(seconds: 60),
         );
 
-        final result = await resultFuture;
-        final code = result.watchFace.installResult.code;
+        final code = result!.watchFace.installResult.code;
         _log.info('[${entity.id}] watchface install result: $code');
         if (code != pb_watchface.InstallResult_Code.INSTALL_SUCCESS &&
             code != pb_watchface.InstallResult_Code.INSTALL_USED) {
@@ -212,31 +206,22 @@ class XiaomiInstallSystem extends XiaomiPbSystem {
           throw ProtocolException('Firmware prepare not READY: $status');
         }
 
-        final resultFuture = _waitProto(
-          pb.WearPacket_Type.SYSTEM.value,
-          pb_system.System_SystemID.PREPARE_OTA.value,
-          timeout: const Duration(seconds: 30),
-        );
-
-        await _massSystem.sendFile(
-          fileData: firmwareBytes,
+        final result = await _sendMassAndWaitResult(
           dataType: MassDataType.firmware,
-          onProgress: (data) =>
-              _emitProgress(MassDataType.firmware, data, onProgress),
+          fileData: firmwareBytes,
+          onProgress: onProgress,
+          resultType: pb.WearPacket_Type.SYSTEM.value,
+          resultId: pb_system.System_SystemID.PREPARE_OTA.value,
+          timeout: const Duration(seconds: 30),
+          allowMissingResult: true,
         );
+        if (result == null) return;
 
-        try {
-          final result = await resultFuture;
-          final resp = result.system.prepareOtaResponse;
-          final resultStatus = resp.prepareStatus;
-          _log.info('[${entity.id}] firmware install result: $resultStatus');
-          if (resultStatus != pb_common.PrepareStatus.READY) {
-            throw ProtocolException('Firmware install failed: $resultStatus');
-          }
-        } on TimeoutException {
-          _log.info(
-            '[${entity.id}] firmware payload sent; install result message missing because the device may be rebooting',
-          );
+        final resp = result.system.prepareOtaResponse;
+        final resultStatus = resp.prepareStatus;
+        _log.info('[${entity.id}] firmware install result: $resultStatus');
+        if (resultStatus != pb_common.PrepareStatus.READY) {
+          throw ProtocolException('Firmware install failed: $resultStatus');
         }
       },
     );
@@ -254,29 +239,37 @@ class XiaomiInstallSystem extends XiaomiPbSystem {
       run: () async {
         final prepareRet = await component.requestPool
             .request<pb_notification.Notification>(
-          packet: pb.WearPacket(
-            type: pb.WearPacket_Type.NOTIFICATION,
-            id: pb_notification.Notification_NotificationID.PREPARE_APP_ICON.value,
-            notification: pb_notification.Notification(
-              appIconRequest: pb_notification.PrepareAppIcon_Request(
-                packageName: packageName,
+              packet: pb.WearPacket(
+                type: pb.WearPacket_Type.NOTIFICATION,
+                id: pb_notification
+                    .Notification_NotificationID
+                    .PREPARE_APP_ICON
+                    .value,
+                notification: pb_notification.Notification(
+                  appIconRequest: pb_notification.PrepareAppIcon_Request(
+                    packageName: packageName,
+                  ),
+                ),
               ),
-            ),
-          ),
-          typeMatcher: (p) =>
-              p.whichPayload() == pb.WearPacket_Payload.notification &&
-              p.id ==
-                  pb_notification.Notification_NotificationID.PREPARE_APP_ICON
-                      .value,
-          responseMapper: (p) => p.notification,
-        );
+              typeMatcher: (p) =>
+                  p.whichPayload() == pb.WearPacket_Payload.notification &&
+                  p.id ==
+                      pb_notification
+                          .Notification_NotificationID
+                          .PREPARE_APP_ICON
+                          .value,
+              responseMapper: (p) => p.notification,
+            );
 
         final status = prepareRet.appIconResponse.prepareStatus;
         if (status != pb_common.PrepareStatus.READY) {
-          throw ProtocolException('Notification icon prepare not READY: $status');
+          throw ProtocolException(
+            'Notification icon prepare not READY: $status',
+          );
         }
 
-        final expectedSliceLength = prepareRet.appIconResponse.hasExpectedSliceLength()
+        final expectedSliceLength =
+            prepareRet.appIconResponse.hasExpectedSliceLength()
             ? prepareRet.appIconResponse.expectedSliceLength
             : null;
 
@@ -297,11 +290,10 @@ class XiaomiInstallSystem extends XiaomiPbSystem {
     required void Function(double progress)? onProgress,
     required Future<void> Function() run,
   }) async {
-    if (_inProgress.containsKey(dataType)) {
+    if (_inProgress.contains(dataType)) {
       throw StateError('install already in progress for $dataType');
     }
-    final completer = Completer<void>();
-    _inProgress[dataType] = completer;
+    _inProgress.add(dataType);
 
     _log.info(
       '[${entity.id}] start install $dataType, ${fileData.length} bytes',
@@ -312,18 +304,14 @@ class XiaomiInstallSystem extends XiaomiPbSystem {
       await run();
       _log.info('[${entity.id}] install $dataType completed');
       entity.emit(InstallCompleted(deviceId: entity.id));
-      completer.complete();
       await _refreshPostInstallState(dataType);
     } catch (e, st) {
       _log.severe('[${entity.id}] install $dataType failed', e, st);
       entity.emit(InstallFailed(deviceId: entity.id, error: e.toString()));
-      completer.completeError(e);
       rethrow;
     } finally {
       _inProgress.remove(dataType);
     }
-
-    return completer.future;
   }
 
   static String _normalizeWatchfaceId(String watchfaceId, Uint8List fileData) {
@@ -407,32 +395,43 @@ class XiaomiInstallSystem extends XiaomiPbSystem {
     onProgress?.call(data.progress);
   }
 
-  Future<pb.WearPacket> _waitProto(
-    int expectType,
-    int expectId, {
+  Future<pb.WearPacket?> _sendMassAndWaitResult({
+    required MassDataType dataType,
+    required Uint8List fileData,
+    required void Function(double progress)? onProgress,
+    required int resultType,
+    required int resultId,
     required Duration timeout,
+    bool allowMissingResult = false,
   }) async {
-    final completer = Completer<pb.WearPacket>();
-
-    void onPacket(pb.WearPacket packet) {
-      if (packet.type.value == expectType && packet.id == expectId) {
-        if (!completer.isCompleted) {
-          completer.complete(packet);
-        }
-      }
-    }
-
-    component.requestPool.onPacketListeners.add(onPacket);
+    final resultWaiter = _listenProto(resultType, resultId);
     try {
-      return await completer.future.timeout(timeout);
-    } on TimeoutException {
-      throw TimeoutException(
-        'Timeout waiting for proto type=$expectType id=$expectId',
-        timeout,
+      await _massSystem.sendFile(
+        fileData: fileData,
+        dataType: dataType,
+        onProgress: (data) => _emitProgress(dataType, data, onProgress),
       );
+
+      try {
+        return await resultWaiter.wait(timeout);
+      } on TimeoutException {
+        if (!allowMissingResult) rethrow;
+        _log.info(
+          '[${entity.id}] $dataType payload sent; install result message missing because the device may be rebooting',
+        );
+        return null;
+      }
     } finally {
-      component.requestPool.onPacketListeners.remove(onPacket);
+      resultWaiter.dispose();
     }
+  }
+
+  _ProtoWaiter _listenProto(int expectType, int expectId) {
+    return _ProtoWaiter(
+      expectType: expectType,
+      expectId: expectId,
+      listeners: component.requestPool.onPacketListeners,
+    );
   }
 
   static Uint8List _calcMd5(Uint8List data) {
@@ -441,5 +440,46 @@ class XiaomiInstallSystem extends XiaomiPbSystem {
 
   static String _toHexString(Uint8List data) {
     return data.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+  }
+}
+
+class _ProtoWaiter {
+  _ProtoWaiter({
+    required this.expectType,
+    required this.expectId,
+    required this.listeners,
+  }) {
+    listeners.add(_onPacket);
+  }
+
+  final int expectType;
+  final int expectId;
+  final List<void Function(pb.WearPacket packet)> listeners;
+  final _completer = Completer<pb.WearPacket>();
+  var _disposed = false;
+
+  Future<pb.WearPacket> wait(Duration timeout) async {
+    try {
+      return await _completer.future.timeout(timeout);
+    } on TimeoutException {
+      throw TimeoutException(
+        'Timeout waiting for proto type=$expectType id=$expectId',
+        timeout,
+      );
+    }
+  }
+
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    listeners.remove(_onPacket);
+  }
+
+  void _onPacket(pb.WearPacket packet) {
+    if (packet.type.value == expectType && packet.id == expectId) {
+      if (!_completer.isCompleted) {
+        _completer.complete(packet);
+      }
+    }
   }
 }
