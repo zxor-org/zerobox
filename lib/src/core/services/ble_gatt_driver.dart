@@ -3,36 +3,12 @@ import 'dart:typed_data';
 
 import 'package:universal_ble/universal_ble.dart';
 import 'package:zerobox/src/core/logging/logging_service.dart';
+import 'package:zerobox/src/device/core/ble_requirement.dart';
+import 'package:zerobox/src/device/core/bluetooth_platform.dart';
+import 'package:zerobox/src/device/core/connect_type.dart';
 
-enum ConnectType { spp, ble }
-
-class ScannedBTDevice {
-  const ScannedBTDevice({
-    required this.name,
-    required this.addr,
-    required this.connectType,
-    this.rssi,
-  });
-
-  final String name;
-  final String addr;
-  final ConnectType connectType;
-  final int? rssi;
-
-  ScannedBTDevice copyWith({
-    String? name,
-    String? addr,
-    ConnectType? connectType,
-    int? rssi,
-  }) {
-    return ScannedBTDevice(
-      name: name ?? this.name,
-      addr: addr ?? this.addr,
-      connectType: connectType ?? this.connectType,
-      rssi: rssi ?? this.rssi,
-    );
-  }
-}
+export 'package:zerobox/src/device/core/ble_requirement.dart';
+export 'package:zerobox/src/device/core/connect_type.dart';
 
 class BleConnection {
   BleConnection({
@@ -168,21 +144,19 @@ class BleConnection {
   }
 }
 
-class BleServiceManager {
-  BleServiceManager() : _log = getLogger('BleServiceManager');
+class BleGattDriver {
+  BleGattDriver() : _log = getLogger('BleGattDriver');
 
   final Logger _log;
   StreamSubscription<BleDevice>? _scanSubscription;
-  final _scanController = StreamController<ScannedBTDevice>.broadcast();
+  final _scanController = StreamController<BluetoothEndpoint>.broadcast();
+  final _scanResults = <String, BluetoothEndpoint>{};
 
-  Stream<ScannedBTDevice> get scanStream => _scanController.stream;
+  Stream<BluetoothEndpoint> get scanStream => _scanController.stream;
 
-  static const String xiaomiServiceUuid =
-      '0000fe95-0000-1000-8000-00805f9b34fb';
-  static const String xiaomiRecvCharUuid =
-      '0000005e-0000-1000-8000-00805f9b34fb';
-  static const String xiaomiSentCharUuid =
-      '0000005f-0000-1000-8000-00805f9b34fb';
+  static const String xiaomiServiceUuid = xiaomiBleServiceUuid;
+  static const String xiaomiRecvCharUuid = xiaomiBleRecvCharUuid;
+  static const String xiaomiSentCharUuid = xiaomiBleSentCharUuid;
 
   Future<bool> isAvailable() async {
     final state = await UniversalBle.getBluetoothAvailabilityState();
@@ -201,6 +175,7 @@ class BleServiceManager {
     Duration timeout = const Duration(seconds: 15),
   }) async {
     await stopScan();
+    _scanResults.clear();
     _log.info('starting BLE scan');
 
     _scanSubscription = UniversalBle.scanStream.listen((device) {
@@ -214,14 +189,14 @@ class BleServiceManager {
       _log.fine(
         'scanned device: $name @ ${device.deviceId} rssi=${device.rssi}',
       );
-      _scanController.add(
-        ScannedBTDevice(
-          name: name.isEmpty ? 'Unknown device' : name,
-          addr: device.deviceId,
-          connectType: ConnectType.ble,
-          rssi: device.rssi,
-        ),
+      final scanned = BluetoothEndpoint(
+        name: name.isEmpty ? 'Unknown device' : name,
+        address: device.deviceId,
+        connectType: ConnectType.ble,
+        rssi: device.rssi,
       );
+      _scanResults[device.deviceId] = scanned;
+      _scanController.add(scanned);
     }, onError: (Object e) => _log.warning('scan stream error', e));
 
     await UniversalBle.startScan(
@@ -231,16 +206,24 @@ class BleServiceManager {
     Future.delayed(timeout, stopScan);
   }
 
-  Future<void> stopScan() async {
+  Future<List<BluetoothEndpoint>> stopScan() async {
     _log.info('stopping BLE scan');
     await _scanSubscription?.cancel();
     _scanSubscription = null;
     if (await UniversalBle.isScanning()) {
       await UniversalBle.stopScan();
     }
+    return _scanResults.values.toList(growable: false);
   }
 
-  Future<BleConnection> connect(String deviceId, String deviceName) async {
+  Future<BleConnection> connect(
+    String deviceId,
+    String deviceName, {
+    List<BleRequiredCharacteristic> requiredCharacteristics =
+        xiaomiRequiredCharacteristics,
+    int? desiredMtu = 517,
+    bool attemptPair = true,
+  }) async {
     await stopScan();
     _log.info('[$deviceId] initiating BLE connection');
     try {
@@ -273,12 +256,14 @@ class BleServiceManager {
     }
     _log.info('[$deviceId] controller reports connected');
 
-    try {
-      _log.info('[$deviceId] attempting pair');
-      await UniversalBle.pair(deviceId);
-      _log.info('[$deviceId] pair succeeded or not needed');
-    } catch (e) {
-      _log.warning('[$deviceId] pair failed (ignored)', e);
+    if (attemptPair) {
+      try {
+        _log.info('[$deviceId] attempting pair');
+        await UniversalBle.pair(deviceId);
+        _log.info('[$deviceId] pair succeeded or not needed');
+      } catch (e) {
+        _log.warning('[$deviceId] pair failed (ignored)', e);
+      }
     }
 
     try {
@@ -289,25 +274,31 @@ class BleServiceManager {
       rethrow;
     }
 
-    final hasRecv =
-        connection.findCharacteristic(xiaomiServiceUuid, xiaomiRecvCharUuid) !=
-        null;
-    final hasSent =
-        connection.findCharacteristic(xiaomiServiceUuid, xiaomiSentCharUuid) !=
-        null;
-    if (!hasRecv || !hasSent) {
+    final missing = requiredCharacteristics.where((required) {
+      return connection.findCharacteristic(
+            required.serviceUuid,
+            required.characteristicUuid,
+          ) ==
+          null;
+    }).toList();
+    if (missing.isNotEmpty) {
       _log.severe(
-        '[$deviceId] missing Xiaomi characteristics: recv=$hasRecv sent=$hasSent',
+        '[$deviceId] missing BLE characteristics: '
+        '${missing.map((c) => c.label ?? c.characteristicUuid).join(', ')}',
       );
       await connection.dispose();
-      throw StateError('Required Xiaomi BLE characteristics not found');
+      throw StateError('Required BLE characteristics not found');
     }
-    _log.info('[$deviceId] Xiaomi characteristics found');
+    if (requiredCharacteristics.isNotEmpty) {
+      _log.info('[$deviceId] required BLE characteristics found');
+    }
 
-    try {
-      connection.mtu = await connection.requestMtu(517);
-    } catch (e) {
-      _log.warning('[$deviceId] MTU request failed, keeping default', e);
+    if (desiredMtu != null) {
+      try {
+        connection.mtu = await connection.requestMtu(desiredMtu);
+      } catch (e) {
+        _log.warning('[$deviceId] MTU request failed, keeping default', e);
+      }
     }
 
     _log.info('[$deviceId] BLE connection ready');
@@ -327,8 +318,10 @@ class BleServiceManager {
   }
 
   Future<void> dispose() async {
-    _log.info('disposing BleServiceManager');
+    _log.info('disposing BleGattDriver');
     await stopScan();
     await _scanController.close();
   }
+
+  static const xiaomiRequiredCharacteristics = xiaomiRequiredBleCharacteristics;
 }

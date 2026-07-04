@@ -5,12 +5,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zerobox/src/core/logging/logging_service.dart';
 import 'package:zerobox/src/core/models/bt_models.dart';
-import 'package:zerobox/src/core/providers/ble_service_provider.dart';
-import 'package:zerobox/src/core/services/ble_service_manager.dart';
-import 'package:zerobox/src/core/services/classic_spp_service.dart';
+import 'package:zerobox/src/core/providers/bluetooth_platform_provider.dart';
 import 'package:zerobox/src/core/services/shared_prefs_service.dart';
 import 'package:zerobox/src/device/core/ble_transport.dart';
+import 'package:zerobox/src/device/core/bluetooth_platform.dart';
+import 'package:zerobox/src/device/core/connect_type.dart';
 import 'package:zerobox/src/device/core/device_kind.dart';
+import 'package:zerobox/src/device/core/device_profile.dart';
 import 'package:zerobox/src/device/core/entity.dart';
 import 'package:zerobox/src/device/core/event_bus.dart';
 import 'package:zerobox/src/device/core/runtime.dart';
@@ -99,18 +100,18 @@ class DeviceManagerState {
 class DeviceManager extends Notifier<DeviceManagerState> {
   @override
   DeviceManagerState build() {
-    final ble = ref.watch(bleServiceManagerProvider);
-    final spp = ref.watch(classicSppServiceProvider);
+    final bluetooth = ref.watch(bluetoothPlatformProvider);
 
-    _ble = ble;
-    _spp = spp;
+    _bluetooth = bluetooth;
     _runtime = DeviceRuntime();
+    _scanSubscription = _bluetooth.scanStream.listen(_onBluetoothEndpoint);
     _eventSubscription = _runtime.eventStream.listen(_onDeviceEvent);
 
     ref.onDispose(() {
       _log.info('DeviceManager disposed');
       _scanTimer?.cancel();
-      _ble.stopScan();
+      _scanSubscription?.cancel();
+      _bluetooth.stopScan();
       _eventSubscription?.cancel();
       _cleanupConnection();
       _runtime.dispose();
@@ -148,13 +149,12 @@ class DeviceManager extends Notifier<DeviceManagerState> {
   }
 
   static final _log = getLogger('DeviceManager');
-  late BleServiceManager _ble;
-  late ClassicSppService _spp;
+  late BluetoothPlatform _bluetooth;
   late DeviceRuntime _runtime;
+  StreamSubscription<BluetoothEndpoint>? _scanSubscription;
   StreamSubscription<DeviceEvent>? _eventSubscription;
   Timer? _scanTimer;
-  BleConnection? _bleConnection;
-  ClassicSppConnection? _sppConnection;
+  BluetoothConnection? _bluetoothConnection;
   DeviceEntity? _currentEntity;
 
   static const String _keyPairedDevices = 'paired_devices';
@@ -201,7 +201,9 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     );
   }
 
-  Future<void> startBleScan() async {
+  Future<void> startBluetoothScan({
+    ConnectType connectType = ConnectType.ble,
+  }) async {
     if (state.scanning) return;
     state = state.copyWith(
       scanning: true,
@@ -209,7 +211,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
       clearError: true,
     );
 
-    final available = await _ble.isAvailable();
+    final available = await _bluetooth.isAvailable();
     if (!available) {
       _log.warning('bluetooth not available');
       state = state.copyWith(
@@ -220,12 +222,17 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     }
 
     try {
-      await _ble.requestPermissions();
-      await _ble.startScan(timeout: const Duration(seconds: 15));
+      await _bluetooth.requestPermissions();
+      await _bluetooth.startScan(
+        BluetoothScanOptions(
+          connectTypes: {connectType},
+          timeout: const Duration(seconds: 15),
+        ),
+      );
 
       _scanTimer?.cancel();
       _scanTimer = Timer(const Duration(seconds: 15), () {
-        stopBleScan();
+        stopBluetoothScan();
       });
     } catch (e, st) {
       _log.severe('start scan failed', e, st);
@@ -233,52 +240,77 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     }
   }
 
-  Future<void> stopBleScan() async {
+  Future<void> stopBluetoothScan() async {
     _log.info('stopping scan');
     _scanTimer?.cancel();
-    await _ble.stopScan();
+    await _bluetooth.stopScan();
     state = state.copyWith(scanning: false);
   }
 
-  void onScannedDevice(ScannedBTDevice device) {
-    final exists = state.scannedDevices.any((d) => d.addr == device.addr);
+  void _onBluetoothEndpoint(BluetoothEndpoint endpoint) {
+    final exists = state.scannedDevices.any((d) => d.addr == endpoint.address);
     if (exists) return;
 
     final savedAddrs = state.pairedDevices.map((d) => d.addr).toSet();
-    if (savedAddrs.contains(device.addr)) return;
+    if (savedAddrs.contains(endpoint.address)) return;
 
     state = state.copyWith(
       scannedDevices: [
         ...state.scannedDevices,
         BTDeviceInfo(
-          name: device.name,
-          addr: device.addr,
-          connectType: _preferredConnectTypeFor(device),
+          name: endpoint.name,
+          addr: endpoint.address,
+          connectType: DeviceRegistry.resolve(
+            endpoint.name,
+          ).preferredConnectType.name,
         ),
       ],
     );
   }
 
-  Future<ClassicSppConnection> _connectSppWithRetry(
+  Future<BluetoothConnection> _connectBluetoothWithRetry(
     String addr,
     String name,
+    DeviceProfile profile,
+    ConnectType connectType,
   ) async {
     const maxAttempts = 3;
     const timeout = Duration(seconds: 10);
     Exception? lastError;
 
     for (var attempt = 1; attempt <= maxAttempts; attempt++) {
-      _log.info('SPP connect attempt $attempt/$maxAttempts to $addr');
+      _log.info(
+        '${connectType.name.toUpperCase()} connect attempt '
+        '$attempt/$maxAttempts to $addr',
+      );
       try {
-        final connection = await _spp.connect(addr, name).timeout(timeout);
-        _log.info('SPP connected on attempt $attempt');
+        final connection = await _bluetooth
+            .connect(
+              addr,
+              name,
+              BluetoothConnectOptions(
+                connectType: connectType,
+                bleRequiredCharacteristics: profile.bleRequiredCharacteristics,
+                bleDesiredMtu: profile.bleDesiredMtu,
+                sppServiceUuid: profile.classicServiceUuid,
+                sppFallbackChannels: profile.classicFallbackChannels,
+              ),
+            )
+            .timeout(timeout);
+        _log.info(
+          '${connectType.name.toUpperCase()} connected on attempt $attempt',
+        );
         return connection;
       } on TimeoutException catch (e) {
         lastError = e;
-        _log.warning('SPP connect attempt $attempt timed out');
+        _log.warning(
+          '${connectType.name.toUpperCase()} connect attempt $attempt timed out',
+        );
       } catch (e) {
         lastError = e is Exception ? e : Exception(e.toString());
-        _log.warning('SPP connect attempt $attempt failed: $e');
+        _log.warning(
+          '${connectType.name.toUpperCase()} connect attempt $attempt failed: $e',
+        );
       }
 
       if (attempt < maxAttempts) {
@@ -287,18 +319,9 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     }
 
     throw lastError ??
-        Exception('SPP connect failed after $maxAttempts attempts');
-  }
-
-  String _preferredConnectTypeFor(ScannedBTDevice device) {
-    final name = device.name.toLowerCase();
-    if (name.contains('xiaomi') ||
-        name.contains('redmi') ||
-        name.contains('mi ') ||
-        name.startsWith('mi')) {
-      return ConnectType.spp.name;
-    }
-    return device.connectType.name;
+        Exception(
+          '${connectType.name} connect failed after $maxAttempts attempts',
+        );
   }
 
   Future<void> connect(
@@ -308,7 +331,14 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     DeviceKind kind = DeviceKind.xiaomi,
     String connectType = 'ble',
   }) async {
-    final effectiveConnectType = kIsWeb ? ConnectType.spp.name : connectType;
+    final profile = DeviceRegistry.resolve(name);
+    final effectiveKind = kind == DeviceKind.xiaomi ? profile.kind : kind;
+    final requestedConnectType = connectType.toLowerCase().isEmpty
+        ? profile.preferredConnectType.name
+        : connectType.toLowerCase();
+    final effectiveConnectType = kIsWeb
+        ? ConnectType.spp.name
+        : requestedConnectType;
     _log.info('connecting to $name @ $addr via $effectiveConnectType');
     state = state.copyWith(
       connecting: true,
@@ -317,18 +347,36 @@ class DeviceManager extends Notifier<DeviceManagerState> {
       clearError: true,
     );
     try {
-      await stopBleScan();
+      await stopBluetoothScan();
       await _cleanupConnection();
 
+      if (effectiveKind != DeviceKind.xiaomi) {
+        throw UnsupportedError(
+          '${deviceKindLabel(effectiveKind)} protocol is not implemented yet',
+        );
+      }
+
+      final transportType = effectiveConnectType == ConnectType.spp.name
+          ? ConnectType.spp
+          : ConnectType.ble;
+      _bluetoothConnection = await _connectBluetoothWithRetry(
+        addr,
+        name,
+        profile,
+        transportType,
+      );
+
       final Transport transport;
-      if (effectiveConnectType.toLowerCase() == ConnectType.spp.name) {
-        _sppConnection = await _connectSppWithRetry(addr, name);
-        final sppTransport = SppTransport.xiaomi(_sppConnection!);
+      if (transportType == ConnectType.spp) {
+        final sppTransport = SppTransport.xiaomiBluetooth(
+          _bluetoothConnection!,
+        );
         await sppTransport.start();
         transport = sppTransport;
       } else {
-        _bleConnection = await _ble.connect(addr, name);
-        final bleTransport = BleTransport.xiaomi(_bleConnection!);
+        final bleTransport = BleTransport.xiaomiBluetooth(
+          _bluetoothConnection!,
+        );
         await bleTransport.start();
         transport = bleTransport;
       }
@@ -505,11 +553,9 @@ class DeviceManager extends Notifier<DeviceManagerState> {
   }
 
   Future<void> _cleanupConnection() async {
-    final ble = _bleConnection;
-    final spp = _sppConnection;
+    final connection = _bluetoothConnection;
     final entity = _currentEntity;
-    _bleConnection = null;
-    _sppConnection = null;
+    _bluetoothConnection = null;
     _currentEntity = null;
 
     if (entity != null) {
@@ -518,17 +564,10 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     }
 
     final futures = <Future<void>>[];
-    if (ble != null) {
+    if (connection != null && entity == null) {
       futures.add(
-        ble.dispose().catchError((Object e, StackTrace st) {
-          _log.warning('BLE dispose failed', e, st);
-        }),
-      );
-    }
-    if (spp != null) {
-      futures.add(
-        spp.dispose().catchError((Object e, StackTrace st) {
-          _log.warning('SPP dispose failed', e, st);
+        connection.dispose().catchError((Object e, StackTrace st) {
+          _log.warning('Bluetooth connection dispose failed', e, st);
         }),
       );
     }

@@ -23,6 +23,6 @@ add_definitions(-DAPPLICATION_ID="${APPLICATION_ID}")
 
 # Add dependency libraries. Add any application-specific dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter)
-target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::GTK PkgConfig::BLUEZ PkgConfig::WEBKIT)
+target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::GTK PkgConfig::BLUEZ PkgConfig::GIO PkgConfig::WEBKIT)
 
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")

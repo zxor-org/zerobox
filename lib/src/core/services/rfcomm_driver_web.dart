@@ -3,7 +3,8 @@ import 'dart:js_interop';
 import 'dart:typed_data';
 
 import 'package:zerobox/src/core/logging/logging_service.dart';
-import 'package:zerobox/src/core/services/classic_spp_service.dart';
+import 'package:zerobox/src/core/services/rfcomm_driver.dart';
+import 'package:zerobox/src/device/core/bluetooth_platform.dart';
 
 @JS('navigator.serial')
 external _Serial? get _navigatorSerial;
@@ -54,8 +55,8 @@ extension type WritableStreamDefaultWriter._(JSObject _) implements JSObject {
   external JSPromise<JSAny?> close();
 }
 
-class WebSerialSppConnection implements ClassicSppConnection {
-  WebSerialSppConnection({
+class WebSerialRfcommConnection implements RfcommConnection {
+  WebSerialRfcommConnection({
     required this.deviceId,
     required this.deviceName,
     required this._port,
@@ -70,7 +71,7 @@ class WebSerialSppConnection implements ClassicSppConnection {
   final SerialPort _port;
   final _incomingController = StreamController<Uint8List>.broadcast();
   final _connectionController = StreamController<bool>.broadcast();
-  final _log = getLogger('WebSerialSppConnection');
+  final _log = getLogger('WebSerialRfcommConnection');
 
   ReadableStreamDefaultReader? _reader;
   WritableStreamDefaultWriter? _writer;
@@ -193,17 +194,40 @@ class WebSerialSppConnection implements ClassicSppConnection {
   }
 }
 
-class WebSerialSppService implements ClassicSppService {
-  WebSerialSppService() : _log = getLogger('WebSerialSppService');
+class WebSerialRfcommDriver implements RfcommDriver {
+  WebSerialRfcommDriver() : _log = getLogger('WebSerialRfcommDriver');
 
   final Logger _log;
-  WebSerialSppConnection? _currentConnection;
+  final _scanController = StreamController<BluetoothEndpoint>.broadcast();
+  WebSerialRfcommConnection? _currentConnection;
 
   @override
-  Future<ClassicSppConnection> connect(
+  Stream<BluetoothEndpoint> get scanStream => _scanController.stream;
+
+  @override
+  Future<void> requestPermissions() async {}
+
+  @override
+  Future<void> startScan({
+    Duration timeout = const Duration(seconds: 15),
+  }) async {}
+
+  @override
+  Future<List<BluetoothEndpoint>> stopScan() async => const [];
+
+  @override
+  Future<RfcommConnection> connect(
     String deviceId,
-    String deviceName,
-  ) async {
+    String deviceName, {
+    String? serviceUuid,
+    List<int> fallbackChannels = const [5, 1],
+  }) async {
+    if (serviceUuid != null || fallbackChannels.isNotEmpty) {
+      _log.fine(
+        'web serial ignores classic bluetooth options '
+        'serviceUuid=$serviceUuid fallbackChannels=$fallbackChannels',
+      );
+    }
     _log.info('requesting web serial port');
 
     final serial = _navigatorSerial;
@@ -224,10 +248,11 @@ class WebSerialSppService implements ClassicSppService {
     final finalDeviceId = serialNumber != null
         ? 'serial:$serialNumber'
         : (vendorId != null && productId != null)
-            ? 'usb:${vendorId.toRadixString(16).padLeft(4, '0')}:${productId.toRadixString(16).padLeft(4, '0')}'
-            : deviceId;
+        ? 'usb:${vendorId.toRadixString(16).padLeft(4, '0')}:${productId.toRadixString(16).padLeft(4, '0')}'
+        : deviceId;
 
-    final finalDeviceName = serialNumber ??
+    final finalDeviceName =
+        serialNumber ??
         ((vendorId != null && productId != null)
             ? 'Web Serial ${vendorId.toRadixString(16).padLeft(4, '0')}:${productId.toRadixString(16).padLeft(4, '0')}'
             : 'Web Serial');
@@ -235,7 +260,7 @@ class WebSerialSppService implements ClassicSppService {
     _log.info('opening web serial port $finalDeviceId');
     await port.open(SerialOptions(baudRate: 115200)).toDart;
 
-    final connection = WebSerialSppConnection(
+    final connection = WebSerialRfcommConnection(
       deviceId: finalDeviceId,
       deviceName: finalDeviceName,
       port: port,
@@ -264,11 +289,11 @@ class WebSerialSppService implements ClassicSppService {
   }
 }
 
-ClassicSppService createClassicSppService() => WebSerialSppService();
-ClassicSppConnection createClassicSppConnection({
+RfcommDriver createRfcommDriver() => WebSerialRfcommDriver();
+RfcommConnection createRfcommConnection({
   required String deviceId,
   required String deviceName,
-  required ClassicSppService service,
+  required RfcommDriver service,
 }) => throw UnsupportedError(
   'Web serial connection is created by the service; use connect() instead.',
 );

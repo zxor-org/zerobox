@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -13,8 +11,6 @@ import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
 import 'package:zerobox/src/core/models/bt_models.dart';
 import 'package:zerobox/src/core/models/device.dart';
-import 'package:zerobox/src/core/providers/ble_service_provider.dart';
-import 'package:zerobox/src/core/services/ble_service_manager.dart';
 import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
 import 'package:zerobox/src/features/devices/services/device_share_link.dart';
 import 'package:zerobox/src/features/devices/providers/pending_shared_device_provider.dart';
@@ -32,12 +28,8 @@ class _DeviceSwitchPageState extends ConsumerState<DeviceSwitchPage> {
   void initState() {
     super.initState();
     Future.microtask(() async {
-      final ble = ref.read(bleServiceManagerProvider);
-      final available = await ble.isAvailable();
-      if (!available) return;
-      await ble.requestPermissions();
       if (mounted) {
-        ref.read(deviceManagerProvider.notifier).startBleScan();
+        ref.read(deviceManagerProvider.notifier).startBluetoothScan();
       }
     });
   }
@@ -69,7 +61,10 @@ class _DeviceSwitchPageState extends ConsumerState<DeviceSwitchPage> {
           children: [
             Text(device.name),
             const SizedBox(height: 4),
-            Text(device.addr, style: Theme.of(dialogContext).textTheme.bodySmall),
+            Text(
+              device.addr,
+              style: Theme.of(dialogContext).textTheme.bodySmall,
+            ),
           ],
         ),
         actions: [
@@ -95,26 +90,24 @@ class _DeviceSwitchPageState extends ConsumerState<DeviceSwitchPage> {
     ref.listen<DeviceManagerState>(deviceManagerProvider, (previous, next) {
       final wasConnecting = previous?.connecting ?? false;
       final isReady = next.protocolState == proto.ProtocolState.ready;
-      final justBecameReady = isReady &&
-          (previous?.protocolState != proto.ProtocolState.ready);
+      final justBecameReady =
+          isReady && (previous?.protocolState != proto.ProtocolState.ready);
       if (wasConnecting && justBecameReady) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.deviceConnected)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.deviceConnected)));
         if (context.mounted) {
           context.pop();
         }
       } else if (next.error != null && next.error != previous?.error) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(next.error!)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(next.error!)));
       }
     });
 
     return Scaffold(
-      appBar: SysAppBar(
-        title: Text(l10n.switchDeviceTitle),
-      ),
+      appBar: SysAppBar(title: Text(l10n.switchDeviceTitle)),
       body: !kIsWeb
           ? _buildLayout(context, ref, state, currentAddr)
           : const _WebSerialHint(),
@@ -146,24 +139,17 @@ class _DeviceSwitchPageState extends ConsumerState<DeviceSwitchPage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Expanded(
-                      child: _ListWrapper(
-                        isFirst: true,
-                        child: savedList,
-                      ),
+                      child: _ListWrapper(isFirst: true, child: savedList),
                     ),
                     Container(
                       width: 1,
                       margin: const EdgeInsets.symmetric(vertical: 12),
-                      color: Theme.of(context)
-                          .colorScheme
-                          .outlineVariant
-                          .withValues(alpha: 0.5),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.outlineVariant.withValues(alpha: 0.5),
                     ),
                     Expanded(
-                      child: _ListWrapper(
-                        isFirst: false,
-                        child: scanList,
-                      ),
+                      child: _ListWrapper(isFirst: false, child: scanList),
                     ),
                   ],
                 )
@@ -189,9 +175,7 @@ class _DeviceSwitchPageState extends ConsumerState<DeviceSwitchPage> {
                         onComplete: () => setState(() {}),
                       ),
                     ),
-                    _SliverScanDeviceList(
-                      onComplete: () => setState(() {}),
-                    ),
+                    _SliverScanDeviceList(onComplete: () => setState(() {})),
                   ],
                 ),
         );
@@ -201,10 +185,7 @@ class _DeviceSwitchPageState extends ConsumerState<DeviceSwitchPage> {
 }
 
 class _ListWrapper extends StatelessWidget {
-  const _ListWrapper({
-    required this.child,
-    required this.isFirst,
-  });
+  const _ListWrapper({required this.child, required this.isFirst});
 
   final Widget child;
   final bool isFirst;
@@ -213,10 +194,7 @@ class _ListWrapper extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
-      padding: EdgeInsets.only(
-        left: isFirst ? 0 : 20,
-        right: isFirst ? 20 : 0,
-      ),
+      padding: EdgeInsets.only(left: isFirst ? 0 : 20, right: isFirst ? 20 : 0),
       decoration: isFirst
           ? BoxDecoration(
               border: Border(
@@ -248,11 +226,7 @@ class _WebSerialHint extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.cable,
-              size: 64,
-              color: colorScheme.onSurfaceVariant,
-            ),
+            Icon(Icons.cable, size: 64, color: colorScheme.onSurfaceVariant),
             const SizedBox(height: 16),
             Text(
               l10n.webSerialTitle,
@@ -344,10 +318,7 @@ class _SavedDeviceList extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SectionHeader(
-          title: l10n.savedDevices,
-          hiddenOnMobile: true,
-        ),
+        _SectionHeader(title: l10n.savedDevices, hiddenOnMobile: true),
         if (state.pairedDevices.isEmpty)
           const Expanded(child: _EmptyState(message: ''))
         else
@@ -382,28 +353,6 @@ class _ScanDeviceList extends ConsumerStatefulWidget {
 }
 
 class _ScanDeviceListState extends ConsumerState<_ScanDeviceList> {
-  StreamSubscription<ScannedBTDevice>? _scanSubscription;
-
-  @override
-  void initState() {
-    super.initState();
-    _listenScan();
-  }
-
-  @override
-  void dispose() {
-    _scanSubscription?.cancel();
-    super.dispose();
-  }
-
-  void _listenScan() {
-    _scanSubscription?.cancel();
-    final ble = ref.read(bleServiceManagerProvider);
-    _scanSubscription = ble.scanStream.listen((device) {
-      ref.read(deviceManagerProvider.notifier).onScannedDevice(device);
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -427,16 +376,16 @@ class _ScanDeviceListState extends ConsumerState<_ScanDeviceList> {
             ),
             onPressed: state.scanning
                 ? null
-                : () => ref.read(deviceManagerProvider.notifier).startBleScan(),
+                : () => ref
+                      .read(deviceManagerProvider.notifier)
+                      .startBluetoothScan(),
             tooltip: l10n.refresh,
           ),
         ),
         if (!state.scanning && state.scannedDevices.isEmpty)
           const Expanded(child: _EmptyState(message: ''))
         else if (state.scanning && state.scannedDevices.isEmpty)
-          const Expanded(
-            child: Center(child: CircularProgressIndicator()),
-          )
+          const Expanded(child: Center(child: CircularProgressIndicator()))
         else
           Expanded(
             child: ListView.builder(
@@ -523,7 +472,9 @@ class _ScanSectionHeader extends ConsumerWidget {
             ),
             onPressed: state.scanning
                 ? null
-                : () => ref.read(deviceManagerProvider.notifier).startBleScan(),
+                : () => ref
+                      .read(deviceManagerProvider.notifier)
+                      .startBluetoothScan(),
             tooltip: l10n.refresh,
           ),
         ),
@@ -543,28 +494,6 @@ class _SliverScanDeviceList extends ConsumerStatefulWidget {
 }
 
 class _SliverScanDeviceListState extends ConsumerState<_SliverScanDeviceList> {
-  StreamSubscription<ScannedBTDevice>? _scanSubscription;
-
-  @override
-  void initState() {
-    super.initState();
-    _listenScan();
-  }
-
-  @override
-  void dispose() {
-    _scanSubscription?.cancel();
-    super.dispose();
-  }
-
-  void _listenScan() {
-    _scanSubscription?.cancel();
-    final ble = ref.read(bleServiceManagerProvider);
-    _scanSubscription = ble.scanStream.listen((device) {
-      ref.read(deviceManagerProvider.notifier).onScannedDevice(device);
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(deviceManagerProvider);
@@ -671,7 +600,9 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
   }
 
   Future<void> _connect() async {
-    await ref.read(deviceManagerProvider.notifier).connect(
+    await ref
+        .read(deviceManagerProvider.notifier)
+        .connect(
           widget.device.addr,
           widget.device.name,
           _authController.text,
@@ -759,7 +690,9 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
                         } else if (value == 'disconnect') {
                           await manager.disconnect();
                         } else if (value == 'share') {
-                          await Future.delayed(const Duration(milliseconds: 50));
+                          await Future.delayed(
+                            const Duration(milliseconds: 50),
+                          );
                           if (context.mounted) {
                             await _showQrDialog(context, widget.device);
                           }
@@ -812,8 +745,8 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
                     padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
                     child: TextField(
                       controller: _authController,
-                      enabled: state.connectStatus == 0 ||
-                          state.connectStatus == 3,
+                      enabled:
+                          state.connectStatus == 0 || state.connectStatus == 3,
                       decoration: InputDecoration(
                         isDense: true,
                         labelText: l10n.authkeyPrompt,

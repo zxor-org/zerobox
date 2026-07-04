@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:zerobox/src/core/services/ble_service_manager.dart';
+import 'package:zerobox/src/core/services/ble_gatt_driver.dart';
 import 'package:zerobox/src/protocols/common/device_protocol.dart';
 
 class BleProtocolConnection implements ProtocolConnection {

@@ -1,8 +1,16 @@
 import 'package:zerobox/src/core/models/bt_models.dart';
+import 'package:zerobox/src/device/core/device_profile.dart';
 
 enum DevicePlatform { velaOS, zeppOS }
 
-enum ConnectionStatus { disconnected, scanning, connecting, connected, ready, error }
+enum ConnectionStatus {
+  disconnected,
+  scanning,
+  connecting,
+  connected,
+  ready,
+  error,
+}
 
 class Device {
   const Device({
@@ -35,13 +43,13 @@ class Device {
       status == ConnectionStatus.connected || status == ConnectionStatus.ready;
 
   MiWearState toMiWearState() => MiWearState(
-        name: name,
-        addr: address ?? id,
-        connectType: connectType ?? 'ble',
-        authkey: authkey,
-        codename: codename,
-        disconnected: !isConnected,
-      );
+    name: name,
+    addr: address ?? id,
+    connectType: connectType ?? 'ble',
+    authkey: authkey,
+    codename: codename,
+    disconnected: !isConnected,
+  );
 }
 
 String devicePlatformLabel(DevicePlatform platform) {
@@ -62,36 +70,8 @@ String connectionStatusLabel(ConnectionStatus status) {
   };
 }
 
-final _deviceIllustrationMatchers = [
-  (
-    RegExp(r'Redmi Band \w', caseSensitive: false),
-    'assets/images/devices/redmi-band.svg',
-  ),
-  (
-    RegExp(r'Redmi Watch \w', caseSensitive: false),
-    'assets/images/devices/redmi-watch.svg',
-  ),
-  (
-    RegExp(r'Xiaomi Smart Band \w\w? Pro .{4}|小米手环\w\w? Pro',
-        caseSensitive: false),
-    'assets/images/devices/xiaomi-band-pro.svg',
-  ),
-  (
-    RegExp(r'Xiaomi Smart Band \w\w? ?\S{4}?|小米手环\w\w?',
-        caseSensitive: false),
-    'assets/images/devices/xiaomi-band.svg',
-  ),
-  (
-    RegExp(r'Xiaomi Watch S\w (eSIM )?\S{4}', caseSensitive: false),
-    'assets/images/devices/xiaomi-watch.svg',
-  ),
-];
-
 String _matchIllustrationAsset(String name) {
-  for (final (regex, asset) in _deviceIllustrationMatchers) {
-    if (regex.hasMatch(name)) return asset;
-  }
-  return 'assets/images/devices/xiaomi-watch.svg';
+  return DeviceRegistry.resolve(name).illustrationAsset;
 }
 
 extension DeviceIllustration on Device {
