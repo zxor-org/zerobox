@@ -35,27 +35,27 @@ class AcknowledgementsPage extends StatelessWidget {
       AcknowledgementItem(
         name: 'AstroBox-NG-Module-Core',
         description: l10n.acknowledgementsAstroBoxNgCore,
-        url: 'https://github.com/AstralSightStudios/AstroBox-NG',
+        url: 'https://github.com/AstralSightStudios/AstroBox-NG-Module-Core',
       ),
       AcknowledgementItem(
         name: 'AstroBox-NG-Module-Bluetooth',
         description: l10n.acknowledgementsAstroBoxNgBluetooth,
-        url: 'https://github.com/AstralSightStudios/AstroBox-NG',
+        url: 'https://github.com/AstralSightStudios/AstroBox-NG-Module-Bluetooth',
       ),
       AcknowledgementItem(
         name: 'AstroBox-NG-Module-Account',
         description: l10n.acknowledgementsAstroBoxNgAccount,
-        url: 'https://github.com/AstralSightStudios/AstroBox-NG',
+        url: 'https://github.com/AstralSightStudios/AstroBox-NG-Module-Account',
       ),
       AcknowledgementItem(
         name: 'AstroBox-NG-Module-Provider',
         description: l10n.acknowledgementsAstroBoxNgProvider,
-        url: 'https://github.com/AstralSightStudios/AstroBox-NG',
+        url: 'https://github.com/AstralSightStudios/AstroBox-NG-Module-Provider',
       ),
       AcknowledgementItem(
         name: 'AstroBox-NG-Module-AppWasm',
         description: l10n.acknowledgementsAstroBoxNgAppWasm,
-        url: 'https://github.com/AstralSightStudios/AstroBox-NG',
+        url: 'https://github.com/AstralSightStudios/AstroBox-NG-Module-AppWasm',
       ),
       AcknowledgementItem(
         name: 'Gadgetbridge',
