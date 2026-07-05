@@ -78,12 +78,17 @@ class NativeRfcommDriver implements RfcommDriver {
       if (addr == null || addr.isEmpty) {
         throw StateError('SPP scan event missing address');
       }
+      final rawName = event['name'] as String?;
       final endpoint = BluetoothEndpoint(
-        name: (event['name'] as String?)?.trim().isNotEmpty == true
-            ? (event['name'] as String).trim()
+        name: rawName?.trim().isNotEmpty == true
+            ? rawName!.trim()
             : 'Unknown device',
         address: addr,
         connectType: ConnectType.spp,
+      );
+      _log.info(
+        'device_identity platform.spp_scan '
+        'addr=$addr sppName="$rawName" displayName="${endpoint.name}"',
       );
       _scanResults[endpoint.address] = endpoint;
       return endpoint;
@@ -113,10 +118,16 @@ class NativeRfcommDriver implements RfcommDriver {
         if (item is! Map) continue;
         final addr = item['addr'] as String? ?? item['address'] as String?;
         if (addr == null || addr.isEmpty) continue;
+        final rawName = item['name'] as String?;
+        final displayName = rawName?.trim().isNotEmpty == true
+            ? rawName!.trim()
+            : 'Unknown device';
+        _log.info(
+          'device_identity platform.spp_scan_result '
+          'addr=$addr sppName="$rawName" displayName="$displayName"',
+        );
         _scanResults[addr] = BluetoothEndpoint(
-          name: (item['name'] as String?)?.trim().isNotEmpty == true
-              ? (item['name'] as String).trim()
-              : 'Unknown device',
+          name: displayName,
           address: addr,
           connectType: ConnectType.spp,
         );

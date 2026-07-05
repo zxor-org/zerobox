@@ -16,9 +16,9 @@ import 'package:zerobox/src/features/resources/pages/creator/creator_dashboard_p
 import 'package:zerobox/src/features/resources/pages/creator/creator_editor_shell.dart';
 import 'package:zerobox/src/features/resources/pages/resource_detail_page.dart';
 import 'package:zerobox/src/features/resources/pages/resources_page.dart';
-import 'package:zerobox/src/features/settings/pages/settings_page.dart';
-import 'package:zerobox/src/features/settings/pages/team_page.dart';
 import 'package:zerobox/src/features/settings/pages/acknowledgements_page.dart';
+import 'package:zerobox/src/features/settings/pages/about_software_page.dart';
+import 'package:zerobox/src/features/settings/pages/settings_page.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
@@ -28,9 +28,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final uri = state.uri;
       final isDeviceShareLink =
           (uri.scheme == 'zerobox' && uri.host == 'open') ||
-              ((uri.scheme == 'https' || uri.scheme == 'http') &&
-                  uri.host == 'zerobox.zxor.org' &&
-                  uri.path == '/open');
+          ((uri.scheme == 'https' || uri.scheme == 'http') &&
+              uri.host == 'zerobox.zxor.org' &&
+              uri.path == '/open');
       if (!isDeviceShareLink) return null;
 
       final device = DeviceShareLink.parse(uri.toString());
@@ -140,8 +140,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                 builder: (context, state) => const SettingsPage(),
                 routes: [
                   GoRoute(
+                    path: 'about',
+                    builder: (context, state) => const AboutSoftwarePage(),
+                  ),
+                  GoRoute(
                     path: 'team',
-                    builder: (context, state) => const TeamPage(),
+                    redirect: (context, state) => '/settings/about',
                   ),
                   GoRoute(
                     path: 'acknowledgements',

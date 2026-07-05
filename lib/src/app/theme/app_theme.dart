@@ -15,8 +15,8 @@ ThemeData oledDarkTheme(ThemeData defaultDarkTheme) {
 }
 
 abstract final class AppTheme {
-  static final ThemeData light = _buildTheme(Brightness.light);
-  static final ThemeData dark = _buildTheme(Brightness.dark);
+  static final ThemeData light = buildLightTheme();
+  static final ThemeData dark = buildDarkTheme();
   static final ThemeData oledDark = oledDarkTheme(dark);
 
   static const pageTransitionsTheme = PageTransitionsTheme(
@@ -29,44 +29,58 @@ abstract final class AppTheme {
     },
   );
 
-  static ThemeData _buildTheme(Brightness brightness) {
-    final colorScheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF6750A4),
-      brightness: brightness,
-    );
+  static ThemeData buildLightTheme({ColorScheme? colorScheme}) {
+    return _buildTheme(Brightness.light, colorScheme: colorScheme);
+  }
+
+  static ThemeData buildDarkTheme({ColorScheme? colorScheme}) {
+    return _buildTheme(Brightness.dark, colorScheme: colorScheme);
+  }
+
+  static ThemeData buildOledDarkTheme({ColorScheme? colorScheme}) {
+    return oledDarkTheme(buildDarkTheme(colorScheme: colorScheme));
+  }
+
+  static ThemeData _buildTheme(
+    Brightness brightness, {
+    ColorScheme? colorScheme,
+  }) {
+    final effectiveColorScheme =
+        colorScheme ??
+        ColorScheme.fromSeed(
+          seedColor: const Color(0xFF6750A4),
+          brightness: brightness,
+        );
 
     return ThemeData(
       useMaterial3: true,
-      colorScheme: colorScheme,
+      colorScheme: effectiveColorScheme,
       brightness: brightness,
       pageTransitionsTheme: pageTransitionsTheme,
-      scaffoldBackgroundColor: colorScheme.surface,
+      scaffoldBackgroundColor: effectiveColorScheme.surface,
       appBarTheme: AppBarTheme(
         centerTitle: false,
         scrolledUnderElevation: 0,
-        backgroundColor: colorScheme.surface,
+        backgroundColor: effectiveColorScheme.surface,
         systemOverlayStyle: SystemUiOverlayStyle(
           statusBarColor: Colors.transparent,
           systemNavigationBarColor: Colors.transparent,
           systemNavigationBarDividerColor: Colors.transparent,
-          statusBarIconBrightness:
-              brightness == Brightness.dark ? Brightness.light : Brightness.dark,
+          statusBarIconBrightness: brightness == Brightness.dark
+              ? Brightness.light
+              : Brightness.dark,
           statusBarBrightness: brightness,
         ),
       ),
       cardTheme: CardThemeData(
         elevation: 0,
         margin: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        color: colorScheme.surfaceContainerLow,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        color: effectiveColorScheme.surfaceContainerLow,
       ),
       chipTheme: ChipThemeData(
         elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         side: BorderSide.none,
       ),
       filledButtonTheme: FilledButtonThemeData(
@@ -94,7 +108,7 @@ abstract final class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: colorScheme.surfaceContainerHighest,
+        fillColor: effectiveColorScheme.surfaceContainerHighest,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(20),
           borderSide: BorderSide.none,
@@ -105,28 +119,28 @@ abstract final class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(20),
-          borderSide: BorderSide(color: colorScheme.primary, width: 2),
+          borderSide: BorderSide(color: effectiveColorScheme.primary, width: 2),
         ),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 20,
+          vertical: 14,
+        ),
       ),
       navigationBarTheme: NavigationBarThemeData(
         elevation: 0,
-        backgroundColor: colorScheme.surfaceContainer,
+        backgroundColor: effectiveColorScheme.surfaceContainer,
         indicatorShape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
       ),
       navigationRailTheme: NavigationRailThemeData(
-        backgroundColor: colorScheme.surfaceContainer,
+        backgroundColor: effectiveColorScheme.surfaceContainer,
         indicatorShape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
       ),
       listTileTheme: ListTileThemeData(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       bottomSheetTheme: BottomSheetThemeData(
         shape: const RoundedRectangleBorder(
@@ -134,13 +148,11 @@ abstract final class AppTheme {
         ),
         clipBehavior: Clip.antiAlias,
         showDragHandle: true,
-        backgroundColor: colorScheme.surface,
+        backgroundColor: effectiveColorScheme.surface,
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }

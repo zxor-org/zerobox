@@ -42,7 +42,6 @@ class _DeviceInfoPageState extends ConsumerState<DeviceInfoPage> {
         child: ListView(
           padding: const EdgeInsets.symmetric(
             horizontal: StyleConstants.pagePadding,
-            vertical: StyleConstants.pagePadding,
           ),
           children: [
             Padding(

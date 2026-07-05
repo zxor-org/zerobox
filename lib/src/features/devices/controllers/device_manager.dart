@@ -17,6 +17,7 @@ import 'package:zerobox/src/device/core/event_bus.dart';
 import 'package:zerobox/src/device/core/runtime.dart';
 import 'package:zerobox/src/device/core/spp_transport.dart';
 import 'package:zerobox/src/device/core/transport.dart';
+import 'package:zerobox/src/device/core/xiaomi_wearable_catalog.dart';
 import 'package:zerobox/src/device/xiaomi/components/auth_system.dart';
 import 'package:zerobox/src/device/xiaomi/components/info_system.dart';
 import 'package:zerobox/src/device/xiaomi/components/install_system.dart';
@@ -110,6 +111,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     ref.onDispose(() {
       _log.info('DeviceManager disposed');
       _scanTimer?.cancel();
+      _stopConnectionWatchdog();
       _scanSubscription?.cancel();
       _bluetooth.stopScan();
       _eventSubscription?.cancel();
@@ -154,8 +156,12 @@ class DeviceManager extends Notifier<DeviceManagerState> {
   StreamSubscription<BluetoothEndpoint>? _scanSubscription;
   StreamSubscription<DeviceEvent>? _eventSubscription;
   Timer? _scanTimer;
+  Timer? _connectionWatchdogTimer;
   BluetoothConnection? _bluetoothConnection;
   DeviceEntity? _currentEntity;
+  bool _connectionProbeRunning = false;
+  bool _installBusy = false;
+  int _connectionProbeFailures = 0;
 
   static const String _keyPairedDevices = 'paired_devices';
   static const String _keyAutoReconnect = 'auto_reconnect';
@@ -166,7 +172,9 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     final paired = saved
         .map((e) {
           try {
-            return MiWearState.fromJson(jsonDecode(e) as Map<String, dynamic>);
+            return _normalizeDeviceIdentity(
+              MiWearState.fromJson(jsonDecode(e) as Map<String, dynamic>),
+            );
           } catch (e, st) {
             _log.warning('failed to parse paired device', e, st);
             return null;
@@ -254,17 +262,34 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     final savedAddrs = state.pairedDevices.map((d) => d.addr).toSet();
     if (savedAddrs.contains(endpoint.address)) return;
 
+    final displayName = xiaomiDisplayNameForIdentity(name: endpoint.name);
+    final resolvedProfile = DeviceRegistry.resolveIdentity(name: endpoint.name);
+    _log.fine(
+      'scan add ${endpoint.address} "$displayName" '
+      'via ${resolvedProfile.preferredConnectType.name}',
+    );
     state = state.copyWith(
       scannedDevices: [
         ...state.scannedDevices,
         BTDeviceInfo(
-          name: endpoint.name,
+          name: displayName,
           addr: endpoint.address,
-          connectType: DeviceRegistry.resolve(
-            endpoint.name,
-          ).preferredConnectType.name,
+          connectType: resolvedProfile.preferredConnectType.name,
         ),
       ],
+    );
+  }
+
+  MiWearState _normalizeDeviceIdentity(MiWearState device) {
+    final identity =
+        xiaomiWearableIdentityForCodename(device.codename) ??
+        normalizeXiaomiWearableIdentity(device.name);
+    return device.copyWith(
+      name: xiaomiDisplayNameForIdentity(
+        name: device.name,
+        codename: identity?.codename ?? device.codename,
+      ),
+      codename: identity?.codename ?? device.codename,
     );
   }
 
@@ -306,11 +331,13 @@ class DeviceManager extends Notifier<DeviceManagerState> {
         _log.warning(
           '${connectType.name.toUpperCase()} connect attempt $attempt timed out',
         );
+        await _resetBluetoothAfterFailedConnect(connectType);
       } catch (e) {
         lastError = e is Exception ? e : Exception(e.toString());
         _log.warning(
           '${connectType.name.toUpperCase()} connect attempt $attempt failed: $e',
         );
+        await _resetBluetoothAfterFailedConnect(connectType);
       }
 
       if (attempt < maxAttempts) {
@@ -324,6 +351,22 @@ class DeviceManager extends Notifier<DeviceManagerState> {
         );
   }
 
+  Future<void> _resetBluetoothAfterFailedConnect(
+    ConnectType connectType,
+  ) async {
+    try {
+      await _bluetooth.disconnect().timeout(const Duration(seconds: 2));
+    } catch (e) {
+      _log.fine(
+        '${connectType.name.toUpperCase()} disconnect after failed connect ignored: $e',
+      );
+    }
+
+    if (connectType == ConnectType.spp) {
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
+  }
+
   Future<void> connect(
     String addr,
     String name,
@@ -331,7 +374,24 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     DeviceKind kind = DeviceKind.xiaomi,
     String connectType = 'ble',
   }) async {
-    final profile = DeviceRegistry.resolve(name);
+    final existingDevice = state.pairedDevices
+        .where((d) => d.addr == addr)
+        .firstOrNull;
+    final identity =
+        xiaomiWearableIdentityForCodename(existingDevice?.codename) ??
+        normalizeXiaomiWearableIdentity(name);
+    final effectiveCodename = identity?.codename ?? existingDevice?.codename;
+    final displayName = xiaomiDisplayNameForIdentity(
+      name: name,
+      codename: effectiveCodename,
+    );
+    final profile = DeviceRegistry.resolveIdentity(
+      name: displayName,
+      codename: effectiveCodename,
+    );
+    final profileSource = identity != null
+        ? 'codename:${identity.codename}'
+        : 'name';
     final effectiveKind = kind == DeviceKind.xiaomi ? profile.kind : kind;
     final requestedConnectType = connectType.toLowerCase().isEmpty
         ? profile.preferredConnectType.name
@@ -339,7 +399,12 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     final effectiveConnectType = kIsWeb
         ? ConnectType.spp.name
         : requestedConnectType;
-    _log.info('connecting to $name @ $addr via $effectiveConnectType');
+    _log.info(
+      'connect request $addr rawName="$name" displayName="$displayName" '
+      'codename="$effectiveCodename" via=$effectiveConnectType '
+      'profile=${profile.id} source=$profileSource authkey="$authKey"',
+    );
+    _log.info('connecting to $displayName @ $addr via $effectiveConnectType');
     state = state.copyWith(
       connecting: true,
       connectStatus: 1,
@@ -361,7 +426,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
           : ConnectType.ble;
       _bluetoothConnection = await _connectBluetoothWithRetry(
         addr,
-        name,
+        displayName,
         profile,
         transportType,
       );
@@ -404,10 +469,11 @@ class DeviceManager extends Notifier<DeviceManagerState> {
       _log.info('authentication succeeded');
 
       final connected = MiWearState(
-        name: name,
+        name: displayName,
         addr: addr,
         connectType: effectiveConnectType,
         authkey: authKey,
+        codename: effectiveCodename,
         disconnected: false,
       );
       final existingIndex = state.pairedDevices.indexWhere(
@@ -427,6 +493,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
         connectStatus: 2,
         protocolState: ProtocolState.ready,
       );
+      _startConnectionWatchdog(addr);
       await _savePairedDevices();
       unawaited(_loadInitialDeviceData(entity));
     } catch (e, st) {
@@ -456,6 +523,58 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     }
   }
 
+  void _startConnectionWatchdog(String deviceId) {
+    _stopConnectionWatchdog();
+    _connectionProbeFailures = 0;
+    _connectionWatchdogTimer = Timer.periodic(const Duration(seconds: 6), (_) {
+      unawaited(_probeConnection(deviceId));
+    });
+  }
+
+  void _stopConnectionWatchdog() {
+    _connectionWatchdogTimer?.cancel();
+    _connectionWatchdogTimer = null;
+    _connectionProbeRunning = false;
+    _connectionProbeFailures = 0;
+  }
+
+  Future<void> _probeConnection(String deviceId) async {
+    if (_connectionProbeRunning || _installBusy) return;
+
+    final entity = _currentEntity;
+    if (entity == null ||
+        entity.id != deviceId ||
+        state.currentDevice?.addr != deviceId ||
+        state.protocolState != ProtocolState.ready) {
+      return;
+    }
+
+    final infoSystem = entity.system<XiaomiInfoSystem>();
+    if (infoSystem == null) return;
+
+    _connectionProbeRunning = true;
+    try {
+      await infoSystem.fetchBatteryInfo().timeout(const Duration(seconds: 4));
+      _connectionProbeFailures = 0;
+    } catch (e, st) {
+      _connectionProbeFailures += 1;
+      _log.warning(
+        'connection probe failed ($_connectionProbeFailures/2) for $deviceId',
+        e,
+        st,
+      );
+      if (_connectionProbeFailures >= 2 &&
+          _currentEntity?.id == deviceId &&
+          state.currentDevice?.addr == deviceId &&
+          state.protocolState == ProtocolState.ready) {
+        _log.warning('connection probe marked $deviceId as disconnected');
+        _onDisconnected();
+      }
+    } finally {
+      _connectionProbeRunning = false;
+    }
+  }
+
   void _onDeviceEvent(DeviceEvent event) {
     if (event.deviceId != state.currentDevice?.addr) return;
 
@@ -476,21 +595,30 @@ class DeviceManager extends Notifier<DeviceManagerState> {
         _log.info('event: battery ${battery.capacity}%');
         state = state.copyWith(battery: battery);
       case DeviceInfoUpdated(:final info):
-        _log.info('event: device info ${info.model}');
+        _log.info(
+          'device info ${event.deviceId}: model=${info.model}, '
+          'fw=${info.firmwareVersion}',
+        );
         state = state.copyWith(systemInfo: info);
         final current = state.currentDevice;
-        if (current != null &&
-            info.model.isNotEmpty &&
-            current.name != info.model) {
-          final renamed = current.copyWith(name: info.model);
-          final updatedPaired = state.pairedDevices.map((d) {
-            return d.addr == current.addr ? renamed : d;
+        final identity = normalizeXiaomiWearableIdentity(info.model);
+        if (current != null && identity != null) {
+          final normalized = current.copyWith(
+            name: identity.displayName,
+            codename: identity.codename,
+          );
+          final updatedPaired = state.pairedDevices.map((device) {
+            return device.addr == current.addr ? normalized : device;
           }).toList();
           state = state.copyWith(
-            currentDevice: renamed,
+            currentDevice: normalized,
             pairedDevices: updatedPaired,
           );
-          _savePairedDevices();
+          _log.info(
+            'normalized ${current.addr}: ${info.model} -> '
+            '${identity.codename} (${identity.displayName})',
+          );
+          unawaited(_savePairedDevices());
         }
       case AppListUpdated(:final apps):
         _log.info('event: app list ${apps.length}');
@@ -516,7 +644,18 @@ class DeviceManager extends Notifier<DeviceManagerState> {
 
   void _onDisconnected() {
     final current = state.currentDevice;
-    if (current == null) return;
+    if (current == null) {
+      state = state.copyWith(
+        connecting: false,
+        connectStatus: 0,
+        protocolState: ProtocolState.disconnected,
+        clearBattery: true,
+        clearSystemInfo: true,
+        clearError: true,
+      );
+      unawaited(_cleanupConnection());
+      return;
+    }
     final disconnected = current.copyWith(disconnected: true);
     final updatedPaired = state.pairedDevices.map((d) {
       return d.addr == current.addr ? disconnected : d;
@@ -524,10 +663,12 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     state = state.copyWith(
       currentDevice: disconnected,
       pairedDevices: updatedPaired,
+      connecting: false,
       connectStatus: 0,
       protocolState: ProtocolState.disconnected,
       clearBattery: true,
       clearSystemInfo: true,
+      clearError: true,
     );
     _savePairedDevices();
     _cleanupConnection();
@@ -535,7 +676,18 @@ class DeviceManager extends Notifier<DeviceManagerState> {
 
   Future<void> disconnect() async {
     final current = state.currentDevice;
-    if (current == null) return;
+    if (current == null) {
+      await _cleanupConnection();
+      state = state.copyWith(
+        connecting: false,
+        connectStatus: 0,
+        protocolState: ProtocolState.disconnected,
+        clearBattery: true,
+        clearSystemInfo: true,
+        clearError: true,
+      );
+      return;
+    }
     final disconnected = current.copyWith(disconnected: true);
     final updatedPaired = state.pairedDevices.map((d) {
       return d.addr == current.addr ? disconnected : d;
@@ -544,6 +696,8 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     state = state.copyWith(
       currentDevice: disconnected,
       pairedDevices: updatedPaired,
+      connecting: false,
+      connectStatus: 0,
       protocolState: ProtocolState.disconnected,
       clearBattery: true,
       clearSystemInfo: true,
@@ -553,6 +707,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
   }
 
   Future<void> _cleanupConnection() async {
+    _stopConnectionWatchdog();
     final connection = _bluetoothConnection;
     final entity = _currentEntity;
     _bluetoothConnection = null;
@@ -560,7 +715,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
 
     if (entity != null) {
       _log.info('cleaning up connection to ${entity.id}');
-      _runtime.removeDevice(entity.id);
+      await _runtime.removeDevice(entity.id);
     }
 
     final futures = <Future<void>>[];
@@ -585,6 +740,8 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     state = state.copyWith(
       pairedDevices: updatedPaired,
       currentDevice: removedCurrent ? null : state.currentDevice,
+      connecting: removedCurrent ? false : state.connecting,
+      connectStatus: removedCurrent ? 0 : state.connectStatus,
       protocolState: removedCurrent
           ? ProtocolState.disconnected
           : state.protocolState,
@@ -700,11 +857,16 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     }
     _log.info('installing app $packageName (${packageBytes.length} bytes)');
     final installSystem = entity.system<XiaomiInstallSystem>()!;
-    await installSystem.installApp(
-      packageBytes,
-      packageName: packageName,
-      onProgress: onProgress,
-    );
+    _installBusy = true;
+    try {
+      await installSystem.installApp(
+        packageBytes,
+        packageName: packageName,
+        onProgress: onProgress,
+      );
+    } finally {
+      _installBusy = false;
+    }
   }
 
   Future<void> installWatchface(
@@ -720,11 +882,16 @@ class DeviceManager extends Notifier<DeviceManagerState> {
       'installing watchface $watchfaceId (${watchfaceBytes.length} bytes)',
     );
     final installSystem = entity.system<XiaomiInstallSystem>()!;
-    await installSystem.installWatchface(
-      watchfaceBytes,
-      watchfaceId: watchfaceId,
-      onProgress: onProgress,
-    );
+    _installBusy = true;
+    try {
+      await installSystem.installWatchface(
+        watchfaceBytes,
+        watchfaceId: watchfaceId,
+        onProgress: onProgress,
+      );
+    } finally {
+      _installBusy = false;
+    }
   }
 
   Future<void> installFirmware(
@@ -737,11 +904,19 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     }
     _log.info('installing firmware (${firmwareBytes.length} bytes)');
     final installSystem = entity.system<XiaomiInstallSystem>()!;
-    await installSystem.installFirmware(firmwareBytes, onProgress: onProgress);
+    _installBusy = true;
+    try {
+      await installSystem.installFirmware(
+        firmwareBytes,
+        onProgress: onProgress,
+      );
+    } finally {
+      _installBusy = false;
+    }
   }
 
   Future<void> importSharedDevice(MiWearState device) async {
-    final normalized = device.copyWith(
+    final normalized = _normalizeDeviceIdentity(device).copyWith(
       connectType: device.connectType.toLowerCase().isEmpty
           ? ConnectType.spp.name
           : device.connectType.toLowerCase(),
@@ -770,20 +945,35 @@ class DeviceManager extends Notifier<DeviceManagerState> {
 
   Future<int> importMiCloudDevices(List<MiCloudDevice> devices) async {
     final importable = devices.where((device) => device.hasAuthKey).toList();
+    _log.info(
+      'importing ${importable.length}/${devices.length} Mi Cloud devices',
+    );
     if (importable.isEmpty) return 0;
 
     final updatedPaired = List<MiWearState>.from(state.pairedDevices);
     for (final device in importable) {
-      final imported = MiWearState(
-        name: device.name.trim().isNotEmpty ? device.name.trim() : device.model,
-        addr: device.mac.trim(),
-        connectType: ConnectType.spp.name,
-        authkey: device.authKey.trim(),
-        codename: device.model.trim().isEmpty ? null : device.model.trim(),
-        disconnected: true,
+      final identity = normalizeXiaomiWearableIdentity(device.model);
+      final importedRaw = _normalizeDeviceIdentity(
+        MiWearState(
+          name: device.name.trim().isNotEmpty
+              ? device.name.trim()
+              : (identity?.displayName ?? device.model),
+          addr: device.mac.trim(),
+          connectType: ConnectType.spp.name,
+          authkey: device.authKey.trim(),
+          codename: identity?.codename,
+          disconnected: true,
+        ),
       );
       final existingIndex = updatedPaired.indexWhere(
-        (d) => d.addr == imported.addr,
+        (d) => d.addr == importedRaw.addr,
+      );
+      final existing = existingIndex >= 0 ? updatedPaired[existingIndex] : null;
+      final isCurrentReady =
+          state.currentDevice?.addr == importedRaw.addr &&
+          state.protocolState == ProtocolState.ready;
+      final imported = importedRaw.copyWith(
+        disconnected: isCurrentReady ? false : (existing?.disconnected ?? true),
       );
       if (existingIndex >= 0) {
         updatedPaired[existingIndex] = imported;

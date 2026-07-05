@@ -56,6 +56,7 @@ class XiaomiSarController {
   XiaomiSarController({
     required this.onSend,
     required this.onData,
+    this.onSendError,
     this.sendTimeout = const Duration(seconds: 10),
     this.txWinOverrunAllowance = 0,
   }) : _log = getLogger('XiaomiSarController') {
@@ -64,6 +65,7 @@ class XiaomiSarController {
 
   final Future<void> Function(Uint8List data) onSend;
   final void Function(Uint8List l2Payload) onData;
+  final void Function(Object error, StackTrace stackTrace)? onSendError;
   final Duration sendTimeout;
   final int txWinOverrunAllowance;
   final Logger _log;
@@ -468,7 +470,7 @@ class XiaomiSarController {
       retransmit.needRetransmission = false;
       retransmit.waitAck = true;
       retransmit.deadline = DateTime.now().add(_effectiveSendTimeout);
-      unawaited(onSend(pkt.toBytes()));
+      _queueSend(pkt.toBytes());
       return;
     }
 
@@ -529,6 +531,7 @@ class XiaomiSarController {
         await onSend(packet);
       } catch (e, st) {
         _log.warning('SAR onSend failed for ${packet.length} bytes', e, st);
+        onSendError?.call(e, st);
       }
     });
     _sendTail = queued;

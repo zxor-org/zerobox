@@ -584,6 +584,12 @@ abstract class AppLocalizations {
   /// **'Special Acknowledgements'**
   String get acknowledgements;
 
+  /// No description provided for @acknowledgementsDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Open source projects referenced by ZeroBox'**
+  String get acknowledgementsDesc;
+
   /// No description provided for @developmentTeam.
   ///
   /// In en, this message translates to:
@@ -1220,6 +1226,72 @@ abstract class AppLocalizations {
   /// **'Log in to Mi Account to sync paired devices'**
   String get settingsAccountSyncDevicesDesc;
 
+  /// No description provided for @settingsMiAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Mi Account'**
+  String get settingsMiAccount;
+
+  /// No description provided for @settingsMiAccountDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in and sync authkeys from bound devices'**
+  String get settingsMiAccountDesc;
+
+  /// No description provided for @settingsMiAccountLoginTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Mi Account login'**
+  String get settingsMiAccountLoginTitle;
+
+  /// No description provided for @settingsMiAccountUsername.
+  ///
+  /// In en, this message translates to:
+  /// **'Account'**
+  String get settingsMiAccountUsername;
+
+  /// No description provided for @settingsMiAccountPassword.
+  ///
+  /// In en, this message translates to:
+  /// **'Password'**
+  String get settingsMiAccountPassword;
+
+  /// No description provided for @settingsMiAccountRememberCredentials.
+  ///
+  /// In en, this message translates to:
+  /// **'Remember account and password'**
+  String get settingsMiAccountRememberCredentials;
+
+  /// No description provided for @settingsMiAccountLoginAndSync.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in and sync'**
+  String get settingsMiAccountLoginAndSync;
+
+  /// No description provided for @settingsMiAccountMissingCredentials.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your Mi Account and password'**
+  String get settingsMiAccountMissingCredentials;
+
+  /// No description provided for @settingsMiAccountTwoFactorPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Complete Mi Account two-factor verification in the verification page'**
+  String get settingsMiAccountTwoFactorPrompt;
+
+  /// No description provided for @settingsMiAccountLoginWindowClosed.
+  ///
+  /// In en, this message translates to:
+  /// **'The login window was closed'**
+  String get settingsMiAccountLoginWindowClosed;
+
+  /// No description provided for @settingsMiAccountSyncedDevices.
+  ///
+  /// In en, this message translates to:
+  /// **'Synced {count} Mi devices'**
+  String settingsMiAccountSyncedDevices(int count);
+
   /// No description provided for @settingsGeneralLanguage.
   ///
   /// In en, this message translates to:
@@ -1451,7 +1523,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsAboutLicencesDesc.
   ///
   /// In en, this message translates to:
-  /// **'Licenses of third-party software'**
+  /// **'Licenses for Flutter, dependencies and open source components'**
   String get settingsAboutLicencesDesc;
 
   /// No description provided for @settingsGuest.
@@ -1573,6 +1645,72 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Main Developer / Designer'**
   String get settingsTeamRoleMain;
+
+  /// No description provided for @settingsAboutSoftware.
+  ///
+  /// In en, this message translates to:
+  /// **'About software'**
+  String get settingsAboutSoftware;
+
+  /// No description provided for @settingsAboutSoftwareDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Version, project notes and development team'**
+  String get settingsAboutSoftwareDesc;
+
+  /// No description provided for @settingsAboutSoftwareTagline.
+  ///
+  /// In en, this message translates to:
+  /// **'A pretty fast wearable management tool for VelaOS and ZeppOS, built with Flutter'**
+  String get settingsAboutSoftwareTagline;
+
+  /// No description provided for @settingsAboutSoftwareRepository.
+  ///
+  /// In en, this message translates to:
+  /// **'Open GitHub repository'**
+  String get settingsAboutSoftwareRepository;
+
+  /// No description provided for @settingsAboutSoftwareOverview.
+  ///
+  /// In en, this message translates to:
+  /// **'Project notes'**
+  String get settingsAboutSoftwareOverview;
+
+  /// No description provided for @settingsAboutSoftwareOverviewBody.
+  ///
+  /// In en, this message translates to:
+  /// **'ZeroBox is a cross-platform wearable device management tool that lets you connect, manage and install resources on VelaOS / Xiaomi and ZeppOS devices without the official client'**
+  String get settingsAboutSoftwareOverviewBody;
+
+  /// No description provided for @settingsAboutSoftwareTeam.
+  ///
+  /// In en, this message translates to:
+  /// **'Development team'**
+  String get settingsAboutSoftwareTeam;
+
+  /// No description provided for @settingsAboutSoftwareReleaseName.
+  ///
+  /// In en, this message translates to:
+  /// **'Current release: development preview'**
+  String get settingsAboutSoftwareReleaseName;
+
+  /// No description provided for @settingsAboutSoftwareReleaseBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This release focuses on stabilizing resource transfer, unifying the Bluetooth platform layer, and introducing Xiaomi account login and device sync foundations. UI and queue experience are still being iterated.'**
+  String get settingsAboutSoftwareReleaseBody;
+
+  /// No description provided for @settingsAboutSoftwareBuildInfo.
+  ///
+  /// In en, this message translates to:
+  /// **'Build info'**
+  String get settingsAboutSoftwareBuildInfo;
+
+  /// No description provided for @settingsAboutSoftwareCopyright.
+  ///
+  /// In en, this message translates to:
+  /// **'Copyright © ZeroBox contributors'**
+  String get settingsAboutSoftwareCopyright;
 
   /// No description provided for @acknowledgementsKazumi.
   ///

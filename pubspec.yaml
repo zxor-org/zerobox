@@ -38,6 +38,7 @@ dependencies:
   flutter_riverpod: ^3.3.2
   url_launcher: ^6.3.1
   cached_network_image: ^3.4.1
+  dynamic_color: ^1.8.1
   dio: ^5.8.0
   csv: ^8.0.0
 

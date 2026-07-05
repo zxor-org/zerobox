@@ -1,6 +1,7 @@
 import 'package:zerobox/src/device/core/ble_requirement.dart';
 import 'package:zerobox/src/device/core/connect_type.dart';
 import 'package:zerobox/src/device/core/device_kind.dart';
+import 'package:zerobox/src/device/core/xiaomi_wearable_catalog.dart';
 
 class DeviceProfile {
   const DeviceProfile({
@@ -109,6 +110,34 @@ class DeviceRegistry {
       if (profile.matches(name)) return profile;
     }
     return unknown;
+  }
+
+  static DeviceProfile resolveIdentity({
+    required String name,
+    String? codename,
+  }) {
+    final identity =
+        xiaomiWearableIdentityForCodename(codename) ??
+        normalizeXiaomiWearableIdentity(name);
+    if (identity != null) {
+      return _resolveFamily(identity.family);
+    }
+
+    return resolve(name);
+  }
+
+  static DeviceProfile _resolveFamily(XiaomiWearableFamily family) {
+    return switch (family) {
+      XiaomiWearableFamily.band => _profileById('xiaomi-band'),
+      XiaomiWearableFamily.bandPro => _profileById('xiaomi-band-pro'),
+      XiaomiWearableFamily.redmiWatch => _profileById('redmi-watch'),
+      XiaomiWearableFamily.xiaomiWatch => _profileById('xiaomi-watch-s'),
+      XiaomiWearableFamily.unknown => unknown,
+    };
+  }
+
+  static DeviceProfile _profileById(String id) {
+    return profiles.firstWhere((profile) => profile.id == id);
   }
 
   static DeviceProfile unknown = DeviceProfile(

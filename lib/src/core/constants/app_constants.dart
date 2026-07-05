@@ -18,13 +18,13 @@ abstract final class AppConstants {
   static const List<TeamMember> teamMembers = [
     TeamMember(
       name: 'OrPudding',
-      role: 'Main Developer / Designer',
+      role: '主开发 / 设计',
       avatarAsset: 'assets/images/team/orpudding.jpg',
       githubUrl: 'https://github.com/orpudding',
     ),
     TeamMember(
       name: 'zxxhcj',
-      role: 'Main Developer / Designer',
+      role: 'ZeppOS 实现',
       avatarAsset: 'assets/images/team/zxxhcj.jpg',
       githubUrl: 'https://github.com/zxxhcj',
     ),

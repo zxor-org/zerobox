@@ -34,11 +34,14 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 class MainActivity : FlutterActivity() {
     @Volatile
     private var sppSocket: BluetoothSocket? = null
+    @Volatile
+    private var connectingSocket: BluetoothSocket? = null
     private var readThread: Thread? = null
     private var eventSink: EventChannel.EventSink? = null
     private var scanEventSink: EventChannel.EventSink? = null
@@ -50,6 +53,7 @@ class MainActivity : FlutterActivity() {
     private val sppUuid: UUID = UUID.fromString("00001101-0000-1000-8000-00805f9b34fb")
     private val sendLock = Object()
     private val sendExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val connectGeneration = AtomicLong(0)
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -383,8 +387,9 @@ class MainActivity : FlutterActivity() {
         }
 
         Thread {
+            disconnect()
+            val generation = connectGeneration.incrementAndGet()
             try {
-                disconnect()
                 val adapter = BluetoothAdapter.getDefaultAdapter()
                     ?: throw IOException("BluetoothAdapter is unavailable")
                 val device = adapter.getRemoteDevice(addr)
@@ -392,20 +397,24 @@ class MainActivity : FlutterActivity() {
                 if (adapter.isDiscovering) adapter.cancelDiscovery()
                 ensureBonded(device)
 
-                val connected = serviceUuid?.let { tryUuid(device, it) }
+                val connected = serviceUuid?.let { tryUuid(device, it, generation) }
                     ?: fallbackChannels.firstNotNullOfOrNull { channel ->
-                        tryChannel(device, channel)
+                        tryChannel(device, channel, generation)
                     }
-                    ?: trySdpUuid(device, serviceUuid)
+                    ?: trySdpUuid(device, serviceUuid, generation)
                     ?: throw IOException("No SPP channel/UUID available")
 
+                if (generation != connectGeneration.get()) {
+                    connected.socket.close()
+                    throw IOException("SPP connect was cancelled")
+                }
                 sppSocket = connected.socket
                 startReadThread()
                 mainHandler.post {
                     result.success(mapOf("channel" to connected.channel))
                 }
             } catch (e: Exception) {
-                disconnect()
+                disconnect(cancelConnect = false)
                 mainHandler.post {
                     result.error("CONNECT_FAILED", e.message ?: e.toString(), null)
                 }
@@ -492,37 +501,57 @@ class MainActivity : FlutterActivity() {
     }
 
     @SuppressLint("MissingPermission")
-    private fun tryUuid(device: BluetoothDevice, uuid: UUID): ConnectedSocket? {
+    private fun tryUuid(
+        device: BluetoothDevice,
+        uuid: UUID,
+        generation: Long,
+    ): ConnectedSocket? {
         runCatching {
             val socket = device.createInsecureRfcommSocketToServiceRecord(uuid)
-            if (connectSocket(socket, 6_000)) return ConnectedSocket(socket, -1)
+            if (connectSocket(socket, 6_000, generation)) {
+                return ConnectedSocket(socket, -1)
+            }
         }
         runCatching {
             val socket = device.createRfcommSocketToServiceRecord(uuid)
-            if (connectSocket(socket, 6_000)) return ConnectedSocket(socket, -1)
+            if (connectSocket(socket, 6_000, generation)) {
+                return ConnectedSocket(socket, -1)
+            }
         }
         return null
     }
 
     @SuppressLint("MissingPermission")
-    private fun tryChannel(device: BluetoothDevice, channel: Int): ConnectedSocket? {
+    private fun tryChannel(
+        device: BluetoothDevice,
+        channel: Int,
+        generation: Long,
+    ): ConnectedSocket? {
         val methods = listOf("createInsecureRfcommSocket", "createRfcommSocket")
         for (name in methods) {
             val socket = runCatching {
                 val method = device.javaClass.getMethod(name, Int::class.javaPrimitiveType)
                 method.invoke(device, channel) as BluetoothSocket
             }.getOrNull() ?: continue
-            if (connectSocket(socket, 3_000)) return ConnectedSocket(socket, channel)
+            if (connectSocket(socket, 3_000, generation)) {
+                return ConnectedSocket(socket, channel)
+            }
         }
         return null
     }
 
     @SuppressLint("MissingPermission")
-    private fun trySdpUuid(device: BluetoothDevice, preferredUuid: UUID?): ConnectedSocket? {
+    private fun trySdpUuid(
+        device: BluetoothDevice,
+        preferredUuid: UUID?,
+        generation: Long,
+    ): ConnectedSocket? {
         if (!device.fetchUuidsWithSdp()) {
             return null
         }
+        if (generation != connectGeneration.get()) return null
         repeat(20) {
+            if (generation != connectGeneration.get()) return null
             device.uuids
                 ?.firstOrNull {
                     if (preferredUuid != null) {
@@ -532,14 +561,23 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 ?.let { parcel ->
-                    tryUuid(device, parcel.uuid)?.let { return it }
+                    tryUuid(device, parcel.uuid, generation)?.let { return it }
                 }
             Thread.sleep(100)
         }
         return null
     }
 
-    private fun connectSocket(socket: BluetoothSocket, timeoutMs: Long): Boolean {
+    private fun connectSocket(
+        socket: BluetoothSocket,
+        timeoutMs: Long,
+        generation: Long,
+    ): Boolean {
+        if (generation != connectGeneration.get()) {
+            socket.close()
+            return false
+        }
+        connectingSocket = socket
         val latch = CountDownLatch(1)
         val connected = AtomicReference(false)
         val connector = Thread {
@@ -552,12 +590,18 @@ class MainActivity : FlutterActivity() {
             }
         }
         connector.start()
-        if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS) || !connected.get()) {
+        val ok = latch.await(timeoutMs, TimeUnit.MILLISECONDS) &&
+            connected.get() &&
+            generation == connectGeneration.get()
+        if (!ok) {
             try {
                 socket.close()
             } catch (_: IOException) {
             }
             return false
+        }
+        if (connectingSocket == socket) {
+            connectingSocket = null
         }
         return true
     }
@@ -585,12 +629,20 @@ class MainActivity : FlutterActivity() {
         readThread = thread
     }
 
-    private fun disconnect() {
+    private fun disconnect(cancelConnect: Boolean = true) {
+        if (cancelConnect) {
+            connectGeneration.incrementAndGet()
+        }
         val thread = readThread
         readThread = null
         if (thread != null && thread != Thread.currentThread()) {
             thread.interrupt()
         }
+        try {
+            connectingSocket?.close()
+        } catch (_: IOException) {
+        }
+        connectingSocket = null
         try {
             sppSocket?.close()
         } catch (_: IOException) {

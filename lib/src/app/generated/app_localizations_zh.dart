@@ -252,6 +252,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get acknowledgements => '特别鸣谢';
 
   @override
+  String get acknowledgementsDesc => '查看 ZeroBox 参考与致谢的开源项目';
+
+  @override
   String get developmentTeam => '开发团队';
 
   @override
@@ -572,6 +575,41 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsAccountSyncDevicesDesc => '登录小米账号同步配对设备';
 
   @override
+  String get settingsMiAccount => '小米账号';
+
+  @override
+  String get settingsMiAccountDesc => '登录并同步已绑定设备 authkey';
+
+  @override
+  String get settingsMiAccountLoginTitle => '小米账号登录';
+
+  @override
+  String get settingsMiAccountUsername => '账号';
+
+  @override
+  String get settingsMiAccountPassword => '密码';
+
+  @override
+  String get settingsMiAccountRememberCredentials => '记住账号密码';
+
+  @override
+  String get settingsMiAccountLoginAndSync => '登录并同步';
+
+  @override
+  String get settingsMiAccountMissingCredentials => '请输入小米账号和密码';
+
+  @override
+  String get settingsMiAccountTwoFactorPrompt => '请在验证页面完成小米账号二次验证';
+
+  @override
+  String get settingsMiAccountLoginWindowClosed => '登录窗口已关闭';
+
+  @override
+  String settingsMiAccountSyncedDevices(int count) {
+    return '已同步 $count 台小米设备';
+  }
+
+  @override
   String get settingsGeneralLanguage => '语言';
 
   @override
@@ -686,7 +724,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsAboutLicences => '开放源代码许可';
 
   @override
-  String get settingsAboutLicencesDesc => '第三方软件许可证';
+  String get settingsAboutLicencesDesc => '查看 Flutter、依赖库与开源组件许可证';
 
   @override
   String get settingsGuest => '访客';
@@ -747,6 +785,43 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsTeamRoleMain => '主开发 / 设计';
+
+  @override
+  String get settingsAboutSoftware => '关于软件';
+
+  @override
+  String get settingsAboutSoftwareDesc => '版本、项目说明与开发团队';
+
+  @override
+  String get settingsAboutSoftwareTagline =>
+      '一个又好看又快的 VelaOS / ZeppOS 可穿戴设备管理软件，使用 Flutter 构建';
+
+  @override
+  String get settingsAboutSoftwareRepository => '打开 GitHub 仓库';
+
+  @override
+  String get settingsAboutSoftwareOverview => '项目说明';
+
+  @override
+  String get settingsAboutSoftwareOverviewBody =>
+      'ZeroBox 是一款跨平台可穿戴设备管理工具，无需官方客户端，即可连接、管理 VelaOS / 小米与 ZeppOS 设备，并为其安装资源';
+
+  @override
+  String get settingsAboutSoftwareTeam => '开发团队';
+
+  @override
+  String get settingsAboutSoftwareReleaseName => '当前版本：开发预览';
+
+  @override
+  String get settingsAboutSoftwareReleaseBody =>
+      '本版本重点稳定了资源安装传输、统一蓝牙平台层，并引入小米账号登录与设备同步基础能力。UI 与队列体验仍在持续迭代。';
+
+  @override
+  String get settingsAboutSoftwareBuildInfo => '构建信息';
+
+  @override
+  String get settingsAboutSoftwareCopyright =>
+      'Copyright © ZeroBox contributors';
 
   @override
   String get acknowledgementsKazumi => 'Material Design 组件与界面设计参考';

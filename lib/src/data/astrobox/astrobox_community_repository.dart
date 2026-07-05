@@ -3,12 +3,11 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:zerobox/src/data/astrobox/astrobox_cdn.dart';
 import 'package:zerobox/src/data/astrobox/models/astrobox_models.dart';
+import 'package:zerobox/src/device/core/xiaomi_wearable_catalog.dart';
 
 class AstroBoxCommunityRepository {
-  AstroBoxCommunityRepository({
-    Dio? dio,
-    this.cdn = AstroBoxCdn.raw,
-  }) : _dio = dio ?? Dio();
+  AstroBoxCommunityRepository({Dio? dio, this.cdn = AstroBoxCdn.raw})
+    : _dio = dio ?? Dio();
 
   final Dio _dio;
   AstroBoxCdn cdn;
@@ -53,7 +52,7 @@ class AstroBoxCommunityRepository {
           cover: map['cover'] ?? '',
           tags: _splitSemicolon(map['tags']),
           deviceVendors: _splitSemicolon(map['device_vendors']),
-          devices: _splitSemicolon(map['devices']),
+          devices: _normalizeDeviceKeys(_splitSemicolon(map['devices'])),
           paidType: _parsePaidType(map['paid_type']),
         ),
       );
@@ -74,7 +73,7 @@ class AstroBoxCommunityRepository {
     try {
       final url = '$base/manifest_v2.json';
       final data = await _fetchJsonObject(url, 'manifest_v2.json');
-      return AstroBoxManifest.fromJson(data);
+      return _normalizeManifestDeviceKeys(AstroBoxManifest.fromJson(data));
     } on DioException catch (_) {
       final url = '$base/manifest.json';
       final data = await _fetchJsonObject(url, 'manifest.json');
@@ -120,7 +119,10 @@ class AstroBoxCommunityRepository {
 
   String buildRepoCdnUrl(AstroBoxIndexItem item) => _buildRepoCdnUrl(item);
 
-  String resolveDownloadUrl(AstroBoxIndexItem item, AstroBoxManifestDownload download) {
+  String resolveDownloadUrl(
+    AstroBoxIndexItem item,
+    AstroBoxManifestDownload download,
+  ) {
     if (download.url != null && download.url!.isNotEmpty) {
       return resolveImageUrl(item, download.url!);
     }
@@ -163,10 +165,7 @@ class AstroBoxCommunityRepository {
   }
 
   String _stripZeroWidth(String input) {
-    return input.replaceAll(
-      RegExp('[\u200b\u200c\u200d\u2060\ufeff]'),
-      '',
-    );
+    return input.replaceAll(RegExp('[\u200b\u200c\u200d\u2060\ufeff]'), '');
   }
 
   List<List<String>> _parseCsvRows(String csv) {
@@ -202,28 +201,26 @@ class AstroBoxCommunityRepository {
     return result;
   }
 
-  static const _v1DeviceKeyMap = {
-    // Xiaomi Watch S3 系列
-    'n62': 'xmws3',
-    // Xiaomi Watch S4 系列
-    'o62': 'xmws4',
-    'o62m': 'xmws4xring',
-    // Xiaomi Watch S5 系列
-    'p62': 'xmws5',
-    'p62m': 'xmws5xring',
-    // REDMI Watch 5
-    'o65': 'xmrw5',
-    'o65m': 'xmrw5xring',
-    // Band 系列
-    'n66': 'xmb9',
-    'n67': 'xmb9p',
-    'o66': 'xmb10',
-    'o66nfc': 'xmb10nfc',
-    // REDMI Watch 6
-    'p65': 'xmrw6',
-  };
+  List<String> _normalizeDeviceKeys(List<String> keys) {
+    return keys
+        .map(_normalizeDeviceKey)
+        .where((key) => key.isNotEmpty)
+        .toSet()
+        .toList();
+  }
 
-  static String _mapV1DeviceKey(String key) => _v1DeviceKeyMap[key] ?? key;
+  String _normalizeDeviceKey(String key) {
+    final codename = normalizeXiaomiWearableCodename(key);
+    return codename.isNotEmpty ? codename : key.trim();
+  }
+
+  AstroBoxManifest _normalizeManifestDeviceKeys(AstroBoxManifest manifest) {
+    final downloads = <String, AstroBoxManifestDownload>{};
+    manifest.downloads.forEach((key, value) {
+      downloads[_normalizeDeviceKey(key)] = value;
+    });
+    return manifest.copyWith(downloads: downloads);
+  }
 
   static int? _parseOptionalU64(dynamic value) {
     if (value is int) return value;
@@ -237,10 +234,12 @@ class AstroBoxCommunityRepository {
     if (raw is List) {
       return raw
           .whereType<Map<String, dynamic>>()
-          .map((a) => AstroBoxManifestAuthor(
-                name: a['name']?.toString() ?? '',
-                bindAbAccount: a['bindABAccount'] == true,
-              ))
+          .map(
+            (a) => AstroBoxManifestAuthor(
+              name: a['name']?.toString() ?? '',
+              bindAbAccount: a['bindABAccount'] == true,
+            ),
+          )
           .where((a) => a.name.isNotEmpty)
           .toList();
     }
@@ -264,8 +263,9 @@ class AstroBoxCommunityRepository {
           'download "$key" in ${item.id} manifest is ${value.runtimeType}, expected object',
         );
       }
-      final mappedKey = _mapV1DeviceKey(key);
-      final versionCode = _parseOptionalU64(value['versionCode']) ??
+      final mappedKey = _normalizeDeviceKey(key);
+      final versionCode =
+          _parseOptionalU64(value['versionCode']) ??
           _parseOptionalU64(value['version_code']);
       downloads[mappedKey] = AstroBoxManifestDownload(
         version: value['version']?.toString() ?? '',
@@ -289,7 +289,9 @@ class AstroBoxCommunityRepository {
         icon: itemMap['icon']?.toString() ?? item.icon,
         cover: itemMap['cover']?.toString() ?? item.cover,
         paidType: item.paidType,
-        author: authors.isNotEmpty ? authors : [AstroBoxManifestAuthor(name: item.repoOwner)],
+        author: authors.isNotEmpty
+            ? authors
+            : [AstroBoxManifestAuthor(name: item.repoOwner)],
       ),
       downloads: downloads,
     );

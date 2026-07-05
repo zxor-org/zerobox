@@ -32,6 +32,10 @@ class XiaomiDeviceFactory implements DeviceEntityFactory {
     );
 
     final component = XiaomiDeviceComponent(transport: transport);
+    component.onTransportFailure = (error, stackTrace) {
+      entity.emit(DeviceError(deviceId: id, error: error.toString()));
+      entity.emit(TransportDisconnected(deviceId: id));
+    };
     entity.set(component);
 
     final dispatcher = XiaomiDispatcher(component);

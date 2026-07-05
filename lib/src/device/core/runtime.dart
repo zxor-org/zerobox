@@ -23,7 +23,7 @@ class DeviceRuntime {
     required Transport transport,
     required DeviceEntityFactory factory,
   }) {
-    removeDevice(id);
+    unawaited(removeDevice(id));
     _log.info('[$id] spawning $kind device');
 
     final entity = factory.create(
@@ -37,18 +37,18 @@ class DeviceRuntime {
     return entity;
   }
 
-  void removeDevice(String id) {
+  Future<void> removeDevice(String id) async {
     final entity = _entities.remove(id);
     if (entity != null) {
       _log.info('[$id] removing device');
-      unawaited(entity.dispose());
+      await entity.dispose();
     }
   }
 
   void clear() {
     final ids = _entities.keys.toList();
     for (final id in ids) {
-      removeDevice(id);
+      unawaited(removeDevice(id));
     }
   }
 

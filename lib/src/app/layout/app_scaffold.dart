@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zerobox/src/app/generated/app_localizations.dart';
+import 'package:zerobox/src/app/widgets/smooth_linear_progress_indicator.dart';
 import 'package:zerobox/src/core/utils/layout.dart';
 import 'package:zerobox/src/features/resources/services/download_queue_notifier.dart';
 
@@ -16,15 +17,36 @@ class AppScaffold extends ConsumerWidget {
     final l10n = AppLocalizations.of(context)!;
 
     if (width >= LayoutBreakpoint.medium) {
-      return _buildSideMenu(context, l10n);
+      return _wrapPredictiveBack(context, _buildSideMenu(context, l10n));
     }
-    return _buildBottomMenu(context, l10n, ref);
+    return _wrapPredictiveBack(context, _buildBottomMenu(context, l10n, ref));
   }
 
-  Widget _buildBottomMenu(BuildContext context, AppLocalizations l10n, WidgetRef ref) {
-    final badgeCount = ref.watch(downloadQueueProvider.select(
-      (tasks) => tasks.where((t) => t.status != ResourceTaskStatus.completed).length,
-    ));
+  Widget _wrapPredictiveBack(BuildContext context, Widget child) {
+    final routerCanPop = GoRouter.of(context).canPop();
+    final isHomeBranch = navigationShell.currentIndex == 0;
+
+    return PopScope(
+      canPop: routerCanPop || isHomeBranch,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop || navigationShell.currentIndex == 0) return;
+        navigationShell.goBranch(0);
+      },
+      child: child,
+    );
+  }
+
+  Widget _buildBottomMenu(
+    BuildContext context,
+    AppLocalizations l10n,
+    WidgetRef ref,
+  ) {
+    final badgeCount = ref.watch(
+      downloadQueueProvider.select(
+        (tasks) =>
+            tasks.where((t) => t.status != ResourceTaskStatus.completed).length,
+      ),
+    );
 
     return Scaffold(
       body: Container(
@@ -46,9 +68,7 @@ class AppScaffold extends ConsumerWidget {
           NavigationDestination(
             selectedIcon: const Icon(Icons.watch),
             icon: badgeCount > 0
-                ? Badge(
-                    child: const Icon(Icons.watch_outlined),
-                  )
+                ? Badge(child: const Icon(Icons.watch_outlined))
                 : const Icon(Icons.watch_outlined),
             label: l10n.devicesTab,
           ),
@@ -110,24 +130,24 @@ class AppScaffold extends ConsumerWidget {
               }
             },
           ),
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface,
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(28),
-                    bottomLeft: Radius.circular(28),
-                  ),
-                ),
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(28),
-                    bottomLeft: Radius.circular(28),
-                  ),
-                  child: navigationShell,
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(28),
+                  bottomLeft: Radius.circular(28),
                 ),
               ),
+              child: ClipRRect(
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(28),
+                  bottomLeft: Radius.circular(28),
+                ),
+                child: navigationShell,
+              ),
             ),
+          ),
         ],
       ),
     );
@@ -174,13 +194,19 @@ class DeviceTaskQueueSheet extends StatelessWidget {
                   ),
                   Consumer(
                     builder: (context, ref, child) {
-                      final hasCompleted = ref.watch(downloadQueueProvider.select(
-                        (tasks) => tasks.any((t) => t.status == ResourceTaskStatus.completed),
-                      ));
+                      final hasCompleted = ref.watch(
+                        downloadQueueProvider.select(
+                          (tasks) => tasks.any(
+                            (t) => t.status == ResourceTaskStatus.completed,
+                          ),
+                        ),
+                      );
                       if (!hasCompleted) return const SizedBox.shrink();
                       return TextButton(
                         onPressed: () {
-                          ref.read(downloadQueueProvider.notifier).clearCompleted();
+                          ref
+                              .read(downloadQueueProvider.notifier)
+                              .clearCompleted();
                         },
                         child: const Text('清除已完成'),
                       );
@@ -231,14 +257,18 @@ class _TaskTile extends ConsumerWidget {
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('${task.manifest.item.author.firstOrNull?.name ?? task.item.repoOwner} · ${task.codename}'),
+          Text(
+            '${task.manifest.item.author.firstOrNull?.name ?? task.item.repoOwner} · ${task.codename}',
+          ),
           if (task.status == ResourceTaskStatus.downloading ||
               task.status == ResourceTaskStatus.installing) ...[
             const SizedBox(height: 6),
-            LinearProgressIndicator(value: task.progress),
+            SmoothLinearProgressIndicator(value: task.progress),
             const SizedBox(height: 2),
             Text(
-              task.status == ResourceTaskStatus.downloading ? '下载中 ${(task.progress * 100).toInt()}%' : '安装中 ${(task.progress * 100).toInt()}%',
+              task.status == ResourceTaskStatus.downloading
+                  ? '下载中 ${(task.progress * 100).toInt()}%'
+                  : '安装中 ${(task.progress * 100).toInt()}%',
               style: textTheme.bodySmall,
             ),
           ],
@@ -261,7 +291,10 @@ class _TaskTile extends ConsumerWidget {
       ResourceTaskStatus.pending => const Icon(Icons.hourglass_empty),
       ResourceTaskStatus.downloading => const Icon(Icons.downloading),
       ResourceTaskStatus.installing => const Icon(Icons.memory),
-      ResourceTaskStatus.completed => Icon(Icons.check_circle, color: colorScheme.primary),
+      ResourceTaskStatus.completed => Icon(
+        Icons.check_circle,
+        color: colorScheme.primary,
+      ),
       ResourceTaskStatus.failed => Icon(Icons.error, color: colorScheme.error),
     };
   }
@@ -269,29 +302,30 @@ class _TaskTile extends ConsumerWidget {
   Widget? _trailingButton(BuildContext context, WidgetRef ref) {
     return switch (task.status) {
       ResourceTaskStatus.pending => IconButton(
-          icon: const Icon(Icons.delete_outline),
-          onPressed: () {
-            ref.read(downloadQueueProvider.notifier).remove(task.id);
-          },
-        ),
-      ResourceTaskStatus.downloading || ResourceTaskStatus.installing => IconButton(
-          icon: const Icon(Icons.stop_circle_outlined),
-          onPressed: () {
-            ref.read(downloadQueueProvider.notifier).remove(task.id);
-          },
-        ),
+        icon: const Icon(Icons.delete_outline),
+        onPressed: () {
+          ref.read(downloadQueueProvider.notifier).remove(task.id);
+        },
+      ),
+      ResourceTaskStatus.downloading ||
+      ResourceTaskStatus.installing => IconButton(
+        icon: const Icon(Icons.stop_circle_outlined),
+        onPressed: () {
+          ref.read(downloadQueueProvider.notifier).remove(task.id);
+        },
+      ),
       ResourceTaskStatus.failed => IconButton(
-          icon: const Icon(Icons.refresh),
-          onPressed: () {
-            ref.read(downloadQueueProvider.notifier).retry(task.id);
-          },
-        ),
+        icon: const Icon(Icons.refresh),
+        onPressed: () {
+          ref.read(downloadQueueProvider.notifier).retry(task.id);
+        },
+      ),
       ResourceTaskStatus.completed => IconButton(
-          icon: const Icon(Icons.delete_outline),
-          onPressed: () {
-            ref.read(downloadQueueProvider.notifier).remove(task.id);
-          },
-        ),
+        icon: const Icon(Icons.delete_outline),
+        onPressed: () {
+          ref.read(downloadQueueProvider.notifier).remove(task.id);
+        },
+      ),
     };
   }
 }

@@ -56,11 +56,19 @@ class DeviceEntity {
     _log.info('[$id] start listening');
     _incomingSubscription = transport.incomingData.listen(
       _onIncomingData,
-      onError: (Object e) => _log.warning('[$id] incoming data stream error', e),
+      onError: (Object e) {
+        _log.warning('[$id] incoming data stream error', e);
+        _emitDisconnected();
+      },
+      onDone: () {
+        _log.info('[$id] incoming data stream closed');
+        _emitDisconnected();
+      },
     );
     _connectionSubscription = transport.connectionState.listen(
       _onConnectionStateChanged,
-      onError: (Object e) => _log.warning('[$id] connection state stream error', e),
+      onError: (Object e) =>
+          _log.warning('[$id] connection state stream error', e),
     );
   }
 
@@ -76,9 +84,13 @@ class DeviceEntity {
   void _onConnectionStateChanged(bool connected) {
     _log.info('[$id] transport connection state: $connected');
     if (!connected) {
-      emit(DeviceError(deviceId: id, error: 'transport disconnected'));
-      emit(TransportDisconnected(deviceId: id));
+      _emitDisconnected();
     }
+  }
+
+  void _emitDisconnected() {
+    emit(DeviceError(deviceId: id, error: 'transport disconnected'));
+    emit(TransportDisconnected(deviceId: id));
   }
 
   Future<void> dispose() async {

@@ -189,6 +189,10 @@ class BleGattDriver {
       _log.fine(
         'scanned device: $name @ ${device.deviceId} rssi=${device.rssi}',
       );
+      _log.info(
+        'device_identity platform.ble_scan '
+        'addr=${device.deviceId} bleName="$name" rssi=${device.rssi}',
+      );
       final scanned = BluetoothEndpoint(
         name: name.isEmpty ? 'Unknown device' : name,
         address: device.deviceId,

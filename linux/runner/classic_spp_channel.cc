@@ -38,8 +38,10 @@ constexpr char kBluezDeviceInterface[] = "org.bluez.Device1";
 
 std::mutex g_mutex;
 int g_fd = -1;
+int g_connect_fd = -1;
 std::thread g_read_thread;
 std::atomic_bool g_running(false);
+std::atomic_uint64_t g_connect_generation(0);
 FlEventChannel* g_event_channel = nullptr;
 FlEventChannel* g_scan_event_channel = nullptr;
 
@@ -192,6 +194,7 @@ struct ConnectResult {
   bool success = false;
   int fd = -1;
   uint8_t channel = 0;
+  uint64_t generation = 0;
   std::string error;
   FlMethodCall* method_call = nullptr;
 };
@@ -373,6 +376,11 @@ void collect_bluez_devices(bool emit) {
 }
 
 void close_socket_locked() {
+  if (g_connect_fd >= 0) {
+    shutdown(g_connect_fd, SHUT_RDWR);
+    close(g_connect_fd);
+    g_connect_fd = -1;
+  }
   if (g_fd >= 0) {
     shutdown(g_fd, SHUT_RDWR);
     close(g_fd);
@@ -400,19 +408,43 @@ void stop_all() {
 }
 
 bool connect_rfcomm(const std::string& addr, uint8_t channel, int timeout_sec,
-                    std::string* error_out, int* fd_out) {
+                    uint64_t generation, std::string* error_out,
+                    int* fd_out) {
   int fd = socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
   if (fd < 0) {
     *error_out = std::string("socket failed: ") + strerror(errno);
     return false;
   }
+  {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (generation != g_connect_generation.load()) {
+      *error_out = "connect cancelled";
+      close(fd);
+      return false;
+    }
+    g_connect_fd = fd;
+  }
+
+  auto close_connect_fd = [&]() {
+    bool should_close = false;
+    {
+      std::lock_guard<std::mutex> lock(g_mutex);
+      if (g_connect_fd == fd) {
+        g_connect_fd = -1;
+        should_close = true;
+      }
+    }
+    if (should_close) {
+      close(fd);
+    }
+  };
 
   sockaddr_rc remote = {};
   remote.rc_family = AF_BLUETOOTH;
   remote.rc_channel = channel;
   if (str2ba(addr.c_str(), &remote.rc_bdaddr) != 0) {
     *error_out = "invalid bluetooth address";
-    close(fd);
+    close_connect_fd();
     return false;
   }
 
@@ -423,21 +455,50 @@ bool connect_rfcomm(const std::string& addr, uint8_t channel, int timeout_sec,
   if (rc < 0 && errno != EINPROGRESS) {
     *error_out = std::string("connect failed on channel ") +
                  std::to_string(channel) + ": " + strerror(errno);
-    close(fd);
+    close_connect_fd();
     return false;
   }
 
   if (rc < 0) {
-    fd_set write_fds;
-    FD_ZERO(&write_fds);
-    FD_SET(fd, &write_fds);
-    timeval tv = {};
-    tv.tv_sec = timeout_sec;
-    rc = select(fd + 1, nullptr, &write_fds, nullptr, &tv);
-    if (rc <= 0) {
-      *error_out = rc == 0 ? "connect timed out" : strerror(errno);
-      close(fd);
-      return false;
+    const auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(timeout_sec);
+    while (true) {
+      if (generation != g_connect_generation.load()) {
+        *error_out = "connect cancelled";
+        close_connect_fd();
+        return false;
+      }
+
+      const auto now = std::chrono::steady_clock::now();
+      if (now >= deadline) {
+        *error_out = "connect timed out";
+        close_connect_fd();
+        return false;
+      }
+
+      const auto wait =
+          std::min(std::chrono::milliseconds(250),
+                   std::chrono::duration_cast<std::chrono::milliseconds>(
+                       deadline - now));
+      fd_set write_fds;
+      FD_ZERO(&write_fds);
+      FD_SET(fd, &write_fds);
+      timeval tv = {};
+      tv.tv_sec = static_cast<time_t>(wait.count() / 1000);
+      tv.tv_usec = static_cast<suseconds_t>((wait.count() % 1000) * 1000);
+      rc = select(fd + 1, nullptr, &write_fds, nullptr, &tv);
+      if (rc < 0 && errno == EINTR) {
+        continue;
+      }
+      if (rc < 0) {
+        *error_out = strerror(errno);
+        close_connect_fd();
+        return false;
+      }
+      if (rc == 0) {
+        continue;
+      }
+      break;
     }
 
     int socket_error = 0;
@@ -447,12 +508,29 @@ bool connect_rfcomm(const std::string& addr, uint8_t channel, int timeout_sec,
       *error_out = std::string("connect failed on channel ") +
                    std::to_string(channel) + ": " +
                    strerror(socket_error == 0 ? errno : socket_error);
-      close(fd);
+      close_connect_fd();
       return false;
     }
   }
 
   fcntl(fd, F_SETFL, flags);
+  bool close_after_lock = false;
+  {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (generation != g_connect_generation.load()) {
+      *error_out = "connect cancelled";
+      if (g_connect_fd == fd) {
+        g_connect_fd = -1;
+        close_after_lock = true;
+      }
+    } else if (g_connect_fd == fd) {
+      g_connect_fd = -1;
+    }
+  }
+  if (close_after_lock) {
+    close(fd);
+    return false;
+  }
   *fd_out = fd;
   return true;
 }
@@ -493,9 +571,21 @@ void finish_connect_on_main(gpointer user_data) {
   std::unique_ptr<ConnectResult> result(
       static_cast<ConnectResult*>(user_data));
 
+  if (result->generation != g_connect_generation.load()) {
+    if (result->fd >= 0) {
+      shutdown(result->fd, SHUT_RDWR);
+      close(result->fd);
+    }
+    respond_error(result->method_call, "connect_cancelled",
+                  "SPP connect was cancelled");
+    g_object_unref(result->method_call);
+    return;
+  }
+
   if (!result->success || result->fd < 0) {
     respond_error(result->method_call, "connect_failed",
                   result->error.empty() ? "connect failed" : result->error);
+    g_object_unref(result->method_call);
     return;
   }
 
@@ -511,6 +601,7 @@ void finish_connect_on_main(gpointer user_data) {
                            fl_value_new_int(result->channel));
   g_autoptr(GError) error = nullptr;
   fl_method_call_respond_success(result->method_call, response, &error);
+  g_object_unref(result->method_call);
 }
 
 FlValue* lookup_arg(FlMethodCall* method_call, const char* key) {
@@ -529,14 +620,19 @@ void respond_error(FlMethodCall* method_call, const char* code,
 }
 
 void handle_connect_async(std::string addr, std::vector<uint8_t> channels,
-                          FlMethodCall* method_call) {
-  std::thread([addr, channels, method_call]() {
+                          FlMethodCall* method_call, uint64_t generation) {
+  std::thread([addr, channels, method_call, generation]() {
     std::string last_error;
     int connected_fd = -1;
     uint8_t connected_channel = 0;
 
     for (uint8_t channel : channels) {
-      if (connect_rfcomm(addr, channel, 10, &last_error, &connected_fd)) {
+      if (generation != g_connect_generation.load()) {
+        last_error = "connect cancelled";
+        break;
+      }
+      if (connect_rfcomm(addr, channel, 10, generation, &last_error,
+                         &connected_fd)) {
         connected_channel = channel;
         break;
       }
@@ -545,7 +641,12 @@ void handle_connect_async(std::string addr, std::vector<uint8_t> channels,
     if (connected_fd < 0) {
       std::this_thread::sleep_for(std::chrono::milliseconds(300));
       for (uint8_t channel : channels) {
-        if (connect_rfcomm(addr, channel, 10, &last_error, &connected_fd)) {
+        if (generation != g_connect_generation.load()) {
+          last_error = "connect cancelled";
+          break;
+        }
+        if (connect_rfcomm(addr, channel, 10, generation, &last_error,
+                           &connected_fd)) {
           connected_channel = channel;
           break;
         }
@@ -554,6 +655,7 @@ void handle_connect_async(std::string addr, std::vector<uint8_t> channels,
 
     auto* result = new ConnectResult();
     result->method_call = method_call;
+    result->generation = generation;
     if (connected_fd >= 0) {
       result->success = true;
       result->fd = connected_fd;
@@ -599,11 +701,12 @@ void handle_connect(FlMethodCall* method_call) {
   if (channels.empty()) {
     channels = {5, 1};
   }
+  const uint64_t generation = g_connect_generation.fetch_add(1) + 1;
   stop_all();
 
   // Keep the method_call alive while the background thread works.
   g_object_ref(method_call);
-  handle_connect_async(addr, channels, method_call);
+  handle_connect_async(addr, channels, method_call, generation);
 }
 
 void handle_send(FlMethodCall* method_call) {
@@ -633,6 +736,7 @@ void handle_send(FlMethodCall* method_call) {
 }
 
 void handle_disconnect(FlMethodCall* method_call) {
+  g_connect_generation.fetch_add(1);
   stop_all();
   g_autoptr(GError) error = nullptr;
   fl_method_call_respond_success(method_call, nullptr, &error);

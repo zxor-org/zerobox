@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zerobox/src/app/generated/app_localizations.dart';
 import 'package:zerobox/src/app/widgets/page_container.dart';
+import 'package:zerobox/src/app/widgets/smooth_linear_progress_indicator.dart';
 import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
 import 'package:zerobox/src/core/logging/logging_service.dart';
@@ -118,7 +119,8 @@ class _InstallLocalPageState extends ConsumerState<InstallLocalPage> {
         if (!candidates.contains(name)) continue;
         final text = utf8.decode(entry.content);
         final json = jsonDecode(text) as Map<String, dynamic>;
-        final pkg = json['package'] ?? json['packageName'] ?? json['package_name'];
+        final pkg =
+            json['package'] ?? json['packageName'] ?? json['package_name'];
         if (pkg is String && pkg.isNotEmpty) return pkg;
       }
     } catch (e, st) {
@@ -136,7 +138,8 @@ class _InstallLocalPageState extends ConsumerState<InstallLocalPage> {
           if (entry.name.toLowerCase().endsWith('.json')) {
             final text = utf8.decode(entry.content);
             final json = jsonDecode(text) as Map<String, dynamic>;
-            final id = json['id'] ?? json['watchfaceId'] ?? json['watchface_id'];
+            final id =
+                json['id'] ?? json['watchfaceId'] ?? json['watchface_id'];
             if (id is String && _isValidWatchfaceId(id)) return id;
           }
         }
@@ -170,9 +173,11 @@ class _InstallLocalPageState extends ConsumerState<InstallLocalPage> {
   }
 
   bool _looksLikeZip(Uint8List bytes) =>
-      bytes.length >= 4 && bytes[0] == 0x50 && bytes[1] == 0x4B &&
-      bytes[2] == 0x03 && bytes[3] == 0x04;
-
+      bytes.length >= 4 &&
+      bytes[0] == 0x50 &&
+      bytes[1] == 0x4B &&
+      bytes[2] == 0x03 &&
+      bytes[3] == 0x04;
 
   Future<void> _install() async {
     final bytes = _fileBytes;
@@ -241,7 +246,6 @@ class _InstallLocalPageState extends ConsumerState<InstallLocalPage> {
         child: ListView(
           padding: const EdgeInsets.symmetric(
             horizontal: StyleConstants.pagePadding,
-            vertical: StyleConstants.pagePadding,
           ),
           children: [
             SectionCard(
@@ -315,7 +319,9 @@ class _InstallLocalPageState extends ConsumerState<InstallLocalPage> {
             ],
             if (_installing) ...[
               const SizedBox(height: 24),
-              LinearProgressIndicator(value: _progress > 0 ? _progress : null),
+              SmoothLinearProgressIndicator(
+                value: _progress > 0 ? _progress : null,
+              ),
               const SizedBox(height: 8),
               Text('${(_progress * 100).toStringAsFixed(0)}%'),
             ],

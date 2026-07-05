@@ -43,8 +43,8 @@ class SettingsPage extends ConsumerWidget {
               SettingsTile.navigation(
                 onPressed: (_) => _showMiAccountLogin(context, ref),
                 leading: const Icon(Icons.account_circle_outlined),
-                title: const Text('小米账号'),
-                description: const Text('登录并同步已绑定设备 authkey'),
+                title: Text(l10n.settingsMiAccount),
+                description: Text(l10n.settingsMiAccountDesc),
               ),
               SettingsTile.navigation(
                 onPressed: (_) => _showNotImplemented(context),
@@ -59,7 +59,7 @@ class SettingsPage extends ConsumerWidget {
             title: l10n.settingsGeneral,
             tiles: [
               SettingsTile.navigation(
-                onPressed: (_) => _showLanguageSelector(context, ref),
+                onPressed: (context) => _showLanguageSelector(context, ref),
                 leading: const Icon(Icons.language_outlined),
                 title: Text(l10n.settingsGeneralLanguage),
                 description: Text(l10n.settingsGeneralLanguageDesc),
@@ -134,19 +134,22 @@ class SettingsPage extends ConsumerWidget {
             title: l10n.settingsAbout,
             tiles: [
               SettingsTile.navigation(
-                onPressed: (_) => context.push('/settings/team'),
-                leading: const Icon(Icons.people_outline),
-                title: Text(l10n.developmentTeam),
+                onPressed: (_) => context.push('/settings/about'),
+                leading: const Icon(Icons.info_outline),
+                title: Text(l10n.settingsAboutSoftware),
+                description: Text(l10n.settingsAboutSoftwareDesc),
               ),
               SettingsTile.navigation(
                 onPressed: (_) => _showLicensePage(context),
                 leading: const Icon(Icons.description_outlined),
                 title: Text(l10n.openSourceLicenses),
+                description: Text(l10n.settingsAboutLicencesDesc),
               ),
               SettingsTile.navigation(
                 onPressed: (_) => context.push('/settings/acknowledgements'),
                 leading: const Icon(Icons.favorite_outline),
                 title: Text(l10n.acknowledgements),
+                description: Text(l10n.acknowledgementsDesc),
               ),
               SettingsTile.navigation(
                 onPressed: (_) =>
@@ -192,13 +195,16 @@ class SettingsPage extends ConsumerWidget {
       renderBox.size.bottomRight(Offset.zero),
       ancestor: overlay,
     );
+    final anchor = Rect.fromLTWH(
+      tileBottomRight.dx - 48,
+      tileTopLeft.dy,
+      48,
+      renderBox.size.height,
+    );
 
     final selected = await showMenu<AstroBoxCdn>(
       context: tileContext,
-      position: RelativeRect.fromRect(
-        Rect.fromPoints(tileTopLeft, tileBottomRight),
-        Offset.zero & overlay.size,
-      ),
+      position: RelativeRect.fromRect(anchor, Offset.zero & overlay.size),
       initialValue: current,
       items: AstroBoxCdn.values.map((cdn) {
         return PopupMenuItem<AstroBoxCdn>(
@@ -216,6 +222,7 @@ class SettingsPage extends ConsumerWidget {
 
   Future<void> _showMiAccountLogin(BuildContext context, WidgetRef ref) async {
     final rootContext = context;
+    final l10n = AppLocalizations.of(context)!;
     final prefs = SharedPrefsService.instance;
     var rememberCredentials = prefs.getBool(_keyMiAccountRemember) ?? false;
     final usernameController = TextEditingController(
@@ -238,7 +245,7 @@ class SettingsPage extends ConsumerWidget {
               final password = passwordController.text;
               if (username.isEmpty || password.isEmpty) {
                 setState(() {
-                  error = '请输入小米账号和密码';
+                  error = l10n.settingsMiAccountMissingCredentials;
                 });
                 return;
               }
@@ -268,16 +275,20 @@ class SettingsPage extends ConsumerWidget {
                 }
                 if (rootContext.mounted) {
                   ScaffoldMessenger.of(rootContext).showSnackBar(
-                    SnackBar(content: Text('已同步 $imported 台小米设备')),
+                    SnackBar(
+                      content: Text(
+                        l10n.settingsMiAccountSyncedDevices(imported),
+                      ),
+                    ),
                   );
                 }
               } on MiAccountTwoFactorRequired catch (e) {
                 try {
                   setState(() {
-                    error = '请在弹出的验证页面完成小米账号二次验证';
+                    error = l10n.settingsMiAccountTwoFactorPrompt;
                   });
                   if (!rootContext.mounted) {
-                    throw StateError('登录窗口已关闭');
+                    throw StateError(l10n.settingsMiAccountLoginWindowClosed);
                   }
                   final cookieHeader = await createMiAccountTwoFactorResolver()
                       .resolve(rootContext, Uri.parse(e.url));
@@ -301,7 +312,11 @@ class SettingsPage extends ConsumerWidget {
                   }
                   if (rootContext.mounted) {
                     ScaffoldMessenger.of(rootContext).showSnackBar(
-                      SnackBar(content: Text('已同步 $imported 台小米设备')),
+                      SnackBar(
+                        content: Text(
+                          l10n.settingsMiAccountSyncedDevices(imported),
+                        ),
+                      ),
                     );
                   }
                 } catch (twoFactorError) {
@@ -319,7 +334,7 @@ class SettingsPage extends ConsumerWidget {
             }
 
             return AlertDialog(
-              title: const Text('小米账号登录'),
+              title: Text(l10n.settingsMiAccountLoginTitle),
               content: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 420),
                 child: Column(
@@ -329,9 +344,9 @@ class SettingsPage extends ConsumerWidget {
                       controller: usernameController,
                       enabled: !running,
                       keyboardType: TextInputType.emailAddress,
-                      decoration: const InputDecoration(
-                        labelText: '账号',
-                        prefixIcon: Icon(Icons.account_circle_outlined),
+                      decoration: InputDecoration(
+                        labelText: l10n.settingsMiAccountUsername,
+                        prefixIcon: const Icon(Icons.account_circle_outlined),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -340,7 +355,7 @@ class SettingsPage extends ConsumerWidget {
                       enabled: !running,
                       obscureText: obscurePassword,
                       decoration: InputDecoration(
-                        labelText: '密码',
+                        labelText: l10n.settingsMiAccountPassword,
                         prefixIcon: const Icon(Icons.lock_outline),
                         suffixIcon: IconButton(
                           onPressed: running
@@ -373,7 +388,7 @@ class SettingsPage extends ConsumerWidget {
                             },
                       contentPadding: EdgeInsets.zero,
                       controlAffinity: ListTileControlAffinity.leading,
-                      title: const Text('记住账号密码'),
+                      title: Text(l10n.settingsMiAccountRememberCredentials),
                       dense: true,
                     ),
                     if (running) ...[
@@ -399,11 +414,11 @@ class SettingsPage extends ConsumerWidget {
                       : () {
                           Navigator.of(dialogContext).pop();
                         },
-                  child: const Text('取消'),
+                  child: Text(l10n.settingsCancel),
                 ),
                 FilledButton(
                   onPressed: running ? null : submit,
-                  child: const Text('登录并同步'),
+                  child: Text(l10n.settingsMiAccountLoginAndSync),
                 ),
               ],
             );
@@ -437,42 +452,42 @@ class SettingsPage extends ConsumerWidget {
     WidgetRef ref,
   ) async {
     final current = ref.read(localeSettingsProvider).locale;
-    final selected = await showModalBottomSheet<AppLocale>(
-      context: context,
-      builder: (context) {
-        final l10n = AppLocalizations.of(context)!;
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+    final l10n = AppLocalizations.of(context)!;
+    final tileContext = context;
+    final renderBox = tileContext.findRenderObject() as RenderBox?;
+    final overlay =
+        Navigator.of(tileContext).overlay?.context.findRenderObject()
+            as RenderBox?;
+    if (renderBox == null || overlay == null) return;
+
+    final tileTopLeft = renderBox.localToGlobal(Offset.zero, ancestor: overlay);
+    final tileBottomRight = renderBox.localToGlobal(
+      renderBox.size.bottomRight(Offset.zero),
+      ancestor: overlay,
+    );
+    final anchor = Rect.fromLTWH(
+      tileBottomRight.dx - 48,
+      tileTopLeft.dy,
+      48,
+      renderBox.size.height,
+    );
+
+    final selected = await showMenu<AppLocale>(
+      context: tileContext,
+      position: RelativeRect.fromRect(anchor, Offset.zero & overlay.size),
+      initialValue: current,
+      items: AppLocale.values.map((locale) {
+        final selected = locale == current;
+        return PopupMenuItem<AppLocale>(
+          value: locale,
+          child: Row(
             children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  l10n.settingsGeneralLanguage,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 18,
-                  ),
-                ),
-              ),
-              ...AppLocale.values.map((locale) {
-                final label = _localeLabel(l10n, locale);
-                return ListTile(
-                  leading: Icon(
-                    Icons.language_outlined,
-                    color: locale == current
-                        ? Theme.of(context).colorScheme.primary
-                        : null,
-                  ),
-                  title: Text(label),
-                  trailing: locale == current ? const Icon(Icons.check) : null,
-                  onTap: () => Navigator.of(context).pop(locale),
-                );
-              }),
+              Expanded(child: Text(_localeLabel(l10n, locale))),
+              if (selected) const Icon(Icons.check),
             ],
           ),
         );
-      },
+      }).toList(),
     );
     if (selected != null && selected != current) {
       await ref.read(localeSettingsProvider.notifier).setLocale(selected);

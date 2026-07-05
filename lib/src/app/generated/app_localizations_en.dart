@@ -252,6 +252,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get acknowledgements => 'Special Acknowledgements';
 
   @override
+  String get acknowledgementsDesc =>
+      'Open source projects referenced by ZeroBox';
+
+  @override
   String get developmentTeam => 'Development team';
 
   @override
@@ -581,6 +585,46 @@ class AppLocalizationsEn extends AppLocalizations {
       'Log in to Mi Account to sync paired devices';
 
   @override
+  String get settingsMiAccount => 'Mi Account';
+
+  @override
+  String get settingsMiAccountDesc =>
+      'Sign in and sync authkeys from bound devices';
+
+  @override
+  String get settingsMiAccountLoginTitle => 'Mi Account login';
+
+  @override
+  String get settingsMiAccountUsername => 'Account';
+
+  @override
+  String get settingsMiAccountPassword => 'Password';
+
+  @override
+  String get settingsMiAccountRememberCredentials =>
+      'Remember account and password';
+
+  @override
+  String get settingsMiAccountLoginAndSync => 'Sign in and sync';
+
+  @override
+  String get settingsMiAccountMissingCredentials =>
+      'Enter your Mi Account and password';
+
+  @override
+  String get settingsMiAccountTwoFactorPrompt =>
+      'Complete Mi Account two-factor verification in the verification page';
+
+  @override
+  String get settingsMiAccountLoginWindowClosed =>
+      'The login window was closed';
+
+  @override
+  String settingsMiAccountSyncedDevices(int count) {
+    return 'Synced $count Mi devices';
+  }
+
+  @override
   String get settingsGeneralLanguage => 'Language';
 
   @override
@@ -705,7 +749,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsAboutLicences => 'Open source licenses';
 
   @override
-  String get settingsAboutLicencesDesc => 'Licenses of third-party software';
+  String get settingsAboutLicencesDesc =>
+      'Licenses for Flutter, dependencies and open source components';
 
   @override
   String get settingsGuest => 'Guest';
@@ -767,6 +812,45 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsTeamRoleMain => 'Main Developer / Designer';
+
+  @override
+  String get settingsAboutSoftware => 'About software';
+
+  @override
+  String get settingsAboutSoftwareDesc =>
+      'Version, project notes and development team';
+
+  @override
+  String get settingsAboutSoftwareTagline =>
+      'A pretty fast wearable management tool for VelaOS and ZeppOS, built with Flutter';
+
+  @override
+  String get settingsAboutSoftwareRepository => 'Open GitHub repository';
+
+  @override
+  String get settingsAboutSoftwareOverview => 'Project notes';
+
+  @override
+  String get settingsAboutSoftwareOverviewBody =>
+      'ZeroBox is a cross-platform wearable device management tool that lets you connect, manage and install resources on VelaOS / Xiaomi and ZeppOS devices without the official client';
+
+  @override
+  String get settingsAboutSoftwareTeam => 'Development team';
+
+  @override
+  String get settingsAboutSoftwareReleaseName =>
+      'Current release: development preview';
+
+  @override
+  String get settingsAboutSoftwareReleaseBody =>
+      'This release focuses on stabilizing resource transfer, unifying the Bluetooth platform layer, and introducing Xiaomi account login and device sync foundations. UI and queue experience are still being iterated.';
+
+  @override
+  String get settingsAboutSoftwareBuildInfo => 'Build info';
+
+  @override
+  String get settingsAboutSoftwareCopyright =>
+      'Copyright © ZeroBox contributors';
 
   @override
   String get acknowledgementsKazumi =>

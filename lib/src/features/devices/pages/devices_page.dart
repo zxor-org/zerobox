@@ -72,6 +72,7 @@ class DevicesPage extends ConsumerWidget {
           final isWide = constraints.maxWidth >= 840;
           final infoPanel = _DeviceInfoPanel(
             device: device,
+            isReady: isReady,
             battery: state.battery,
             onReconnect: reconnectCurrent,
             onSwitch: () {
@@ -86,7 +87,6 @@ class DevicesPage extends ConsumerWidget {
           return PageContainer(
             padding: const EdgeInsets.symmetric(
               horizontal: StyleConstants.pagePadding,
-              vertical: StyleConstants.pagePadding,
             ),
             child: isWide
                 ? Row(
@@ -115,17 +115,19 @@ class DevicesPage extends ConsumerWidget {
 class _DeviceInfoPanel extends StatelessWidget {
   const _DeviceInfoPanel({
     required this.device,
+    required this.isReady,
     this.battery,
     required this.onReconnect,
     required this.onSwitch,
   });
 
   final MiWearState? device;
+  final bool isReady;
   final BatteryStatus? battery;
   final VoidCallback onReconnect;
   final VoidCallback onSwitch;
 
-  bool get _isConnected => device != null && !device!.disconnected;
+  bool get _isConnected => isReady && device != null && !device!.disconnected;
 
   @override
   Widget build(BuildContext context) {
@@ -145,9 +147,7 @@ class _DeviceInfoPanel extends StatelessWidget {
         children: [
           Text(
             device!.name,
-            style: textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
+            style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           Row(
@@ -195,9 +195,7 @@ class _DeviceInfoPanel extends StatelessWidget {
         children: [
           Text(
             l10n.deviceNotConnected,
-            style: textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
+            style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 12),
           _ActionButton(

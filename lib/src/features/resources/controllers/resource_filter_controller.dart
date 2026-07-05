@@ -51,22 +51,26 @@ class ResourceModeController extends Notifier<ResourceMode> {
 }
 
 final resourceModeControllerProvider =
-    NotifierProvider<ResourceModeController, ResourceMode>(ResourceModeController.new);
+    NotifierProvider<ResourceModeController, ResourceMode>(
+      ResourceModeController.new,
+    );
 
 final resourceFiltersProvider =
     NotifierProvider<ResourceFiltersNotifier, ResourceFilters>(
-  ResourceFiltersNotifier.new,
-);
+      ResourceFiltersNotifier.new,
+    );
 
 class ResourceFiltersNotifier extends Notifier<ResourceFilters> {
   @override
   ResourceFilters build() => const ResourceFilters();
 
   void setQuery(String value) => state = state.copyWith(query: value);
-  void setType(AstroBoxResourceType? value) => state = state.copyWith(type: value);
+  void setType(AstroBoxResourceType? value) =>
+      state = state.copyWith(type: value);
   void setSort(ResourceSortRule value) => state = state.copyWith(sort: value);
   void setHidePaid(bool value) => state = state.copyWith(hidePaid: value);
-  void setHideForcePaid(bool value) => state = state.copyWith(hideForcePaid: value);
+  void setHideForcePaid(bool value) =>
+      state = state.copyWith(hideForcePaid: value);
 
   void toggleDevice(String device) {
     final updated = Set<String>.from(state.selectedDevices);
@@ -78,58 +82,75 @@ class ResourceFiltersNotifier extends Notifier<ResourceFilters> {
     state = state.copyWith(selectedDevices: updated);
   }
 
+  void toggleDeviceGroup(Iterable<String> devices) {
+    final ids = devices.where((id) => id.isNotEmpty).toSet();
+    if (ids.isEmpty) return;
+
+    final updated = Set<String>.from(state.selectedDevices);
+    if (ids.any(updated.contains)) {
+      updated.removeAll(ids);
+    } else {
+      updated.addAll(ids);
+    }
+    state = state.copyWith(selectedDevices: updated);
+  }
+
   void clearDevices() => state = state.copyWith(selectedDevices: const {});
 }
 
 final filteredAstroBoxIndexProvider =
     Provider.autoDispose<AsyncValue<List<AstroBoxIndexItem>>>((ref) {
-  final indexAsync = ref.watch(astroBoxIndexProvider);
-  final filters = ref.watch(resourceFiltersProvider);
+      final indexAsync = ref.watch(astroBoxIndexProvider);
+      final filters = ref.watch(resourceFiltersProvider);
 
-  return indexAsync.when(
-    data: (items) {
-      var result = List<AstroBoxIndexItem>.from(items);
+      return indexAsync.when(
+        data: (items) {
+          var result = List<AstroBoxIndexItem>.from(items);
 
-      if (filters.type != null) {
-        result = result.where((i) => i.type == filters.type).toList();
-      }
+          if (filters.type != null) {
+            result = result.where((i) => i.type == filters.type).toList();
+          }
 
-      if (filters.hidePaid) {
-        result = result.where((i) => i.paidType != AstroBoxPaidType.paid).toList();
-      }
-      if (filters.hideForcePaid) {
-        result =
-            result.where((i) => i.paidType != AstroBoxPaidType.forcePaid).toList();
-      }
+          if (filters.hidePaid) {
+            result = result
+                .where((i) => i.paidType != AstroBoxPaidType.paid)
+                .toList();
+          }
+          if (filters.hideForcePaid) {
+            result = result
+                .where((i) => i.paidType != AstroBoxPaidType.forcePaid)
+                .toList();
+          }
 
-      if (filters.selectedDevices.isNotEmpty) {
-        result = result
-            .where(
-              (i) => i.devices.any((d) => filters.selectedDevices.contains(d)),
-            )
-            .toList();
-      }
+          if (filters.selectedDevices.isNotEmpty) {
+            result = result
+                .where(
+                  (i) =>
+                      i.devices.any((d) => filters.selectedDevices.contains(d)),
+                )
+                .toList();
+          }
 
-      final query = filters.query.trim().toLowerCase();
-      if (query.isNotEmpty) {
-        result = result.where((i) {
-          return i.name.toLowerCase().contains(query) ||
-              i.tags.any((t) => t.toLowerCase().contains(query));
-        }).toList();
-      }
+          final query = filters.query.trim().toLowerCase();
+          if (query.isNotEmpty) {
+            result = result.where((i) {
+              return i.name.toLowerCase().contains(query) ||
+                  i.tags.any((t) => t.toLowerCase().contains(query));
+            }).toList();
+          }
 
-      switch (filters.sort) {
-        case ResourceSortRule.random:
-          result.shuffle(Random());
-        case ResourceSortRule.name:
-          result.sort((a, b) => a.name.compareTo(b.name));
-        case ResourceSortRule.time:
-          result = result.reversed.toList();
-      }
+          switch (filters.sort) {
+            case ResourceSortRule.random:
+              result.shuffle(Random());
+            case ResourceSortRule.name:
+              result.sort((a, b) => a.name.compareTo(b.name));
+            case ResourceSortRule.time:
+              result = result.reversed.toList();
+          }
 
-      return AsyncValue.data(result);
-    },
-    loading: () => const AsyncValue.loading(),
-    error: (err, stack) => AsyncValue.error(err, stack),
-  );
-});
+          return AsyncValue.data(result);
+        },
+        loading: () => const AsyncValue.loading(),
+        error: (err, stack) => AsyncValue.error(err, stack),
+      );
+    });

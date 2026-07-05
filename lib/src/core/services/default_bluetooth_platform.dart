@@ -150,7 +150,16 @@ class DefaultBluetoothPlatform implements BluetoothPlatform {
   Future<void> disconnect() async {
     final connection = _connection;
     _connection = null;
-    await connection?.dispose();
+    if (connection != null) {
+      await connection.dispose();
+      return;
+    }
+
+    try {
+      await _rfcomm.disconnect();
+    } catch (e) {
+      _log.fine('RFCOMM disconnect ignored: $e');
+    }
   }
 
   Future<void> dispose() async {

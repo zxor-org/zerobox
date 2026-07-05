@@ -85,7 +85,9 @@ class _DeviceSwitchPageState extends ConsumerState<DeviceSwitchPage> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final state = ref.watch(deviceManagerProvider);
-    final currentAddr = state.currentDevice?.addr;
+    final currentAddr = state.protocolState == proto.ProtocolState.ready
+        ? state.currentDevice?.addr
+        : null;
 
     ref.listen<DeviceManagerState>(deviceManagerProvider, (previous, next) {
       final wasConnecting = previous?.connecting ?? false;
@@ -132,7 +134,6 @@ class _DeviceSwitchPageState extends ConsumerState<DeviceSwitchPage> {
         return PageContainer(
           padding: const EdgeInsets.symmetric(
             horizontal: StyleConstants.pagePadding,
-            vertical: StyleConstants.pagePadding,
           ),
           child: isWide
               ? Row(
@@ -220,7 +221,6 @@ class _WebSerialHint extends StatelessWidget {
     return PageContainer(
       padding: const EdgeInsets.symmetric(
         horizontal: StyleConstants.pagePadding,
-        vertical: StyleConstants.pagePadding,
       ),
       child: Center(
         child: Column(
@@ -329,6 +329,7 @@ class _SavedDeviceList extends ConsumerWidget {
               itemBuilder: (context, index) {
                 final device = state.pairedDevices[index];
                 return _DeviceCard(
+                  key: ValueKey('saved-${device.addr}'),
                   device: device,
                   connected:
                       device.addr == selectedAddr && !device.disconnected,
@@ -394,6 +395,7 @@ class _ScanDeviceListState extends ConsumerState<_ScanDeviceList> {
               itemBuilder: (context, index) {
                 final device = state.scannedDevices[index];
                 return _DeviceCard(
+                  key: ValueKey('scan-${device.addr}'),
                   device: MiWearState(
                     name: device.name,
                     addr: device.addr,
@@ -435,6 +437,7 @@ class _SliverSavedDeviceList extends ConsumerWidget {
       itemBuilder: (context, index) {
         final device = state.pairedDevices[index];
         return _DeviceCard(
+          key: ValueKey('saved-${device.addr}'),
           device: device,
           connected: device.addr == selectedAddr && !device.disconnected,
           saved: true,
@@ -515,6 +518,7 @@ class _SliverScanDeviceListState extends ConsumerState<_SliverScanDeviceList> {
       itemBuilder: (context, index) {
         final device = state.scannedDevices[index];
         return _DeviceCard(
+          key: ValueKey('scan-${device.addr}'),
           device: MiWearState(
             name: device.name,
             addr: device.addr,
@@ -568,6 +572,7 @@ class _SectionHeader extends StatelessWidget {
 
 class _DeviceCard extends ConsumerStatefulWidget {
   const _DeviceCard({
+    super.key,
     required this.device,
     this.connected = false,
     this.saved = false,
@@ -594,6 +599,19 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
   }
 
   @override
+  void didUpdateWidget(covariant _DeviceCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.device.addr != widget.device.addr ||
+        oldWidget.saved != widget.saved) {
+      _showInput = false;
+      _authController.text = widget.device.authkey ?? '';
+    } else if (oldWidget.device.authkey != widget.device.authkey &&
+        !_showInput) {
+      _authController.text = widget.device.authkey ?? '';
+    }
+  }
+
+  @override
   void dispose() {
     _authController.dispose();
     super.dispose();
@@ -612,7 +630,9 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
     if (mounted) {
       final state = ref.read(deviceManagerProvider);
       if (state.protocolState == proto.ProtocolState.ready) {
-        context.pop();
+        if (context.canPop()) {
+          context.pop();
+        }
       }
     }
   }
@@ -745,8 +765,7 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
                     padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
                     child: TextField(
                       controller: _authController,
-                      enabled:
-                          state.connectStatus == 0 || state.connectStatus == 3,
+                      enabled: !state.connecting && !widget.connected,
                       decoration: InputDecoration(
                         isDense: true,
                         labelText: l10n.authkeyPrompt,

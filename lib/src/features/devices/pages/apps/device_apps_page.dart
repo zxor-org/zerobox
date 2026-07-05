@@ -65,7 +65,9 @@ class _DeviceAppsPageState extends ConsumerState<DeviceAppsPage> {
           ),
           IconButton(
             icon: Icon(
-              _showSystemApps ? Icons.check_box_outlined : Icons.check_box_outline_blank,
+              _showSystemApps
+                  ? Icons.check_box_outlined
+                  : Icons.check_box_outline_blank,
             ),
             onPressed: () => setState(() => _showSystemApps = !_showSystemApps),
             tooltip: l10n.appManagementShowSystemApps,
@@ -75,7 +77,6 @@ class _DeviceAppsPageState extends ConsumerState<DeviceAppsPage> {
       body: PageContainer(
         padding: const EdgeInsets.symmetric(
           horizontal: StyleConstants.pagePadding,
-          vertical: StyleConstants.pagePadding,
         ),
         child: !ready
             ? Center(child: Text(l10n.deviceNotConnected))

@@ -20,10 +20,7 @@ class PageContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final body = Padding(
-      padding: padding,
-      child: child,
-    );
+    final body = Padding(padding: padding, child: child);
     if (!center) return body;
     return Center(
       child: ConstrainedBox(
@@ -60,20 +57,13 @@ class SectionCard extends StatelessWidget {
       color: color ?? Theme.of(context).colorScheme.surfaceContainerLow,
       shape: RoundedRectangleBorder(borderRadius: borderRadius),
       clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: padding,
-        child: child,
-      ),
+      child: Padding(padding: padding, child: child),
     );
   }
 }
 
 class SectionHeader extends StatelessWidget {
-  const SectionHeader({
-    super.key,
-    required this.title,
-    this.action,
-  });
+  const SectionHeader({super.key, required this.title, this.action});
 
   final String title;
   final Widget? action;
@@ -87,9 +77,9 @@ class SectionHeader extends StatelessWidget {
           Expanded(
             child: Text(
               title,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
             ),
           ),
           if (action != null) action!,

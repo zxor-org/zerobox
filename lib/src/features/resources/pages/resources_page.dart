@@ -8,6 +8,7 @@ import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
 import 'package:zerobox/src/data/astrobox/astrobox_providers.dart';
 import 'package:zerobox/src/data/astrobox/models/astrobox_models.dart';
+import 'package:zerobox/src/device/core/xiaomi_wearable_catalog.dart';
 import 'package:zerobox/src/features/resources/controllers/resource_filter_controller.dart';
 
 class ResourcesPage extends ConsumerWidget {
@@ -36,8 +37,9 @@ class ResourcesPage extends ConsumerWidget {
         children: [
           Center(
             child: ConstrainedBox(
-              constraints:
-                  const BoxConstraints(maxWidth: StyleConstants.pageMaxWidth),
+              constraints: const BoxConstraints(
+                maxWidth: StyleConstants.pageMaxWidth,
+              ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: StyleConstants.pagePadding,
@@ -117,12 +119,16 @@ class _ResourceLibraryView extends ConsumerWidget {
                         IconButton(
                           icon: const Icon(Icons.clear),
                           onPressed: () {
-                            ref.read(resourceFiltersProvider.notifier).setQuery('');
+                            ref
+                                .read(resourceFiltersProvider.notifier)
+                                .setQuery('');
                           },
                         ),
                     ],
                     onChanged: (value) {
-                      ref.read(resourceFiltersProvider.notifier).setQuery(value);
+                      ref
+                          .read(resourceFiltersProvider.notifier)
+                          .setQuery(value);
                     },
                   ),
                   const SizedBox(height: 12),
@@ -162,6 +168,14 @@ class _FilterBar extends ConsumerWidget {
     final deviceMapAsync = ref.watch(astroBoxDeviceMapProvider);
 
     final devices = deviceMapAsync.value?.xiaomi.entries.toList() ?? [];
+    final deviceOptions = _buildDeviceFilterOptions(devices);
+    final selectedDeviceOptions = deviceOptions
+        .where((option) => option.ids.any(filters.selectedDevices.contains))
+        .toList();
+    final knownDeviceIds = deviceOptions.expand((option) => option.ids).toSet();
+    final unknownSelectedDevices = filters.selectedDevices
+        .where((id) => !knownDeviceIds.contains(id))
+        .toList();
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -169,33 +183,38 @@ class _FilterBar extends ConsumerWidget {
         children: [
           _FilterChip(
             label: l10n.filter,
-            selected: filters.type != null ||
+            selected:
+                filters.type != null ||
                 filters.hidePaid ||
                 filters.hideForcePaid ||
                 filters.selectedDevices.isNotEmpty,
             onPressed: () => _showFilterSheet(context),
           ),
           const SizedBox(width: 8),
-          ...filters.selectedDevices.map((codename) {
-            final name = devices
-                .firstWhere(
-                  (e) => e.value.id == codename,
-                  orElse: () => MapEntry(codename, AstroBoxDevice(
-                    id: codename,
-                    name: codename,
-                    description: '',
-                    chip: AstroBoxDeviceChip.bes,
-                  )),
-                )
-                .value
-                .name;
+          ...selectedDeviceOptions.map((option) {
             return Padding(
               padding: const EdgeInsets.only(right: 8),
               child: FilterChip(
-                label: Text(name),
+                label: Text(option.label),
                 selected: true,
                 onSelected: (_) {
-                  ref.read(resourceFiltersProvider.notifier).toggleDevice(codename);
+                  ref
+                      .read(resourceFiltersProvider.notifier)
+                      .toggleDeviceGroup(option.ids);
+                },
+              ),
+            );
+          }),
+          ...unknownSelectedDevices.map((codename) {
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: FilterChip(
+                label: Text(codename),
+                selected: true,
+                onSelected: (_) {
+                  ref
+                      .read(resourceFiltersProvider.notifier)
+                      .toggleDevice(codename);
                 },
               ),
             );
@@ -226,7 +245,9 @@ class _FilterBar extends ConsumerWidget {
               label: Text(l10n.forcePaid),
               selected: true,
               onSelected: (_) {
-                ref.read(resourceFiltersProvider.notifier).setHideForcePaid(false);
+                ref
+                    .read(resourceFiltersProvider.notifier)
+                    .setHideForcePaid(false);
               },
             ),
           ],
@@ -299,20 +320,15 @@ class _FilterSheet extends ConsumerWidget {
     final filters = ref.watch(resourceFiltersProvider);
     final deviceMapAsync = ref.watch(astroBoxDeviceMapProvider);
     final devices = deviceMapAsync.value?.xiaomi.entries.toList() ?? [];
+    final deviceOptions = _buildDeviceFilterOptions(devices);
 
     return ListView(
       controller: scrollController,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       children: [
-        Text(
-          l10n.filter,
-          style: Theme.of(context).textTheme.titleLarge,
-        ),
+        Text(l10n.filter, style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 16),
-        Text(
-          l10n.all,
-          style: Theme.of(context).textTheme.titleSmall,
-        ),
+        Text(l10n.all, style: Theme.of(context).textTheme.titleSmall),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -322,7 +338,9 @@ class _FilterSheet extends ConsumerWidget {
               label: Text(l10n.quickApps),
               selected: filters.type == AstroBoxResourceType.quickApp,
               onSelected: (_) {
-                ref.read(resourceFiltersProvider.notifier).setType(
+                ref
+                    .read(resourceFiltersProvider.notifier)
+                    .setType(
                       filters.type == AstroBoxResourceType.quickApp
                           ? null
                           : AstroBoxResourceType.quickApp,
@@ -333,7 +351,9 @@ class _FilterSheet extends ConsumerWidget {
               label: Text(l10n.watchfaces),
               selected: filters.type == AstroBoxResourceType.watchface,
               onSelected: (_) {
-                ref.read(resourceFiltersProvider.notifier).setType(
+                ref
+                    .read(resourceFiltersProvider.notifier)
+                    .setType(
                       filters.type == AstroBoxResourceType.watchface
                           ? null
                           : AstroBoxResourceType.watchface,
@@ -344,7 +364,9 @@ class _FilterSheet extends ConsumerWidget {
               label: Text(l10n.firmwareTools),
               selected: filters.type == AstroBoxResourceType.firmware,
               onSelected: (_) {
-                ref.read(resourceFiltersProvider.notifier).setType(
+                ref
+                    .read(resourceFiltersProvider.notifier)
+                    .setType(
                       filters.type == AstroBoxResourceType.firmware
                           ? null
                           : AstroBoxResourceType.firmware,
@@ -354,31 +376,26 @@ class _FilterSheet extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: 16),
-        Text(
-          l10n.devices,
-          style: Theme.of(context).textTheme.titleSmall,
-        ),
+        Text(l10n.devices, style: Theme.of(context).textTheme.titleSmall),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: devices.map((entry) {
-            final device = entry.value;
-            final selected = filters.selectedDevices.contains(device.id);
+          children: deviceOptions.map((option) {
+            final selected = option.ids.any(filters.selectedDevices.contains);
             return FilterChip(
-              label: Text(device.name),
+              label: Text(option.label),
               selected: selected,
               onSelected: (_) {
-                ref.read(resourceFiltersProvider.notifier).toggleDevice(device.id);
+                ref
+                    .read(resourceFiltersProvider.notifier)
+                    .toggleDeviceGroup(option.ids);
               },
             );
           }).toList(),
         ),
         const SizedBox(height: 16),
-        Text(
-          l10n.paid,
-          style: Theme.of(context).textTheme.titleSmall,
-        ),
+        Text(l10n.paid, style: Theme.of(context).textTheme.titleSmall),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -409,6 +426,40 @@ class _FilterSheet extends ConsumerWidget {
   }
 }
 
+class _DeviceFilterOption {
+  const _DeviceFilterOption({required this.label, required this.ids});
+
+  final String label;
+  final Set<String> ids;
+}
+
+List<_DeviceFilterOption> _buildDeviceFilterOptions(
+  Iterable<MapEntry<String, AstroBoxDevice>> entries,
+) {
+  final grouped = <String, Set<String>>{};
+  for (final entry in entries) {
+    final device = entry.value;
+    final rawId = device.id.trim().isNotEmpty ? device.id.trim() : entry.key;
+    final identity = normalizeXiaomiWearableIdentity(rawId);
+    final id = identity?.codename ?? rawId;
+    if (id.isEmpty) continue;
+
+    final label =
+        identity?.displayName ??
+        (device.name.trim().isNotEmpty ? device.name.trim() : id);
+    grouped.putIfAbsent(label, () => <String>{}).add(id);
+  }
+
+  final options =
+      grouped.entries
+          .map(
+            (entry) => _DeviceFilterOption(label: entry.key, ids: entry.value),
+          )
+          .toList()
+        ..sort((a, b) => a.label.compareTo(b.label));
+  return options;
+}
+
 class _ResourceGrid extends StatelessWidget {
   const _ResourceGrid({required this.items});
 
@@ -422,24 +473,28 @@ class _ResourceGrid extends StatelessWidget {
         final crossAxisCount = width >= 960
             ? 4
             : width >= 720
-                ? 3
-                : width >= 480
-                    ? 2
-                    : 1;
+            ? 3
+            : width >= 480
+            ? 2
+            : 1;
         final spacing = width >= 720 ? 16.0 : 12.0;
-        final cardWidth = (width - (crossAxisCount - 1) * spacing) / crossAxisCount;
+        final rawCardWidth =
+            (width - (crossAxisCount - 1) * spacing) / crossAxisCount;
+        final cardWidth = crossAxisCount == 1
+            ? rawCardWidth.clamp(0.0, 320.0)
+            : rawCardWidth;
         final coverHeight = cardWidth * 2 / 3;
 
         return Wrap(
+          alignment: crossAxisCount == 1
+              ? WrapAlignment.center
+              : WrapAlignment.start,
           spacing: spacing,
           runSpacing: spacing,
           children: items.map((item) {
             return SizedBox(
               width: cardWidth,
-              child: _ResourceCard(
-                item: item,
-                coverHeight: coverHeight,
-              ),
+              child: _ResourceCard(item: item, coverHeight: coverHeight),
             );
           }).toList(),
         );
@@ -449,10 +504,7 @@ class _ResourceGrid extends StatelessWidget {
 }
 
 class _ResourceCard extends ConsumerWidget {
-  const _ResourceCard({
-    required this.item,
-    required this.coverHeight,
-  });
+  const _ResourceCard({required this.item, required this.coverHeight});
 
   final AstroBoxIndexItem item;
   final double coverHeight;
@@ -549,13 +601,12 @@ class _PaidBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final colorScheme = Theme.of(context).colorScheme;
-    final (label, color) = switch (paidType) {
-      AstroBoxPaidType.free => (l10n.free, Colors.green),
-      AstroBoxPaidType.paid => (l10n.paid, colorScheme.tertiary),
-      AstroBoxPaidType.forcePaid => (l10n.forcePaid, colorScheme.error),
+    final label = switch (paidType) {
+      AstroBoxPaidType.free => l10n.free,
+      AstroBoxPaidType.paid => l10n.paid,
+      AstroBoxPaidType.forcePaid => l10n.forcePaid,
     };
-    return _Badge(label: label, color: color);
+    return _Badge(label: label, color: Colors.orange);
   }
 }
 
@@ -568,24 +619,19 @@ class _Badge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(StyleConstants.chipRadius),
       ),
-      alignment: Alignment.center,
       child: Text(
         label,
-        textAlign: TextAlign.center,
         style: TextStyle(
           color: color,
           fontSize: 11,
-          fontWeight: FontWeight.w600,
-          height: 1,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );
   }
 }
-
-AppLocalizations l10nOf(BuildContext context) => AppLocalizations.of(context)!;

@@ -38,6 +38,7 @@ class XiaomiDeviceComponent {
 
   XiaomiAuthKeys? authKeys;
   void Function(Uint8List l2Payload)? onL2Payload;
+  void Function(Object error, StackTrace stackTrace)? onTransportFailure;
   Completer<void>? _sppHelloCompleter;
   final _massSendLock = _Mutex();
 
@@ -58,6 +59,7 @@ class XiaomiDeviceComponent {
   late final XiaomiSarController sar = XiaomiSarController(
     onSend: _onSarSend,
     onData: (data) => onL2Payload?.call(data),
+    onSendError: _onSarSendError,
   );
 
   late final XiaomiRequestPool requestPool = XiaomiRequestPool(
@@ -67,6 +69,13 @@ class XiaomiDeviceComponent {
   Future<void> _onSarSend(Uint8List data) async {
     _log.fine('SAR sending ${data.length} bytes');
     await transport.send(data);
+  }
+
+  void _onSarSendError(Object error, StackTrace stackTrace) {
+    _log.warning('SAR send failed, marking transport disconnected', error);
+    sar.abortPendingTransmissions(error);
+    requestPool.clear();
+    onTransportFailure?.call(error, stackTrace);
   }
 
   Future<void> startSession({required bool spp}) async {

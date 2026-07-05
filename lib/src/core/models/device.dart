@@ -70,19 +70,22 @@ String connectionStatusLabel(ConnectionStatus status) {
   };
 }
 
-String _matchIllustrationAsset(String name) {
-  return DeviceRegistry.resolve(name).illustrationAsset;
+String _matchIllustrationAsset(String name, {String? codename}) {
+  return DeviceRegistry.resolveIdentity(
+    name: name,
+    codename: codename,
+  ).illustrationAsset;
 }
 
 extension DeviceIllustration on Device {
   String? illustrationAsset() {
-    return _matchIllustrationAsset(name);
+    return _matchIllustrationAsset(name, codename: codename);
   }
 }
 
 extension MiWearStateIllustration on MiWearState {
   String illustrationAsset() {
-    return _matchIllustrationAsset(name);
+    return _matchIllustrationAsset(name, codename: codename);
   }
 }
 
