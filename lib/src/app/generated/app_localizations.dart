@@ -1655,7 +1655,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsAboutSoftwareDesc.
   ///
   /// In en, this message translates to:
-  /// **'Version, project notes and development team'**
+  /// **'Version, changelog and development team'**
   String get settingsAboutSoftwareDesc;
 
   /// No description provided for @settingsAboutSoftwareTagline.
@@ -1669,18 +1669,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Open GitHub repository'**
   String get settingsAboutSoftwareRepository;
-
-  /// No description provided for @settingsAboutSoftwareOverview.
-  ///
-  /// In en, this message translates to:
-  /// **'Project notes'**
-  String get settingsAboutSoftwareOverview;
-
-  /// No description provided for @settingsAboutSoftwareOverviewBody.
-  ///
-  /// In en, this message translates to:
-  /// **'ZeroBox is a cross-platform wearable device management tool that lets you connect, manage and install resources on VelaOS / Xiaomi and ZeppOS devices without the official client'**
-  String get settingsAboutSoftwareOverviewBody;
 
   /// No description provided for @settingsAboutSoftwareTeam.
   ///
@@ -1697,7 +1685,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsAboutSoftwareReleaseBody.
   ///
   /// In en, this message translates to:
-  /// **'This release focuses on stabilizing resource transfer, unifying the Bluetooth platform layer, and introducing Xiaomi account login and device sync foundations. UI and queue experience are still being iterated.'**
+  /// **'This update includes:\n• System accent color support and theme refinements\n• Redesigned resource detail and list pages with grouped device filters\n• Replaced team page with about software page; localized settings\n• Improved Xiaomi SAR controller send error handling\n• Stabilized Linux classic SPP connect cancellation and timeouts\n• Updated ARB localizations and generated l10n files'**
   String get settingsAboutSoftwareReleaseBody;
 
   /// No description provided for @settingsAboutSoftwareBuildInfo.

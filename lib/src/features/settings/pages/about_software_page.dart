@@ -46,17 +46,6 @@ class AboutSoftwarePage extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               _Section(
-                icon: Icons.info_outline,
-                title: l10n.settingsAboutSoftwareOverview,
-                child: Text(
-                  l10n.settingsAboutSoftwareOverviewBody,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    height: 1.45,
-                  ),
-                ),
-              ),
-              _Section(
                 icon: Icons.people_alt_outlined,
                 title: l10n.settingsAboutSoftwareTeam,
                 child: LayoutBuilder(

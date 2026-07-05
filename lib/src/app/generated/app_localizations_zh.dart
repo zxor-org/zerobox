@@ -790,7 +790,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsAboutSoftware => '关于软件';
 
   @override
-  String get settingsAboutSoftwareDesc => '版本、项目说明与开发团队';
+  String get settingsAboutSoftwareDesc => '版本、更新日志与开发团队';
 
   @override
   String get settingsAboutSoftwareTagline =>
@@ -800,13 +800,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsAboutSoftwareRepository => '打开 GitHub 仓库';
 
   @override
-  String get settingsAboutSoftwareOverview => '项目说明';
-
-  @override
-  String get settingsAboutSoftwareOverviewBody =>
-      'ZeroBox 是一款跨平台可穿戴设备管理工具，无需官方客户端，即可连接、管理 VelaOS / 小米与 ZeppOS 设备，并为其安装资源';
-
-  @override
   String get settingsAboutSoftwareTeam => '开发团队';
 
   @override
@@ -814,7 +807,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsAboutSoftwareReleaseBody =>
-      '本版本重点稳定了资源安装传输、统一蓝牙平台层，并引入小米账号登录与设备同步基础能力。UI 与队列体验仍在持续迭代。';
+      '本次更新内容包括：\n• 新增系统强调色支持与主题细节优化\n• 重构资源详情页与列表页，支持按设备分组筛选\n• 用“关于软件”页替换原“团队页”；设置页全面国际化\n• 优化小米 SAR 控制器发送失败错误处理\n• 稳定 Linux 经典 SPP 连接的取消与超时行为\n• 更新 ARB 本地化文案与生成的 l10n 文件';
 
   @override
   String get settingsAboutSoftwareBuildInfo => '构建信息';

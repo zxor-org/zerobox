@@ -818,7 +818,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsAboutSoftwareDesc =>
-      'Version, project notes and development team';
+      'Version, changelog and development team';
 
   @override
   String get settingsAboutSoftwareTagline =>
@@ -826,13 +826,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsAboutSoftwareRepository => 'Open GitHub repository';
-
-  @override
-  String get settingsAboutSoftwareOverview => 'Project notes';
-
-  @override
-  String get settingsAboutSoftwareOverviewBody =>
-      'ZeroBox is a cross-platform wearable device management tool that lets you connect, manage and install resources on VelaOS / Xiaomi and ZeppOS devices without the official client';
 
   @override
   String get settingsAboutSoftwareTeam => 'Development team';
@@ -843,7 +836,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsAboutSoftwareReleaseBody =>
-      'This release focuses on stabilizing resource transfer, unifying the Bluetooth platform layer, and introducing Xiaomi account login and device sync foundations. UI and queue experience are still being iterated.';
+      'This update includes:\n• System accent color support and theme refinements\n• Redesigned resource detail and list pages with grouped device filters\n• Replaced team page with about software page; localized settings\n• Improved Xiaomi SAR controller send error handling\n• Stabilized Linux classic SPP connect cancellation and timeouts\n• Updated ARB localizations and generated l10n files';
 
   @override
   String get settingsAboutSoftwareBuildInfo => 'Build info';
