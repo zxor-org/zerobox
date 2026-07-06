@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:zerobox/src/core/network/dio_provider.dart';
 import 'package:zerobox/src/data/astrobox/astrobox_providers.dart';
 import 'package:zerobox/src/data/astrobox/models/astrobox_models.dart';
 import 'package:zerobox/src/features/resources/services/install_queue_notifier.dart';
@@ -157,7 +158,10 @@ class DownloadQueueNotifier extends Notifier<List<ResourceTask>> {
           t,
     ];
 
-    final service = ResourceInstallService(cancelToken: _cancelToken);
+    final service = ResourceInstallService(
+      dio: ref.read(appDioProvider),
+      cancelToken: _cancelToken,
+    );
     final repo = ref.read(astroBoxRepositoryProvider);
 
     final downloaded = await service.downloadResource(

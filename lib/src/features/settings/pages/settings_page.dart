@@ -16,6 +16,7 @@ import 'package:zerobox/src/features/accounts/models/mi_account_models.dart';
 import 'package:zerobox/src/features/accounts/services/mi_account_service.dart';
 import 'package:zerobox/src/features/accounts/services/mi_account_two_factor_resolver.dart';
 import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
+import 'package:zerobox/src/features/resources/controllers/resource_filter_controller.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -259,6 +260,7 @@ class SettingsPage extends ConsumerWidget {
     );
     if (selected != null && selected != current) {
       await ref.read(appSettingsProvider.notifier).setCdn(selected);
+      ref.invalidate(filteredAstroBoxIndexProvider);
       ref.invalidate(astroBoxIndexProvider);
       ref.invalidate(astroBoxDeviceMapProvider);
     }

@@ -1,24 +1,37 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
 
 import 'package:dio/dio.dart';
-import 'package:zerobox/src/data/astrobox/astrobox_cdn.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:zerobox/src/data/astrobox/models/astrobox_models.dart';
+import 'package:zerobox/src/data/community/community_resource_repository.dart';
+import 'package:zerobox/src/data/community/community_source.dart';
 import 'package:zerobox/src/device/core/xiaomi_wearable_catalog.dart';
 
-class AstroBoxCommunityRepository {
-  AstroBoxCommunityRepository({Dio? dio, this.cdn = AstroBoxCdn.raw})
-    : _dio = dio ?? Dio();
+class AstroBoxRepoCommunityRepository implements CommunityResourceRepository {
+  AstroBoxRepoCommunityRepository({Dio? dio}) : _dio = dio ?? Dio();
 
   final Dio _dio;
-  AstroBoxCdn cdn;
 
   static const String _repoBase =
       'https://raw.githubusercontent.com/AstralSightStudios/AstroBox-Repo/refs/heads/main';
 
-  String _convert(String url) => cdn.convert(url);
+  @override
+  CommunitySourceId get sourceId => CommunitySourceId.astroboxRepo;
 
+  @override
+  String get providerName => sourceId.storageKey;
+
+  @override
+  CommunityProviderState get state => CommunityProviderState.ready;
+
+  @override
+  Future<void> refresh({String config = ''}) async {}
+
+  @override
   Future<List<AstroBoxIndexItem>> fetchIndex() async {
-    final url = _convert('$_repoBase/index_v2.csv');
+    const url = '$_repoBase/index_v2.csv';
     final response = await _dio.get<String>(url);
     final sanitized = _stripZeroWidth(response.data ?? '');
 
@@ -61,14 +74,16 @@ class AstroBoxCommunityRepository {
     return items;
   }
 
+  @override
   Future<AstroBoxDeviceMap> fetchDeviceMap() async {
-    final url = _convert('$_repoBase/devices_v2.json');
+    const url = '$_repoBase/devices_v2.json';
     final data = await _fetchJsonObject(url, 'devices_v2.json');
     return AstroBoxDeviceMap.fromJson(data);
   }
 
+  @override
   Future<AstroBoxManifest> fetchManifest(AstroBoxIndexItem item) async {
-    final base = _buildRepoCdnUrl(item);
+    final base = _buildRepoRawUrl(item);
 
     try {
       final url = '$base/manifest_v2.json';
@@ -79,6 +94,155 @@ class AstroBoxCommunityRepository {
       final data = await _fetchJsonObject(url, 'manifest.json');
       return _legacyManifestV1ToV2(data, item);
     }
+  }
+
+  @override
+  Future<List<AstroBoxIndexItem>> getPage({
+    required int page,
+    required int limit,
+    CommunitySearchConfig search = const CommunitySearchConfig(),
+  }) async {
+    var result = await fetchIndex();
+
+    if (search.type != null) {
+      result = result.where((item) => item.type == search.type).toList();
+    }
+    if (search.hidePaid) {
+      result = result
+          .where((item) => item.paidType != AstroBoxPaidType.paid)
+          .toList();
+    }
+    if (search.hideForcePaid) {
+      result = result
+          .where((item) => item.paidType != AstroBoxPaidType.forcePaid)
+          .toList();
+    }
+    if (search.selectedDevices.isNotEmpty) {
+      result = result
+          .where((item) => item.devices.any(search.selectedDevices.contains))
+          .toList();
+    }
+
+    final query = search.query?.trim().toLowerCase() ?? '';
+    if (query.isNotEmpty) {
+      result = result.where((item) {
+        return item.name.toLowerCase().contains(query) ||
+            item.tags.any((tag) => tag.toLowerCase().contains(query));
+      }).toList();
+    }
+
+    switch (search.sort) {
+      case CommunitySortRule.random:
+        result.shuffle(Random());
+      case CommunitySortRule.name:
+        result.sort((a, b) => a.name.compareTo(b.name));
+      case CommunitySortRule.time:
+        result = result.reversed.toList();
+    }
+
+    final start = page * limit;
+    if (start >= result.length) return [];
+    final end = min(start + limit, result.length);
+    return result.sublist(start, end);
+  }
+
+  @override
+  Future<List<String>> getCategories() async {
+    final deviceMap = await fetchDeviceMap();
+    final categories = <String>{
+      'hide_paid',
+      'hide_force_paid',
+      'quick_app',
+      'watchface',
+      ...deviceMap.xiaomi.values.map((device) => device.name),
+    };
+    return categories.toList();
+  }
+
+  @override
+  Future<AstroBoxManifest> getItemManifest(String itemId) async {
+    final index = await fetchIndex();
+    final item = index.cast<AstroBoxIndexItem?>().firstWhere(
+      (entry) => entry?.id == itemId || entry?.name == itemId,
+      orElse: () => null,
+    );
+    if (item == null) {
+      throw StateError('Item not found by id or name: $itemId');
+    }
+    return fetchManifest(item);
+  }
+
+  @override
+  Future<CommunityDownloadResult> download({
+    required String itemId,
+    required String device,
+    void Function(CommunityProgressData progress)? onProgress,
+  }) async {
+    final index = await fetchIndex();
+    final item = index.cast<AstroBoxIndexItem?>().firstWhere(
+      (entry) => entry?.id == itemId || entry?.name == itemId,
+      orElse: () => null,
+    );
+    if (item == null) {
+      throw StateError('Item not found by id or name: $itemId');
+    }
+
+    final manifest = await fetchManifest(item);
+    final download = _resolveDownloadEntry(manifest, device);
+    final url = resolveDownloadUrl(item, download);
+    var fileName = download.displayName?.trim().isNotEmpty == true
+        ? download.displayName!.trim()
+        : download.fileName.trim();
+    if (fileName.isEmpty && download.url?.trim().isNotEmpty == true) {
+      fileName = Uri.parse(download.url!).pathSegments.last;
+    }
+    if (fileName.isEmpty) {
+      throw StateError('Download entry missing file name');
+    }
+
+    final tempDir = await getTemporaryDirectory();
+    final itemDir = Directory('${tempDir.path}/zerobox_downloads/${item.id}');
+    await itemDir.create(recursive: true);
+    final safeName = _sanitizeLocalFilename(fileName);
+    final savePath = '${itemDir.path}/$safeName';
+
+    onProgress?.call(const CommunityProgressData(progress: 0));
+    await _dio.download(
+      url,
+      savePath,
+      onReceiveProgress: (received, total) {
+        if (total > 0) {
+          onProgress?.call(CommunityProgressData(progress: received / total));
+        }
+      },
+    );
+    onProgress?.call(
+      const CommunityProgressData(progress: 1, status: 'finished'),
+    );
+    return CommunityDownloadResult(path: savePath, fileName: fileName);
+  }
+
+  @override
+  Future<int?> probeDownloadSize({
+    required String itemId,
+    required String device,
+  }) async {
+    final index = await fetchIndex();
+    final item = index.cast<AstroBoxIndexItem?>().firstWhere(
+      (entry) => entry?.id == itemId || entry?.name == itemId,
+      orElse: () => null,
+    );
+    if (item == null) {
+      throw StateError('Item not found by id or name: $itemId');
+    }
+    final manifest = await fetchManifest(item);
+    final download = _resolveDownloadEntry(manifest, device);
+    final response = await _dio.head<Object>(
+      resolveDownloadUrl(item, download),
+    );
+    return int.tryParse(
+      response.headers.value(Headers.contentLengthHeader) ?? '',
+    );
   }
 
   Future<Map<String, dynamic>> _fetchJsonObject(
@@ -104,6 +268,7 @@ class AstroBoxCommunityRepository {
     }
   }
 
+  @override
   String resolveImageUrl(AstroBoxIndexItem item, String path) {
     if (path.startsWith('http://') ||
         path.startsWith('https://') ||
@@ -113,12 +278,13 @@ class AstroBoxCommunityRepository {
         path.startsWith('/')) {
       return path;
     }
-    final base = _buildRepoCdnUrl(item);
-    return _convert('$base/${path.trimStartMatches('/')}');
+    final base = _buildRepoRawUrl(item);
+    return '$base/${path.trimStartMatches('/')}';
   }
 
-  String buildRepoCdnUrl(AstroBoxIndexItem item) => _buildRepoCdnUrl(item);
+  String buildRepoRawUrl(AstroBoxIndexItem item) => _buildRepoRawUrl(item);
 
+  @override
   String resolveDownloadUrl(
     AstroBoxIndexItem item,
     AstroBoxManifestDownload download,
@@ -126,14 +292,38 @@ class AstroBoxCommunityRepository {
     if (download.url != null && download.url!.isNotEmpty) {
       return resolveImageUrl(item, download.url!);
     }
-    final base = _buildRepoCdnUrl(item).replaceAll(RegExp(r'/+$'), '');
-    return _convert('$base/${download.fileName.trimStartMatches('/')}');
+    final base = _buildRepoRawUrl(item).replaceAll(RegExp(r'/+$'), '');
+    return '$base/${download.fileName.trimStartMatches('/')}';
   }
 
-  String _buildRepoCdnUrl(AstroBoxIndexItem item) {
-    return _convert(
-      'https://raw.githubusercontent.com/${item.repoOwner}/${item.repoName}/${item.repoCommitHash}',
-    );
+  String _buildRepoRawUrl(AstroBoxIndexItem item) {
+    return 'https://raw.githubusercontent.com/${item.repoOwner}/${item.repoName}/${item.repoCommitHash}';
+  }
+
+  AstroBoxManifestDownload _resolveDownloadEntry(
+    AstroBoxManifest manifest,
+    String device,
+  ) {
+    final normalizedDevice = _normalizeDeviceKey(device);
+    final downloads = manifest.downloads;
+    if (downloads.isEmpty) {
+      throw StateError('Manifest ${manifest.item.id} has no downloads');
+    }
+    return downloads[normalizedDevice] ??
+        downloads[device] ??
+        downloads['default'] ??
+        downloads.values.first;
+  }
+
+  String _sanitizeLocalFilename(String input) {
+    final sanitized = input
+        .trim()
+        .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')
+        .replaceAll(RegExp(r'\s+'), ' ');
+    if (sanitized.isEmpty || sanitized == '.' || sanitized == '..') {
+      return 'download';
+    }
+    return sanitized;
   }
 
   AstroBoxResourceType _parseResourceType(String? value) {

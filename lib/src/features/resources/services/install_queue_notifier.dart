@@ -227,6 +227,24 @@ class InstallQueueNotifier extends Notifier<InstallQueueState> {
 
   void start() {
     if (state.isRunning || !state.hasRunnableTasks) return;
+    final hasPending = state.tasks.any(
+      (task) => task.status == ResourceTaskStatus.pending,
+    );
+    if (!hasPending) {
+      state = state.copyWith(
+        tasks: [
+          for (final task in state.tasks)
+            if (task.status == ResourceTaskStatus.failed)
+              task.copyWith(
+                status: ResourceTaskStatus.pending,
+                progress: 0,
+                error: null,
+              )
+            else
+              task,
+        ],
+      );
+    }
     state = state.copyWith(runStatus: QueueRunStatus.running);
     _run();
   }
@@ -239,9 +257,7 @@ class InstallQueueNotifier extends Notifier<InstallQueueState> {
   Future<void> _run() async {
     while (state.runStatus == QueueRunStatus.running) {
       final next = state.tasks.cast<InstallTask?>().firstWhere(
-        (task) =>
-            task?.status == ResourceTaskStatus.pending ||
-            task?.status == ResourceTaskStatus.failed,
+        (task) => task?.status == ResourceTaskStatus.pending,
         orElse: () => null,
       );
       if (next == null) break;
@@ -308,6 +324,21 @@ class InstallQueueNotifier extends Notifier<InstallQueueState> {
     double progress,
     String? error,
   ) {
+    final current = state.tasks.cast<InstallTask?>().firstWhere(
+      (task) => task?.id == taskId,
+      orElse: () => null,
+    );
+    if (current == null) return;
+    final currentIsTerminal =
+        current.status == ResourceTaskStatus.failed ||
+        current.status == ResourceTaskStatus.completed;
+    final nextIsTerminal =
+        status == ResourceTaskStatus.failed ||
+        status == ResourceTaskStatus.completed;
+    if (currentIsTerminal && !nextIsTerminal) {
+      return;
+    }
+
     state = state.copyWith(
       tasks: [
         for (final task in state.tasks)

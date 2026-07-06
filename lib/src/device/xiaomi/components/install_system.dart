@@ -89,7 +89,9 @@ class XiaomiInstallSystem extends XiaomiPbSystem {
         final code = result!.thirdpartyApp.installResult.code;
         _log.info('[${entity.id}] app install result: $code');
         if (code != pb_thirdparty.AppInstaller_Result_Code.INSTALL_SUCCESS) {
-          throw ProtocolException('App install failed: $code');
+          final error = ProtocolException('App install failed: $code');
+          component.sar.abortPendingTransmissions(error);
+          throw error;
         }
       },
     );
@@ -163,7 +165,9 @@ class XiaomiInstallSystem extends XiaomiPbSystem {
         _log.info('[${entity.id}] watchface install result: $code');
         if (code != pb_watchface.InstallResult_Code.INSTALL_SUCCESS &&
             code != pb_watchface.InstallResult_Code.INSTALL_USED) {
-          throw ProtocolException('Watchface install failed: $code');
+          final error = ProtocolException('Watchface install failed: $code');
+          component.sar.abortPendingTransmissions(error);
+          throw error;
         }
       },
     );

@@ -7,8 +7,8 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:zerobox/src/data/astrobox/astrobox_community_repository.dart';
 import 'package:zerobox/src/data/astrobox/models/astrobox_models.dart';
+import 'package:zerobox/src/data/community/community_resource_repository.dart';
 import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
 import 'package:archive/archive.dart';
 
@@ -34,7 +34,7 @@ class ResourceInstallService {
   Future<DownloadedResource?> downloadResource({
     required AstroBoxIndexItem item,
     required AstroBoxManifestDownload download,
-    required AstroBoxCommunityRepository repo,
+    required CommunityResourceRepository repo,
     required void Function(
       ResourceTaskStatus status,
       double progress,
@@ -129,7 +129,7 @@ class ResourceInstallService {
     required AstroBoxIndexItem item,
     required AstroBoxManifest manifest,
     required AstroBoxManifestDownload download,
-    required AstroBoxCommunityRepository repo,
+    required CommunityResourceRepository repo,
     required DeviceManager deviceManager,
     required void Function(
       ResourceTaskStatus status,

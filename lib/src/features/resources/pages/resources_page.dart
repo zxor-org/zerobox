@@ -6,8 +6,10 @@ import 'package:zerobox/src/app/widgets/network_img_layer.dart';
 import 'package:zerobox/src/app/widgets/page_container.dart';
 import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
+import 'package:zerobox/src/core/providers/app_settings_providers.dart';
 import 'package:zerobox/src/data/astrobox/astrobox_providers.dart';
 import 'package:zerobox/src/data/astrobox/models/astrobox_models.dart';
+import 'package:zerobox/src/data/community/community_source.dart';
 import 'package:zerobox/src/device/core/xiaomi_wearable_catalog.dart';
 import 'package:zerobox/src/features/resources/controllers/resource_filter_controller.dart';
 
@@ -28,6 +30,7 @@ class ResourcesPage extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () {
+              ref.invalidate(filteredAstroBoxIndexProvider);
               ref.invalidate(astroBoxIndexProvider);
               ref.invalidate(astroBoxDeviceMapProvider);
             },
@@ -47,31 +50,40 @@ class ResourcesPage extends ConsumerWidget {
                   horizontal: StyleConstants.pagePadding,
                   vertical: StyleConstants.pagePadding,
                 ),
-                child: SegmentedButton<ResourceMode>(
-                  showSelectedIcon: false,
-                  segments: [
-                    ButtonSegment(
-                      value: ResourceMode.home,
-                      label: Text(l10n.homeTab),
-                      icon: const Icon(Icons.home_outlined),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    SegmentedButton<ResourceMode>(
+                      showSelectedIcon: false,
+                      segments: [
+                        ButtonSegment(
+                          value: ResourceMode.home,
+                          label: Text(l10n.homeTab),
+                          icon: const Icon(Icons.home_outlined),
+                        ),
+                        ButtonSegment(
+                          value: ResourceMode.library,
+                          label: Text(l10n.resourceLibrary),
+                          icon: const Icon(Icons.library_books_outlined),
+                        ),
+                        ButtonSegment(
+                          value: ResourceMode.creator,
+                          label: Text(l10n.creatorCenter),
+                          icon: const Icon(Icons.create_outlined),
+                        ),
+                      ],
+                      selected: {mode},
+                      onSelectionChanged: (selected) {
+                        ref
+                            .read(resourceModeControllerProvider.notifier)
+                            .setMode(selected.first);
+                      },
                     ),
-                    ButtonSegment(
-                      value: ResourceMode.library,
-                      label: Text(l10n.resourceLibrary),
-                      icon: const Icon(Icons.library_books_outlined),
-                    ),
-                    ButtonSegment(
-                      value: ResourceMode.creator,
-                      label: Text(l10n.creatorCenter),
-                      icon: const Icon(Icons.create_outlined),
+                    const Align(
+                      alignment: Alignment.centerRight,
+                      child: _CommunitySourceMenu(),
                     ),
                   ],
-                  selected: {mode},
-                  onSelectionChanged: (selected) {
-                    ref
-                        .read(resourceModeControllerProvider.notifier)
-                        .setMode(selected.first);
-                  },
                 ),
               ),
             ),
@@ -108,9 +120,10 @@ class _ResourceLibraryView extends ConsumerWidget {
     final indexAsync = ref.watch(filteredAstroBoxIndexProvider);
 
     Future<void> onRefresh() async {
+      ref.invalidate(filteredAstroBoxIndexProvider);
       ref.invalidate(astroBoxIndexProvider);
       ref.invalidate(astroBoxDeviceMapProvider);
-      await ref.read(astroBoxIndexProvider.future);
+      await ref.read(filteredAstroBoxIndexProvider.future);
     }
 
     return RefreshIndicator(
@@ -173,6 +186,48 @@ class _ResourceLibraryView extends ConsumerWidget {
           const SliverPadding(padding: EdgeInsets.only(bottom: 32)),
         ],
       ),
+    );
+  }
+}
+
+class _CommunitySourceMenu extends ConsumerWidget {
+  const _CommunitySourceMenu();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final source = ref.watch(communitySourceProvider);
+
+    return MenuAnchor(
+      menuChildren: CommunitySourceId.values.map((candidate) {
+        final selected = candidate == source;
+        return MenuItemButton(
+          leadingIcon: selected ? const Icon(Icons.check) : null,
+          onPressed: selected
+              ? null
+              : () async {
+                  await ref
+                      .read(appSettingsProvider.notifier)
+                      .setCommunitySource(candidate);
+                  ref.invalidate(filteredAstroBoxIndexProvider);
+                  ref.invalidate(astroBoxIndexProvider);
+                  ref.invalidate(astroBoxDeviceMapProvider);
+                },
+          child: Text(candidate.displayName),
+        );
+      }).toList(),
+      builder: (context, controller, child) {
+        return OutlinedButton.icon(
+          onPressed: () {
+            if (controller.isOpen) {
+              controller.close();
+            } else {
+              controller.open();
+            }
+          },
+          icon: const Icon(Icons.public_outlined, size: 18),
+          label: Text(source.displayName),
+        );
+      },
     );
   }
 }

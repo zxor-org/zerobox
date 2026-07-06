@@ -1,7 +1,7 @@
-import 'dart:math';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zerobox/src/data/astrobox/astrobox_providers.dart';
 import 'package:zerobox/src/data/astrobox/models/astrobox_models.dart';
+import 'package:zerobox/src/data/community/community_resource_repository.dart';
 
 enum ResourceMode { home, library, creator }
 
@@ -99,58 +99,24 @@ class ResourceFiltersNotifier extends Notifier<ResourceFilters> {
 }
 
 final filteredAstroBoxIndexProvider =
-    Provider.autoDispose<AsyncValue<List<AstroBoxIndexItem>>>((ref) {
-      final indexAsync = ref.watch(astroBoxIndexProvider);
+    FutureProvider.autoDispose<List<AstroBoxIndexItem>>((ref) async {
+      final repo = ref.watch(astroBoxRepositoryProvider);
       final filters = ref.watch(resourceFiltersProvider);
 
-      return indexAsync.when(
-        data: (items) {
-          var result = List<AstroBoxIndexItem>.from(items);
-
-          if (filters.type != null) {
-            result = result.where((i) => i.type == filters.type).toList();
-          }
-
-          if (filters.hidePaid) {
-            result = result
-                .where((i) => i.paidType != AstroBoxPaidType.paid)
-                .toList();
-          }
-          if (filters.hideForcePaid) {
-            result = result
-                .where((i) => i.paidType != AstroBoxPaidType.forcePaid)
-                .toList();
-          }
-
-          if (filters.selectedDevices.isNotEmpty) {
-            result = result
-                .where(
-                  (i) =>
-                      i.devices.any((d) => filters.selectedDevices.contains(d)),
-                )
-                .toList();
-          }
-
-          final query = filters.query.trim().toLowerCase();
-          if (query.isNotEmpty) {
-            result = result.where((i) {
-              return i.name.toLowerCase().contains(query) ||
-                  i.tags.any((t) => t.toLowerCase().contains(query));
-            }).toList();
-          }
-
-          switch (filters.sort) {
-            case ResourceSortRule.random:
-              result.shuffle(Random());
-            case ResourceSortRule.name:
-              result.sort((a, b) => a.name.compareTo(b.name));
-            case ResourceSortRule.time:
-              result = result.reversed.toList();
-          }
-
-          return AsyncValue.data(result);
-        },
-        loading: () => const AsyncValue.loading(),
-        error: (err, stack) => AsyncValue.error(err, stack),
+      return repo.getPage(
+        page: 0,
+        limit: 100000,
+        search: CommunitySearchConfig(
+          query: filters.query,
+          sort: switch (filters.sort) {
+            ResourceSortRule.random => CommunitySortRule.random,
+            ResourceSortRule.name => CommunitySortRule.name,
+            ResourceSortRule.time => CommunitySortRule.time,
+          },
+          type: filters.type,
+          hidePaid: filters.hidePaid,
+          hideForcePaid: filters.hideForcePaid,
+          selectedDevices: filters.selectedDevices,
+        ),
       );
     });
