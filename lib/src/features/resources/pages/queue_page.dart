@@ -83,12 +83,17 @@ class _DownloadQueuePanel extends ConsumerWidget {
 
     return _QueuePanel(
       title: '下载队列',
-      action: tasks.any((task) => task.status == ResourceTaskStatus.completed)
-          ? TextButton(
-              onPressed: notifier.clearCompleted,
-              child: const Text('清除已完成'),
-            )
-          : null,
+      action: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (tasks.isNotEmpty)
+            IconButton(
+              onPressed: notifier.clear,
+              icon: const Icon(Icons.delete_outline),
+              tooltip: '清空',
+            ),
+        ],
+      ),
       emptyText: '暂无下载任务',
       children: [
         for (final task in tasks)
@@ -124,22 +129,21 @@ class _InstallQueuePanel extends ConsumerWidget {
       action: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (state.tasks.any(
-            (task) => task.status == ResourceTaskStatus.completed,
-          ))
-            TextButton(
-              onPressed: notifier.clearCompleted,
-              child: const Text('清除已完成'),
+          if (state.tasks.isNotEmpty)
+            IconButton(
+              onPressed: notifier.clear,
+              icon: const Icon(Icons.delete_outline),
+              tooltip: '清空',
             ),
           const SizedBox(width: 8),
-          FilledButton.icon(
+          IconButton(
             onPressed: running
                 ? notifier.pause
                 : canStart
                 ? notifier.start
                 : null,
             icon: Icon(running ? Icons.pause : Icons.play_arrow),
-            label: Text(running ? '暂停' : '开始'),
+            tooltip: running ? '暂停' : '开始',
           ),
         ],
       ),

@@ -487,10 +487,9 @@ class DeviceManager extends Notifier<DeviceManagerState> {
       );
       final updatedPaired = List<MiWearState>.from(state.pairedDevices);
       if (existingIndex >= 0) {
-        updatedPaired[existingIndex] = connected;
-      } else {
-        updatedPaired.add(connected);
+        updatedPaired.removeAt(existingIndex);
       }
+      updatedPaired.insert(0, connected);
 
       state = state.copyWith(
         currentDevice: connected,
@@ -630,10 +629,13 @@ class DeviceManager extends Notifier<DeviceManagerState> {
         _log.info('event: app list ${apps.length}');
         state = state.copyWith(apps: apps);
       case StorageInfoUpdated(:final info):
-        _log.info('storage info ${event.deviceId}: used=${info.used}, total=${info.total}');
+        _log.info(
+          'storage info ${event.deviceId}: used=${info.used}, total=${info.total}',
+        );
         final currentInfo = state.systemInfo;
         state = state.copyWith(
-          systemInfo: currentInfo?.copyWith(storageInfo: info) ??
+          systemInfo:
+              currentInfo?.copyWith(storageInfo: info) ??
               SystemInfo(
                 serialNumber: '',
                 firmwareVersion: '',

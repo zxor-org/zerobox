@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:zerobox/src/data/astrobox/models/astrobox_models.dart';
@@ -19,10 +19,15 @@ enum ResourceTaskStatus { pending, downloading, installing, completed, failed }
 enum LocalDeviceInstallType { app, watchface, firmware }
 
 class DownloadedResource {
-  const DownloadedResource({required this.path, required this.fileName});
+  const DownloadedResource({
+    required this.path,
+    required this.fileName,
+    this.bytes,
+  });
 
   final String path;
   final String fileName;
+  final Uint8List? bytes;
 }
 
 class ResourceInstallService {
@@ -53,8 +58,54 @@ class ResourceInstallService {
     final displayName = (download.displayName?.isNotEmpty ?? false)
         ? download.displayName!
         : download.fileName;
-    final tempDir = await getTemporaryDirectory();
     final safeName = displayName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+
+    if (kIsWeb) {
+      try {
+        final response = await _dio.get<Uint8List>(
+          resolvedUrl,
+          cancelToken: cancelToken,
+          options: Options(responseType: ResponseType.bytes),
+          onReceiveProgress: (received, total) {
+            if (total > 0) {
+              onUpdate(ResourceTaskStatus.downloading, received / total, null);
+            }
+          },
+        );
+        final bytes = response.data;
+        if (bytes == null) {
+          onUpdate(ResourceTaskStatus.failed, 0, 'Download empty');
+          return null;
+        }
+        onUpdate(ResourceTaskStatus.completed, 1, null);
+        return DownloadedResource(
+          path: '/zerobox_downloads/$safeName',
+          fileName: displayName,
+          bytes: bytes,
+        );
+      } on DioException catch (e) {
+        if (CancelToken.isCancel(e)) {
+          onUpdate(ResourceTaskStatus.failed, 0, 'Cancelled');
+        } else {
+          final actual = e.requestOptions.uri.toString();
+          onUpdate(
+            ResourceTaskStatus.failed,
+            0,
+            'Download failed [$actual]: $e',
+          );
+        }
+        return null;
+      } catch (e) {
+        onUpdate(
+          ResourceTaskStatus.failed,
+          0,
+          'Download failed [$resolvedUrl]: $e',
+        );
+        return null;
+      }
+    }
+
+    final tempDir = await getTemporaryDirectory();
     final savePath = '${tempDir.path}/zerobox_downloads/$safeName';
     await Directory(
       '${tempDir.path}/zerobox_downloads',
@@ -75,11 +126,16 @@ class ResourceInstallService {
       if (CancelToken.isCancel(e)) {
         onUpdate(ResourceTaskStatus.failed, 0, 'Cancelled');
       } else {
-        onUpdate(ResourceTaskStatus.failed, 0, 'Download failed: $e');
+        final actual = e.requestOptions.uri.toString();
+        onUpdate(ResourceTaskStatus.failed, 0, 'Download failed [$actual]: $e');
       }
       return null;
     } catch (e) {
-      onUpdate(ResourceTaskStatus.failed, 0, 'Download failed: $e');
+      onUpdate(
+        ResourceTaskStatus.failed,
+        0,
+        'Download failed [$resolvedUrl]: $e',
+      );
       return null;
     }
 
@@ -92,6 +148,7 @@ class ResourceInstallService {
     required AstroBoxManifest manifest,
     required AstroBoxManifestDownload download,
     required String filePath,
+    Uint8List? bytes,
     required DeviceManager deviceManager,
     required void Function(
       ResourceTaskStatus status,
@@ -103,12 +160,12 @@ class ResourceInstallService {
   }) async {
     onUpdate(ResourceTaskStatus.installing, 0, null);
     try {
-      final bytes = await File(filePath).readAsBytes();
+      final payload = bytes ?? await File(filePath).readAsBytes();
       await _installByType(
         item: item,
         manifest: manifest,
         download: download,
-        bytes: bytes,
+        bytes: payload,
         deviceManager: deviceManager,
         onProgress: (progress) =>
             onUpdate(ResourceTaskStatus.installing, progress, null),
@@ -117,7 +174,7 @@ class ResourceInstallService {
     } catch (e) {
       onUpdate(ResourceTaskStatus.failed, 0, 'Install failed: $e');
     } finally {
-      if (deleteAfterInstall) {
+      if (deleteAfterInstall && !kIsWeb) {
         try {
           await File(filePath).delete();
         } catch (_) {}
@@ -151,6 +208,7 @@ class ResourceInstallService {
       manifest: manifest,
       download: download,
       filePath: downloaded.path,
+      bytes: downloaded.bytes,
       deviceManager: deviceManager,
       onUpdate: onUpdate,
       deleteAfterInstall: true,
@@ -159,6 +217,7 @@ class ResourceInstallService {
 
   Future<void> installLocalFile({
     required String filePath,
+    Uint8List? bytes,
     required DeviceManager deviceManager,
     required void Function(
       ResourceTaskStatus status,
@@ -169,20 +228,19 @@ class ResourceInstallService {
   }) async {
     onUpdate(ResourceTaskStatus.installing, 0, null);
 
-    final file = File(filePath);
-    final fileName = file.uri.pathSegments.isEmpty
-        ? filePath
-        : Uri.decodeComponent(file.uri.pathSegments.last);
+    final fileName = Uri.tryParse(filePath)?.pathSegments.isNotEmpty == true
+        ? Uri.decodeComponent(Uri.parse(filePath).pathSegments.last)
+        : filePath;
 
-    Uint8List bytes;
+    Uint8List payload;
     try {
-      bytes = await file.readAsBytes();
+      payload = bytes ?? await File(filePath).readAsBytes();
     } catch (e) {
       onUpdate(ResourceTaskStatus.failed, 0, 'Read failed: $e');
       return;
     }
 
-    final type = detectLocalInstallType(fileName, bytes);
+    final type = detectLocalInstallType(fileName, payload);
     if (type == null) {
       onUpdate(
         ResourceTaskStatus.failed,
@@ -196,23 +254,23 @@ class ResourceInstallService {
       switch (type) {
         case LocalDeviceInstallType.app:
           await deviceManager.installApp(
-            bytes,
+            payload,
             packageName:
-                _extractAppPackageName(bytes) ?? _guessPackageName(fileName),
+                _extractAppPackageName(payload) ?? _guessPackageName(fileName),
             onProgress: (progress) =>
                 onUpdate(ResourceTaskStatus.installing, progress, null),
           );
         case LocalDeviceInstallType.watchface:
           await deviceManager.installWatchface(
-            bytes,
+            payload,
             watchfaceId:
-                _extractWatchfaceId(bytes) ?? _guessWatchfaceId(fileName),
+                _extractWatchfaceId(payload) ?? _guessWatchfaceId(fileName),
             onProgress: (progress) =>
                 onUpdate(ResourceTaskStatus.installing, progress, null),
           );
         case LocalDeviceInstallType.firmware:
           await deviceManager.installFirmware(
-            bytes,
+            payload,
             onProgress: (progress) =>
                 onUpdate(ResourceTaskStatus.installing, progress, null),
           );

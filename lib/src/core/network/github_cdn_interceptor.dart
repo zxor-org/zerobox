@@ -23,15 +23,11 @@ Uri _rewriteGithubUri(Uri uri, AstroBoxCdn cdn) {
     return uri;
   }
 
-  final target = '${uri.host}${uri.path}';
+  final origin = uri.toString();
   return switch (cdn) {
     AstroBoxCdn.raw => uri,
-    AstroBoxCdn.ghfast => Uri.https('ghfast.top', target, uri.queryParameters),
-    AstroBoxCdn.ghproxy => Uri.https(
-      'gh-proxy.com',
-      target,
-      uri.queryParameters,
-    ),
+    AstroBoxCdn.ghfast => Uri.parse('https://ghfast.top/$origin'),
+    AstroBoxCdn.ghproxy => Uri.parse('https://gh-proxy.com/$origin'),
   };
 }
 

@@ -120,6 +120,12 @@ class DownloadQueueNotifier extends Notifier<List<ResourceTask>> {
         .toList();
   }
 
+  void clear() {
+    _cancelToken?.cancel('queue cleared');
+    _cancelToken = null;
+    state = [];
+  }
+
   void retry(String taskId) {
     state = [
       for (final task in state)
@@ -181,6 +187,7 @@ class DownloadQueueNotifier extends Notifier<List<ResourceTask>> {
             download: task.download,
             codename: task.codename,
             filePath: downloaded.path,
+            bytes: downloaded.bytes,
           );
       state = state.where((t) => t.id != task.id).toList();
     }

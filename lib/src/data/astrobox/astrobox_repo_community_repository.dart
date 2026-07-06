@@ -279,7 +279,7 @@ class AstroBoxRepoCommunityRepository implements CommunityResourceRepository {
       return path;
     }
     final base = _buildRepoRawUrl(item);
-    return '$base/${path.trimStartMatches('/')}';
+    return '$base/${Uri.encodeComponent(path.trimStartMatches('/'))}';
   }
 
   String buildRepoRawUrl(AstroBoxIndexItem item) => _buildRepoRawUrl(item);
@@ -293,7 +293,7 @@ class AstroBoxRepoCommunityRepository implements CommunityResourceRepository {
       return resolveImageUrl(item, download.url!);
     }
     final base = _buildRepoRawUrl(item).replaceAll(RegExp(r'/+$'), '');
-    return '$base/${download.fileName.trimStartMatches('/')}';
+    return '$base/${Uri.encodeComponent(download.fileName.trimStartMatches('/'))}';
   }
 
   String _buildRepoRawUrl(AstroBoxIndexItem item) {

@@ -1,5 +1,7 @@
+import 'package:cross_file/cross_file.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:card_settings_ui/card_settings_ui.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -67,7 +69,7 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
         if (files.isEmpty) return;
         final queue = ref.read(installQueueProvider.notifier);
         for (final file in files) {
-          queue.enqueueLocalFile(file.path);
+          queue.enqueueLocalFile(file);
         }
         ScaffoldMessenger.of(
           context,
@@ -315,14 +317,14 @@ class _DeviceInfoPanel extends StatelessWidget {
   }
 }
 
-class _DeviceFeaturesPanel extends StatelessWidget {
+class _DeviceFeaturesPanel extends ConsumerWidget {
   const _DeviceFeaturesPanel({required this.enabled, required this.hasDevice});
 
   final bool enabled;
   final bool hasDevice;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context)!;
 
     return Center(
@@ -335,21 +337,36 @@ class _DeviceFeaturesPanel extends StatelessWidget {
               title: Text(l10n.install),
               tiles: [
                 SettingsTile.navigation(
-                  onPressed: (_) => context.push('/devices/install/app'),
+                  onPressed: (_) => _pickAndEnqueue(
+                    context,
+                    ref,
+                    LocalDeviceInstallType.app,
+                    ['bin', 'rpk', 'zpk', 'zip'],
+                  ),
                   enabled: enabled,
                   leading: const Icon(Icons.apps_outlined),
                   title: Text(l10n.deviceFeaturesInstallApp),
                   description: Text(l10n.deviceFeaturesInstallAppDesc),
                 ),
                 SettingsTile.navigation(
-                  onPressed: (_) => context.push('/devices/install/watchface'),
+                  onPressed: (_) => _pickAndEnqueue(
+                    context,
+                    ref,
+                    LocalDeviceInstallType.watchface,
+                    ['bin', 'face', 'mwz', 'zip'],
+                  ),
                   enabled: enabled,
                   leading: const Icon(Icons.watch_outlined),
                   title: Text(l10n.deviceFeaturesInstallWatchface),
                   description: Text(l10n.deviceFeaturesInstallWatchfaceDesc),
                 ),
                 SettingsTile.navigation(
-                  onPressed: (_) => context.push('/devices/install/firmware'),
+                  onPressed: (_) => _pickAndEnqueue(
+                    context,
+                    ref,
+                    LocalDeviceInstallType.firmware,
+                    ['zip', 'bin'],
+                  ),
                   enabled: enabled,
                   leading: const Icon(Icons.memory_outlined),
                   title: Text(l10n.deviceFeaturesInstallFirmware),
@@ -386,6 +403,28 @@ class _DeviceFeaturesPanel extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Future<void> _pickAndEnqueue(
+    BuildContext context,
+    WidgetRef ref,
+    LocalDeviceInstallType type,
+    List<String> extensions,
+  ) async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: extensions,
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.first;
+    final bytes = file.bytes;
+    if (bytes == null) return;
+
+    final queue = ref.read(installQueueProvider.notifier);
+    queue.enqueueLocalFile(
+      XFile.fromData(bytes, name: file.name, path: file.path ?? ''),
     );
   }
 }

@@ -1,5 +1,6 @@
-import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:cross_file/cross_file.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zerobox/src/core/providers/app_settings_providers.dart';
 import 'package:zerobox/src/data/astrobox/models/astrobox_models.dart';
@@ -19,6 +20,7 @@ class InstallTask {
     required this.description,
     required this.type,
     required this.filePath,
+    this.bytes,
     this.item,
     this.manifest,
     this.download,
@@ -32,6 +34,7 @@ class InstallTask {
     required String path,
     required String fileName,
     required LocalDeviceInstallType type,
+    Uint8List? bytes,
   }) {
     return InstallTask(
       id: path,
@@ -39,6 +42,7 @@ class InstallTask {
       description: _localTypeDescription(type),
       type: type,
       filePath: path,
+      bytes: bytes,
     );
   }
 
@@ -48,6 +52,7 @@ class InstallTask {
     required AstroBoxManifestDownload download,
     required String codename,
     required String filePath,
+    Uint8List? bytes,
   }) {
     return InstallTask(
       id: '${item.id}_$codename',
@@ -55,6 +60,7 @@ class InstallTask {
       description: codename,
       type: _installTypeForResource(item.type),
       filePath: filePath,
+      bytes: bytes,
       item: item,
       manifest: manifest,
       download: download,
@@ -67,6 +73,7 @@ class InstallTask {
   final String description;
   final LocalDeviceInstallType type;
   final String filePath;
+  final Uint8List? bytes;
   final AstroBoxIndexItem? item;
   final AstroBoxManifest? manifest;
   final AstroBoxManifestDownload? download;
@@ -86,6 +93,7 @@ class InstallTask {
       description: description,
       type: type,
       filePath: filePath,
+      bytes: bytes,
       item: item,
       manifest: manifest,
       download: download,
@@ -134,29 +142,50 @@ class InstallQueueNotifier extends Notifier<InstallQueueState> {
   @override
   InstallQueueState build() => const InstallQueueState();
 
-  void enqueueLocalFile(String path) {
+  void enqueueLocalFile(XFile file) {
     final service = ResourceInstallService();
-    final fileName = Uri.decodeComponent(Uri.file(path).pathSegments.last);
+    final fileName = file.name;
 
-    // Type detection reads the file, so do it asynchronously without blocking
-    // the drop event. Unsupported files become failed tasks instead of silent no-ops.
     Future<void>(() async {
-      final bytes = await File(path).readAsBytes();
+      Uint8List bytes;
+      try {
+        bytes = await file.readAsBytes();
+      } catch (e) {
+        final task = InstallTask(
+          id: file.path,
+          name: fileName,
+          description: '读取失败',
+          type: LocalDeviceInstallType.app,
+          filePath: file.path,
+          status: ResourceTaskStatus.failed,
+          error: 'Read failed: $e',
+        );
+        _addTask(task);
+        return;
+      }
       final type = service.detectLocalInstallType(fileName, bytes);
       if (type == null) {
         final task = InstallTask(
-          id: path,
+          id: file.path,
           name: fileName,
           description: '不支持的文件',
           type: LocalDeviceInstallType.app,
-          filePath: path,
+          filePath: file.path,
+          bytes: bytes,
           status: ResourceTaskStatus.failed,
           error: '不支持或无法识别的文件类型',
         );
         _addTask(task);
         return;
       }
-      _addTask(InstallTask.local(path: path, fileName: fileName, type: type));
+      _addTask(
+        InstallTask.local(
+          path: file.path,
+          fileName: fileName,
+          type: type,
+          bytes: bytes,
+        ),
+      );
     });
   }
 
@@ -166,6 +195,7 @@ class InstallQueueNotifier extends Notifier<InstallQueueState> {
     required AstroBoxManifestDownload download,
     required String codename,
     required String filePath,
+    Uint8List? bytes,
   }) {
     _addTask(
       InstallTask.resource(
@@ -174,6 +204,7 @@ class InstallQueueNotifier extends Notifier<InstallQueueState> {
         download: download,
         codename: codename,
         filePath: filePath,
+        bytes: bytes,
       ),
     );
     if (ref.read(appSettingsProvider).autoInstall) {
@@ -207,6 +238,10 @@ class InstallQueueNotifier extends Notifier<InstallQueueState> {
           .where((task) => task.status != ResourceTaskStatus.completed)
           .toList(),
     );
+  }
+
+  void clear() {
+    state = state.copyWith(tasks: [], runStatus: QueueRunStatus.pending);
   }
 
   void retry(String taskId) {
@@ -300,6 +335,7 @@ class InstallQueueNotifier extends Notifier<InstallQueueState> {
         manifest: task.manifest!,
         download: task.download!,
         filePath: task.filePath,
+        bytes: task.bytes,
         deviceManager: deviceManager,
         deleteAfterInstall: task.deleteAfterInstall,
         onUpdate: (status, progress, error) {
@@ -311,6 +347,7 @@ class InstallQueueNotifier extends Notifier<InstallQueueState> {
 
     await service.installLocalFile(
       filePath: task.filePath,
+      bytes: task.bytes,
       deviceManager: deviceManager,
       onUpdate: (status, progress, error) {
         _updateTask(task.id, status, progress, error);
