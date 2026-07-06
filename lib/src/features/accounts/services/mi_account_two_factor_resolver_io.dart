@@ -7,7 +7,7 @@ import 'package:flutter/services.dart';
 import 'mi_account_two_factor_resolver_base.dart';
 
 MiAccountTwoFactorResolver createPlatformMiAccountTwoFactorResolver() {
-  if (Platform.isAndroid || Platform.isLinux) {
+  if (Platform.isAndroid || Platform.isLinux || Platform.isMacOS) {
     return const NativeMiAccountTwoFactorResolver();
   }
   return const UnsupportedIoMiAccountTwoFactorResolver();

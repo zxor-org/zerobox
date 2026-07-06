@@ -16,25 +16,36 @@ export 'resource_task_status.dart';
 
 enum ResourceTaskStatus { pending, downloading, installing, completed, failed }
 
+enum LocalDeviceInstallType { app, watchface, firmware }
+
+class DownloadedResource {
+  const DownloadedResource({required this.path, required this.fileName});
+
+  final String path;
+  final String fileName;
+}
+
 class ResourceInstallService {
   ResourceInstallService({Dio? dio, this.cancelToken}) : _dio = dio ?? Dio();
 
   final Dio _dio;
   final CancelToken? cancelToken;
 
-  Future<void> downloadAndInstall({
+  Future<DownloadedResource?> downloadResource({
     required AstroBoxIndexItem item,
-    required AstroBoxManifest manifest,
     required AstroBoxManifestDownload download,
     required AstroBoxCommunityRepository repo,
-    required DeviceManager deviceManager,
-    required void Function(ResourceTaskStatus status, double progress, String? error) onUpdate,
-    required String taskId,
+    required void Function(
+      ResourceTaskStatus status,
+      double progress,
+      String? error,
+    )
+    onUpdate,
   }) async {
     final resolvedUrl = repo.resolveDownloadUrl(item, download);
     if (resolvedUrl.isEmpty) {
       onUpdate(ResourceTaskStatus.failed, 0, 'Download URL missing');
-      return;
+      return null;
     }
 
     onUpdate(ResourceTaskStatus.downloading, 0, null);
@@ -45,7 +56,9 @@ class ResourceInstallService {
     final tempDir = await getTemporaryDirectory();
     final safeName = displayName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
     final savePath = '${tempDir.path}/zerobox_downloads/$safeName';
-    await Directory('${tempDir.path}/zerobox_downloads').create(recursive: true);
+    await Directory(
+      '${tempDir.path}/zerobox_downloads',
+    ).create(recursive: true);
 
     try {
       await _dio.download(
@@ -64,32 +77,172 @@ class ResourceInstallService {
       } else {
         onUpdate(ResourceTaskStatus.failed, 0, 'Download failed: $e');
       }
-      return;
+      return null;
     } catch (e) {
       onUpdate(ResourceTaskStatus.failed, 0, 'Download failed: $e');
-      return;
+      return null;
     }
 
-    onUpdate(ResourceTaskStatus.installing, 0, null);
+    onUpdate(ResourceTaskStatus.completed, 1, null);
+    return DownloadedResource(path: savePath, fileName: displayName);
+  }
 
+  Future<void> installDownloadedResource({
+    required AstroBoxIndexItem item,
+    required AstroBoxManifest manifest,
+    required AstroBoxManifestDownload download,
+    required String filePath,
+    required DeviceManager deviceManager,
+    required void Function(
+      ResourceTaskStatus status,
+      double progress,
+      String? error,
+    )
+    onUpdate,
+    bool deleteAfterInstall = false,
+  }) async {
+    onUpdate(ResourceTaskStatus.installing, 0, null);
     try {
-      final bytes = await File(savePath).readAsBytes();
+      final bytes = await File(filePath).readAsBytes();
       await _installByType(
         item: item,
         manifest: manifest,
         download: download,
         bytes: bytes,
         deviceManager: deviceManager,
-        onProgress: (progress) => onUpdate(ResourceTaskStatus.installing, progress, null),
+        onProgress: (progress) =>
+            onUpdate(ResourceTaskStatus.installing, progress, null),
       );
       onUpdate(ResourceTaskStatus.completed, 1, null);
     } catch (e) {
       onUpdate(ResourceTaskStatus.failed, 0, 'Install failed: $e');
     } finally {
-      try {
-        await File(savePath).delete();
-      } catch (_) {}
+      if (deleteAfterInstall) {
+        try {
+          await File(filePath).delete();
+        } catch (_) {}
+      }
     }
+  }
+
+  Future<void> downloadAndInstall({
+    required AstroBoxIndexItem item,
+    required AstroBoxManifest manifest,
+    required AstroBoxManifestDownload download,
+    required AstroBoxCommunityRepository repo,
+    required DeviceManager deviceManager,
+    required void Function(
+      ResourceTaskStatus status,
+      double progress,
+      String? error,
+    )
+    onUpdate,
+    required String taskId,
+  }) async {
+    final downloaded = await downloadResource(
+      item: item,
+      download: download,
+      repo: repo,
+      onUpdate: onUpdate,
+    );
+    if (downloaded == null) return;
+    await installDownloadedResource(
+      item: item,
+      manifest: manifest,
+      download: download,
+      filePath: downloaded.path,
+      deviceManager: deviceManager,
+      onUpdate: onUpdate,
+      deleteAfterInstall: true,
+    );
+  }
+
+  Future<void> installLocalFile({
+    required String filePath,
+    required DeviceManager deviceManager,
+    required void Function(
+      ResourceTaskStatus status,
+      double progress,
+      String? error,
+    )
+    onUpdate,
+  }) async {
+    onUpdate(ResourceTaskStatus.installing, 0, null);
+
+    final file = File(filePath);
+    final fileName = file.uri.pathSegments.isEmpty
+        ? filePath
+        : Uri.decodeComponent(file.uri.pathSegments.last);
+
+    Uint8List bytes;
+    try {
+      bytes = await file.readAsBytes();
+    } catch (e) {
+      onUpdate(ResourceTaskStatus.failed, 0, 'Read failed: $e');
+      return;
+    }
+
+    final type = detectLocalInstallType(fileName, bytes);
+    if (type == null) {
+      onUpdate(
+        ResourceTaskStatus.failed,
+        0,
+        'Unsupported or ambiguous file type: $fileName',
+      );
+      return;
+    }
+
+    try {
+      switch (type) {
+        case LocalDeviceInstallType.app:
+          await deviceManager.installApp(
+            bytes,
+            packageName:
+                _extractAppPackageName(bytes) ?? _guessPackageName(fileName),
+            onProgress: (progress) =>
+                onUpdate(ResourceTaskStatus.installing, progress, null),
+          );
+        case LocalDeviceInstallType.watchface:
+          await deviceManager.installWatchface(
+            bytes,
+            watchfaceId:
+                _extractWatchfaceId(bytes) ?? _guessWatchfaceId(fileName),
+            onProgress: (progress) =>
+                onUpdate(ResourceTaskStatus.installing, progress, null),
+          );
+        case LocalDeviceInstallType.firmware:
+          await deviceManager.installFirmware(
+            bytes,
+            onProgress: (progress) =>
+                onUpdate(ResourceTaskStatus.installing, progress, null),
+          );
+      }
+      onUpdate(ResourceTaskStatus.completed, 1, null);
+    } catch (e) {
+      onUpdate(ResourceTaskStatus.failed, 0, 'Install failed: $e');
+    }
+  }
+
+  LocalDeviceInstallType? detectLocalInstallType(
+    String fileName,
+    Uint8List bytes,
+  ) {
+    final lower = fileName.toLowerCase();
+    final extension = lower.contains('.') ? lower.split('.').last : '';
+
+    if (extension == 'rpk' || extension == 'zpk') {
+      return LocalDeviceInstallType.app;
+    }
+    if (extension == 'face' || extension == 'mwz') {
+      return LocalDeviceInstallType.watchface;
+    }
+    if (_extractAppPackageName(bytes) != null) {
+      return LocalDeviceInstallType.app;
+    }
+    if (_extractWatchfaceId(bytes) != null) {
+      return LocalDeviceInstallType.watchface;
+    }
+    return null;
   }
 
   Future<void> _installByType({
@@ -102,7 +255,8 @@ class ResourceInstallService {
   }) async {
     switch (item.type) {
       case AstroBoxResourceType.quickApp:
-        final packageName = _extractAppPackageName(bytes) ??
+        final packageName =
+            _extractAppPackageName(bytes) ??
             _guessPackageName(download.fileName);
         await deviceManager.installApp(
           bytes,
@@ -110,18 +264,15 @@ class ResourceInstallService {
           onProgress: onProgress,
         );
       case AstroBoxResourceType.watchface:
-        final watchfaceId = _extractWatchfaceId(bytes) ??
-            _guessWatchfaceId(download.fileName);
+        final watchfaceId =
+            _extractWatchfaceId(bytes) ?? _guessWatchfaceId(download.fileName);
         await deviceManager.installWatchface(
           bytes,
           watchfaceId: watchfaceId,
           onProgress: onProgress,
         );
       case AstroBoxResourceType.firmware:
-        await deviceManager.installFirmware(
-          bytes,
-          onProgress: onProgress,
-        );
+        await deviceManager.installFirmware(bytes, onProgress: onProgress);
       case AstroBoxResourceType.fontpack:
       case AstroBoxResourceType.iconpack:
         throw UnsupportedError('${item.type} install not implemented yet');
@@ -150,11 +301,16 @@ class ResourceInstallService {
         if (!candidates.contains(name)) continue;
         final text = utf8.decode(entry.content);
         final json = jsonDecode(text) as Map<String, dynamic>;
-        final pkg = json['package'] ?? json['packageName'] ?? json['package_name'];
+        final pkg =
+            json['package'] ?? json['packageName'] ?? json['package_name'];
         if (pkg is String && pkg.isNotEmpty) return pkg;
       }
     } catch (e) {
-      log('failed to parse app zip manifest', error: e, name: 'ResourceInstallService');
+      log(
+        'failed to parse app zip manifest',
+        error: e,
+        name: 'ResourceInstallService',
+      );
     }
     return null;
   }
@@ -168,12 +324,17 @@ class ResourceInstallService {
           if (entry.name.toLowerCase().endsWith('.json')) {
             final text = utf8.decode(entry.content);
             final json = jsonDecode(text) as Map<String, dynamic>;
-            final id = json['id'] ?? json['watchfaceId'] ?? json['watchface_id'];
+            final id =
+                json['id'] ?? json['watchfaceId'] ?? json['watchface_id'];
             if (id is String && _isValidWatchfaceId(id)) return id;
           }
         }
       } catch (e) {
-        log('failed to parse watchface zip manifest', error: e, name: 'ResourceInstallService');
+        log(
+          'failed to parse watchface zip manifest',
+          error: e,
+          name: 'ResourceInstallService',
+        );
       }
       return null;
     }

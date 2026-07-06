@@ -12,6 +12,7 @@ import 'package:zerobox/src/data/astrobox/models/astrobox_models.dart';
 import 'package:zerobox/src/device/core/xiaomi_wearable_catalog.dart';
 import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
 import 'package:zerobox/src/features/resources/services/download_queue_notifier.dart';
+import 'package:zerobox/src/features/resources/services/install_queue_notifier.dart';
 
 class ResourceDetailPage extends ConsumerWidget {
   const ResourceDetailPage({super.key, required this.item});
@@ -395,7 +396,7 @@ class _DownloadButton extends ConsumerWidget {
             (entry) => entry.key == currentCodename,
           )
         : null;
-    final inQueue = ref.watch(
+    final inDownloadQueue = ref.watch(
       downloadQueueProvider.select(
         (tasks) => tasks.any(
           (task) =>
@@ -404,6 +405,16 @@ class _DownloadButton extends ConsumerWidget {
         ),
       ),
     );
+    final inInstallQueue = ref.watch(
+      installQueueProvider.select(
+        (state) => state.tasks.any(
+          (task) =>
+              task.item?.id == item.id &&
+              task.status != ResourceTaskStatus.completed,
+        ),
+      ),
+    );
+    final inQueue = inDownloadQueue || inInstallQueue;
     final canInstall = isReady && !inQueue;
     final colorScheme = Theme.of(context).colorScheme;
 

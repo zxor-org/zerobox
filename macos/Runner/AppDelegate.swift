@@ -1,24 +1,224 @@
 import Cocoa
 import FlutterMacOS
 import IOBluetooth
+import WebKit
 
 @main
 class AppDelegate: FlutterAppDelegate {
-  private var rfcommChannel: MacOSRfcommChannel?
-
-  override func applicationDidFinishLaunching(_ notification: Notification) {
-    super.applicationDidFinishLaunching(notification)
-    if let controller = mainFlutterWindow?.contentViewController as? FlutterViewController {
-      rfcommChannel = MacOSRfcommChannel(messenger: controller.engine.binaryMessenger)
-    }
-  }
-
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
     return true
   }
 
   override func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
     return true
+  }
+}
+
+final class MacOSMiAccountTwoFactorChannel: NSObject {
+  private let methodChannel: FlutterMethodChannel
+  private weak var parentWindow: NSWindow?
+  private var session: MacOSMiAccountTwoFactorSession?
+
+  init(messenger: FlutterBinaryMessenger, parentWindow: NSWindow?) {
+    self.parentWindow = parentWindow
+    methodChannel = FlutterMethodChannel(
+      name: "zerobox/mi_account_2fa",
+      binaryMessenger: messenger
+    )
+    super.init()
+    methodChannel.setMethodCallHandler(handle)
+  }
+
+  private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    switch call.method {
+    case "resolve":
+      guard let args = call.arguments as? [String: Any],
+        let urlValue = args["url"] as? String,
+        let url = URL(string: urlValue)
+      else {
+        result(FlutterError(code: "INVALID_ARGUMENT", message: "url is required", details: nil))
+        return
+      }
+      if session != nil {
+        result(FlutterError(code: "ALREADY_RUNNING", message: "Xiaomi 2FA WebView is already open", details: nil))
+        return
+      }
+      let nextSession = MacOSMiAccountTwoFactorSession(
+        url: url,
+        parentWindow: parentWindow
+      ) { [weak self] outcome in
+        self?.session = nil
+        switch outcome {
+        case .success(let cookieHeader):
+          result(cookieHeader)
+        case .failure(let error):
+          result(FlutterError(code: error.code, message: error.message, details: nil))
+        }
+      }
+      session = nextSession
+      nextSession.start()
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+}
+
+private struct MacOSMiAccountTwoFactorError: Error {
+  let code: String
+  let message: String
+}
+
+private final class MacOSMiAccountTwoFactorSession: NSObject, NSWindowDelegate, WKNavigationDelegate {
+  private let url: URL
+  private weak var parentWindow: NSWindow?
+  private let completion: (Result<String, MacOSMiAccountTwoFactorError>) -> Void
+  private var window: NSWindow?
+  private var webView: WKWebView?
+  private weak var sheetParent: NSWindow?
+  private var pollTimer: Timer?
+  private var completed = false
+
+  init(
+    url: URL,
+    parentWindow: NSWindow?,
+    completion: @escaping (Result<String, MacOSMiAccountTwoFactorError>) -> Void
+  ) {
+    self.url = url
+    self.parentWindow = parentWindow
+    self.completion = completion
+  }
+
+  func start() {
+    DispatchQueue.main.async {
+      let configuration = WKWebViewConfiguration()
+      configuration.websiteDataStore = .nonPersistent()
+      let webView = WKWebView(frame: .zero, configuration: configuration)
+      webView.navigationDelegate = self
+
+      let window = NSWindow(
+        contentRect: NSRect(x: 0, y: 0, width: 980, height: 720),
+        styleMask: [.titled, .closable, .miniaturizable, .resizable],
+        backing: .buffered,
+        defer: false
+      )
+      window.title = "Xiaomi account verification"
+      window.center()
+      window.contentView = webView
+      window.delegate = self
+
+      self.window = window
+      self.webView = webView
+      if let parentWindow = self.parentWindow, parentWindow.isVisible {
+        self.sheetParent = parentWindow
+        parentWindow.beginSheet(window)
+      } else {
+        window.makeKeyAndOrderFront(nil)
+      }
+      NSApp.activate(ignoringOtherApps: true)
+      webView.load(URLRequest(url: self.url))
+      self.pollTimer = Timer.scheduledTimer(
+        withTimeInterval: 0.75,
+        repeats: true
+      ) { [weak self] _ in
+        self?.completeIfReady()
+      }
+    }
+  }
+
+  func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    completeIfReady()
+    webView.evaluateJavaScript("(document.body && document.body.innerText || '').trim()") { [weak self] value, _ in
+      guard let text = value as? String else {
+        return
+      }
+      let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      if normalized == "ok" || normalized.hasSuffix("\nok") {
+        self?.completeIfReady()
+      }
+    }
+  }
+
+  func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+    failIfOpen(code: "WEBVIEW_FAILED", message: error.localizedDescription)
+  }
+
+  func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+    failIfOpen(code: "WEBVIEW_FAILED", message: error.localizedDescription)
+  }
+
+  func windowWillClose(_ notification: Notification) {
+    failIfOpen(code: "CANCELLED", message: "Xiaomi 2FA WebView was closed")
+  }
+
+  private func completeIfReady() {
+    guard !completed, let webView else {
+      return
+    }
+    webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
+      guard let self, !self.completed else {
+        return
+      }
+      let header = self.cookieHeader(cookies)
+      guard self.hasSessionCookie(header) else {
+        return
+      }
+      self.finish(.success(header))
+    }
+  }
+
+  private func cookieHeader(_ cookies: [HTTPCookie]) -> String {
+    var values: [String: String] = [:]
+    for cookie in cookies {
+      guard !cookie.name.isEmpty, !cookie.value.isEmpty else {
+        continue
+      }
+      values[cookie.name] = cookie.value
+    }
+    return values
+      .map { "\($0.key)=\($0.value)" }
+      .sorted()
+      .joined(separator: "; ")
+  }
+
+  private func hasSessionCookie(_ header: String) -> Bool {
+    let names = Set(
+      header
+        .split(separator: ";")
+        .compactMap { pair -> String? in
+          guard let index = pair.firstIndex(of: "=") else {
+            return nil
+          }
+          return pair[..<index].trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    )
+    return names.contains("passToken") ||
+      names.contains("cUserId") ||
+      names.contains("userId")
+  }
+
+  private func failIfOpen(code: String, message: String) {
+    finish(.failure(MacOSMiAccountTwoFactorError(code: code, message: message)))
+  }
+
+  private func finish(_ outcome: Result<String, MacOSMiAccountTwoFactorError>) {
+    guard !completed else {
+      return
+    }
+    completed = true
+    pollTimer?.invalidate()
+    pollTimer = nil
+    let closeWindow = window
+    let parent = sheetParent
+    window = nil
+    webView = nil
+    sheetParent = nil
+    closeWindow?.delegate = nil
+    if let parent, let closeWindow {
+      parent.endSheet(closeWindow)
+    } else {
+      closeWindow?.close()
+    }
+    completion(outcome)
   }
 }
 
@@ -170,7 +370,7 @@ final class MacOSRfcommChannel: NSObject, FlutterStreamHandler, IOBluetoothRFCOM
     disconnect(cancelConnect: false, emitEvent: false)
 
     DispatchQueue.global(qos: .userInitiated).async {
-      var lastError = "No RFCOMM channel available"
+      var errors: [String] = []
       for channelNumber in fallbackChannels where (1...30).contains(channelNumber) {
         if !self.isCurrentGeneration(generation) {
           DispatchQueue.main.async {
@@ -207,11 +407,12 @@ final class MacOSRfcommChannel: NSObject, FlutterStreamHandler, IOBluetoothRFCOM
           }
           return
         }
-        lastError = "connect failed on channel \(channelNumber): \(status)"
+        errors.append("channel \(channelNumber): \(status)")
       }
 
       DispatchQueue.main.async {
-        result(FlutterError(code: "CONNECT_FAILED", message: lastError, details: nil))
+        let details = errors.isEmpty ? "No RFCOMM channel available" : errors.joined(separator: ", ")
+        result(FlutterError(code: "CONNECT_FAILED", message: "connect failed: \(details)", details: nil))
       }
     }
   }
@@ -230,15 +431,29 @@ final class MacOSRfcommChannel: NSObject, FlutterStreamHandler, IOBluetoothRFCOM
 
     DispatchQueue.global(qos: .userInitiated).async {
       let bytes = [UInt8](data.data)
-      let status = bytes.withUnsafeBytes { buffer -> IOReturn in
-        guard let base = buffer.baseAddress else {
-          return kIOReturnBadArgument
+      let mtu = Int(channel.getMTU())
+      let chunkSize = min(max(mtu, 1), 1024)
+      var status: IOReturn = kIOReturnSuccess
+      var offset = 0
+
+      while offset < bytes.count {
+        let length = min(chunkSize, bytes.count - offset)
+        status = bytes.withUnsafeBytes { buffer -> IOReturn in
+          guard let base = buffer.baseAddress else {
+            return kIOReturnBadArgument
+          }
+          let chunkBase = base.advanced(by: offset)
+          return channel.writeSync(
+            UnsafeMutableRawPointer(mutating: chunkBase),
+            length: UInt16(length)
+          )
         }
-        return channel.writeSync(
-          UnsafeMutableRawPointer(mutating: base),
-          length: UInt16(bytes.count)
-        )
+        if status != kIOReturnSuccess {
+          break
+        }
+        offset += length
       }
+
       DispatchQueue.main.async {
         if status == kIOReturnSuccess {
           result(nil)
@@ -277,7 +492,7 @@ final class MacOSRfcommChannel: NSObject, FlutterStreamHandler, IOBluetoothRFCOM
   ) -> IOReturn {
     let semaphore = DispatchSemaphore(value: 0)
     let state = RfcommOpenState()
-    let deadline = Date().addingTimeInterval(10)
+    let deadline = Date().addingTimeInterval(4)
 
     DispatchQueue.global(qos: .userInitiated).async {
       var localChannel: IOBluetoothRFCOMMChannel?

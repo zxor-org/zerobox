@@ -1,3 +1,4 @@
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:card_settings_ui/card_settings_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,13 +11,21 @@ import 'package:zerobox/src/core/constants/style_constants.dart';
 import 'package:zerobox/src/core/models/bt_models.dart';
 import 'package:zerobox/src/core/models/device.dart';
 import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
+import 'package:zerobox/src/features/resources/services/install_queue_notifier.dart';
 import 'package:zerobox/src/protocols/common/device_protocol.dart' as proto;
 
-class DevicesPage extends ConsumerWidget {
+class DevicesPage extends ConsumerStatefulWidget {
   const DevicesPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DevicesPage> createState() => _DevicesPageState();
+}
+
+class _DevicesPageState extends ConsumerState<DevicesPage> {
+  bool _dragging = false;
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final state = ref.watch(deviceManagerProvider);
     final device = state.currentDevice;
@@ -47,66 +56,125 @@ class DevicesPage extends ConsumerWidget {
       await manager.fetchSystemInfo();
     }
 
-    return Scaffold(
-      appBar: SysAppBar(
-        title: Text(l10n.devicesTab),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.radar),
-            onPressed: () => context.push('/devices/switch'),
-            tooltip: l10n.scan,
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: state.connecting || device == null
-                ? null
-                : refreshOrReconnect,
-            tooltip: device?.disconnected ?? true
-                ? l10n.deviceReconnect
-                : l10n.refresh,
-          ),
-        ],
-      ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final isWide = constraints.maxWidth >= 840;
-          final infoPanel = _DeviceInfoPanel(
-            device: device,
-            isReady: isReady,
-            battery: state.battery,
-            onReconnect: reconnectCurrent,
-            onSwitch: () {
-              context.push('/devices/switch');
-            },
-          );
-          final featuresPanel = _DeviceFeaturesPanel(
-            enabled: isReady,
-            hasDevice: device != null,
-          );
-
-          return PageContainer(
-            padding: const EdgeInsets.symmetric(
-              horizontal: StyleConstants.pagePadding,
+    return DropTarget(
+      onDragEntered: (_) => setState(() => _dragging = true),
+      onDragExited: (_) => setState(() => _dragging = false),
+      onDragDone: (detail) {
+        setState(() => _dragging = false);
+        final files = detail.files
+            .where((file) => file.path.isNotEmpty)
+            .toList();
+        if (files.isEmpty) return;
+        final queue = ref.read(installQueueProvider.notifier);
+        for (final file in files) {
+          queue.enqueueLocalFile(file.path);
+        }
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('已加入安装队列：${files.length} 个文件')));
+      },
+      child: Scaffold(
+        appBar: SysAppBar(
+          title: Text(l10n.devicesTab),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.radar),
+              onPressed: () => context.push('/devices/switch'),
+              tooltip: l10n.scan,
             ),
-            child: isWide
-                ? Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(child: infoPanel),
-                      Expanded(child: featuresPanel),
-                    ],
-                  )
-                : SingleChildScrollView(
-                    child: Column(
-                      children: [
-                        infoPanel,
-                        const SizedBox(height: 24),
-                        featuresPanel,
-                      ],
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: state.connecting || device == null
+                  ? null
+                  : refreshOrReconnect,
+              tooltip: device?.disconnected ?? true
+                  ? l10n.deviceReconnect
+                  : l10n.refresh,
+            ),
+          ],
+        ),
+        body: Stack(
+          children: [
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isWide = constraints.maxWidth >= 840;
+                final infoPanel = _DeviceInfoPanel(
+                  device: device,
+                  isReady: isReady,
+                  battery: state.battery,
+                  onReconnect: reconnectCurrent,
+                  onSwitch: () {
+                    context.push('/devices/switch');
+                  },
+                );
+                final featuresPanel = _DeviceFeaturesPanel(
+                  enabled: isReady,
+                  hasDevice: device != null,
+                );
+
+                return PageContainer(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: StyleConstants.pagePadding,
+                  ),
+                  child: isWide
+                      ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(child: infoPanel),
+                            Expanded(child: featuresPanel),
+                          ],
+                        )
+                      : SingleChildScrollView(
+                          child: Column(
+                            children: [
+                              infoPanel,
+                              const SizedBox(height: 24),
+                              featuresPanel,
+                            ],
+                          ),
+                        ),
+                );
+              },
+            ),
+            if (_dragging)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.12),
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.primary,
+                        width: 2,
+                      ),
+                    ),
+                    child: Center(
+                      child: Card(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 16,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.upload_file,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                              const SizedBox(width: 12),
+                              const Text('松开以加入安装队列'),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-          );
-        },
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

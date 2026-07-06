@@ -11,6 +11,8 @@ import 'package:zerobox/src/data/astrobox/models/astrobox_models.dart';
 import 'package:zerobox/src/device/core/xiaomi_wearable_catalog.dart';
 import 'package:zerobox/src/features/resources/controllers/resource_filter_controller.dart';
 
+const _resourceMarketMaxWidth = 748.0;
+
 class ResourcesPage extends ConsumerWidget {
   const ResourcesPage({super.key});
 
@@ -49,6 +51,11 @@ class ResourcesPage extends ConsumerWidget {
                   showSelectedIcon: false,
                   segments: [
                     ButtonSegment(
+                      value: ResourceMode.home,
+                      label: Text(l10n.homeTab),
+                      icon: const Icon(Icons.home_outlined),
+                    ),
+                    ButtonSegment(
                       value: ResourceMode.library,
                       label: Text(l10n.resourceLibrary),
                       icon: const Icon(Icons.library_books_outlined),
@@ -72,9 +79,17 @@ class ResourcesPage extends ConsumerWidget {
           Expanded(
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 200),
-              child: mode == ResourceMode.library
-                  ? const _ResourceLibraryView(key: ValueKey('library'))
-                  : const Placeholder(key: ValueKey('creator')),
+              child: switch (mode) {
+                ResourceMode.home => const SizedBox.shrink(
+                  key: ValueKey('home'),
+                ),
+                ResourceMode.library => const _ResourceLibraryView(
+                  key: ValueKey('library'),
+                ),
+                ResourceMode.creator => const Placeholder(
+                  key: ValueKey('creator'),
+                ),
+              },
             ),
           ),
         ],
@@ -105,6 +120,7 @@ class _ResourceLibraryView extends ConsumerWidget {
         slivers: [
           SliverToBoxAdapter(
             child: PageContainer(
+              maxWidth: _resourceMarketMaxWidth,
               padding: const EdgeInsets.symmetric(
                 horizontal: StyleConstants.pagePadding,
                 vertical: StyleConstants.pagePadding,
@@ -140,6 +156,7 @@ class _ResourceLibraryView extends ConsumerWidget {
           indexAsync.when(
             data: (items) => SliverToBoxAdapter(
               child: PageContainer(
+                maxWidth: _resourceMarketMaxWidth,
                 padding: const EdgeInsets.symmetric(
                   horizontal: StyleConstants.pagePadding,
                 ),
@@ -467,34 +484,37 @@ class _ResourceGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (items.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        final crossAxisCount = width >= 960
-            ? 4
-            : width >= 720
-            ? 3
-            : width >= 480
-            ? 2
-            : 1;
-        final spacing = width >= 720 ? 16.0 : 12.0;
-        final rawCardWidth =
+        final spacing = 10.0;
+        final minTrackWidth = 170.0;
+        final crossAxisCount = ((width + spacing) / (minTrackWidth + spacing))
+            .floor()
+            .clamp(1, 1000);
+        final trackWidth =
             (width - (crossAxisCount - 1) * spacing) / crossAxisCount;
-        final cardWidth = crossAxisCount == 1
-            ? rawCardWidth.clamp(0.0, 320.0)
-            : rawCardWidth;
+        final cardWidth = trackWidth > 300 ? 300.0 : trackWidth;
         final coverHeight = cardWidth * 2 / 3;
 
         return Wrap(
-          alignment: crossAxisCount == 1
-              ? WrapAlignment.center
-              : WrapAlignment.start,
+          alignment: WrapAlignment.start,
           spacing: spacing,
           runSpacing: spacing,
           children: items.map((item) {
             return SizedBox(
-              width: cardWidth,
-              child: _ResourceCard(item: item, coverHeight: coverHeight),
+              width: trackWidth,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: SizedBox(
+                  width: cardWidth,
+                  child: _ResourceCard(item: item, coverHeight: coverHeight),
+                ),
+              ),
             );
           }).toList(),
         );

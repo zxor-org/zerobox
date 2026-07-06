@@ -3,7 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zerobox/src/data/astrobox/astrobox_providers.dart';
 import 'package:zerobox/src/data/astrobox/models/astrobox_models.dart';
-import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
+import 'package:zerobox/src/features/resources/services/install_queue_notifier.dart';
 import 'package:zerobox/src/features/resources/services/resource_install_service.dart';
 
 export 'package:zerobox/src/features/resources/services/resource_install_service.dart'
@@ -30,6 +30,10 @@ class ResourceTask {
   final double progress;
   final String? error;
 
+  String get title => item.name;
+  String get subtitle =>
+      '${manifest.item.author.firstOrNull?.name ?? item.repoOwner} · $codename';
+
   ResourceTask copyWith({
     ResourceTaskStatus? status,
     double? progress,
@@ -55,10 +59,11 @@ class DownloadQueueNotifier extends Notifier<List<ResourceTask>> {
   CancelToken? _cancelToken;
 
   ResourceTask? get runningTask => state.cast<ResourceTask?>().firstWhere(
-        (t) => t?.status == ResourceTaskStatus.downloading ||
-            t?.status == ResourceTaskStatus.installing,
-        orElse: () => null,
-      );
+    (t) =>
+        t?.status == ResourceTaskStatus.downloading ||
+        t?.status == ResourceTaskStatus.installing,
+    orElse: () => null,
+  );
 
   List<ResourceTask> get pendingTasks =>
       state.where((t) => t.status == ResourceTaskStatus.pending).toList();
@@ -75,7 +80,9 @@ class DownloadQueueNotifier extends Notifier<List<ResourceTask>> {
     required String codename,
   }) {
     final taskId = '${item.id}_$codename';
-    if (state.any((t) => t.id == taskId && t.status != ResourceTaskStatus.completed)) {
+    if (state.any(
+      (t) => t.id == taskId && t.status != ResourceTaskStatus.completed,
+    )) {
       return;
     }
 
@@ -107,7 +114,9 @@ class DownloadQueueNotifier extends Notifier<List<ResourceTask>> {
   }
 
   void clearCompleted() {
-    state = state.where((t) => t.status != ResourceTaskStatus.completed).toList();
+    state = state
+        .where((t) => t.status != ResourceTaskStatus.completed)
+        .toList();
   }
 
   void retry(String taskId) {
@@ -149,20 +158,28 @@ class DownloadQueueNotifier extends Notifier<List<ResourceTask>> {
     ];
 
     final service = ResourceInstallService(cancelToken: _cancelToken);
-    final deviceManager = ref.read(deviceManagerProvider.notifier);
     final repo = ref.read(astroBoxRepositoryProvider);
 
-    await service.downloadAndInstall(
+    final downloaded = await service.downloadResource(
       item: task.item,
-      manifest: task.manifest,
       download: task.download,
       repo: repo,
-      deviceManager: deviceManager,
-      taskId: task.id,
       onUpdate: (status, progress, error) {
         _updateTask(task.id, status, progress, error);
       },
     );
+    if (downloaded != null) {
+      ref
+          .read(installQueueProvider.notifier)
+          .enqueueResource(
+            item: task.item,
+            manifest: task.manifest,
+            download: task.download,
+            codename: task.codename,
+            filePath: downloaded.path,
+          );
+      state = state.where((t) => t.id != task.id).toList();
+    }
 
     _cancelToken = null;
     _tryStartNext();
@@ -213,14 +230,11 @@ const _dummyTask = ResourceTask(
       author: [],
     ),
   ),
-  download: AstroBoxManifestDownload(
-    version: '',
-    fileName: '',
-  ),
+  download: AstroBoxManifestDownload(version: '', fileName: ''),
   codename: '',
 );
 
 final downloadQueueProvider =
     NotifierProvider<DownloadQueueNotifier, List<ResourceTask>>(
-  DownloadQueueNotifier.new,
-);
+      DownloadQueueNotifier.new,
+    );

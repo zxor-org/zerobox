@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zerobox/src/data/astrobox/astrobox_providers.dart';
 import 'package:zerobox/src/data/astrobox/models/astrobox_models.dart';
 
-enum ResourceMode { library, creator }
+enum ResourceMode { home, library, creator }
 
 enum ResourceSortRule { random, name, time }
 
@@ -45,7 +45,7 @@ class ResourceFilters {
 
 class ResourceModeController extends Notifier<ResourceMode> {
   @override
-  ResourceMode build() => ResourceMode.library;
+  ResourceMode build() => ResourceMode.home;
 
   void setMode(ResourceMode mode) => state = mode;
 }

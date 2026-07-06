@@ -303,8 +303,10 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     DeviceProfile profile,
     ConnectType connectType,
   ) async {
-    const maxAttempts = 3;
-    const timeout = Duration(seconds: 10);
+    final maxAttempts = connectType == ConnectType.spp ? 2 : 3;
+    final timeout = connectType == ConnectType.spp
+        ? const Duration(seconds: 12)
+        : const Duration(seconds: 10);
     Exception? lastError;
 
     for (var attempt = 1; attempt <= maxAttempts; attempt++) {

@@ -11,9 +11,9 @@ import 'package:zerobox/src/features/devices/pages/switch/device_switch_page.dar
 import 'package:zerobox/src/features/devices/pages/watchfaces/device_watchfaces_page.dart';
 import 'package:zerobox/src/features/devices/providers/pending_shared_device_provider.dart';
 import 'package:zerobox/src/features/devices/services/device_share_link.dart';
-import 'package:zerobox/src/features/home/pages/home_page.dart';
 import 'package:zerobox/src/features/resources/pages/creator/creator_dashboard_page.dart';
 import 'package:zerobox/src/features/resources/pages/creator/creator_editor_shell.dart';
+import 'package:zerobox/src/features/resources/pages/queue_page.dart';
 import 'package:zerobox/src/features/resources/pages/resource_detail_page.dart';
 import 'package:zerobox/src/features/resources/pages/resources_page.dart';
 import 'package:zerobox/src/features/settings/pages/acknowledgements_page.dart';
@@ -22,7 +22,7 @@ import 'package:zerobox/src/features/settings/pages/settings_page.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
-    initialLocation: '/home',
+    initialLocation: '/resources',
     observers: [ZeroBoxDialog.observer],
     redirect: (context, state) {
       final uri = state.uri;
@@ -41,19 +41,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
+      GoRoute(path: '/home', redirect: (context, state) => '/resources'),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) {
           return AppScaffold(navigationShell: navigationShell);
         },
         branches: [
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/home',
-                builder: (context, state) => const HomePage(),
-              ),
-            ],
-          ),
           StatefulShellBranch(
             routes: [
               GoRoute(
@@ -130,6 +123,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                     builder: (context, state) => const DeviceWatchfacesPage(),
                   ),
                 ],
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/queue',
+                builder: (context, state) => const QueuePage(),
               ),
             ],
           ),
