@@ -932,6 +932,12 @@ abstract class AppLocalizations {
   /// **'Last charge'**
   String get fieldLastCharge;
 
+  /// No description provided for @fieldStorage.
+  ///
+  /// In en, this message translates to:
+  /// **'Storage'**
+  String get fieldStorage;
+
   /// No description provided for @appManagementTitle.
   ///
   /// In en, this message translates to:

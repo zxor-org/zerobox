@@ -54,12 +54,10 @@ final class WatchfaceListUpdated extends DeviceEvent {
 final class StorageInfoUpdated extends DeviceEvent {
   const StorageInfoUpdated({
     required super.deviceId,
-    required this.totalBytes,
-    required this.freeBytes,
+    required this.info,
   });
 
-  final int totalBytes;
-  final int freeBytes;
+  final StorageInfo info;
 }
 
 final class InstallPrepared extends DeviceEvent {

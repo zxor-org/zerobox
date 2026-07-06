@@ -139,6 +139,7 @@
   "fieldBattery": "Battery",
   "fieldChargeStatus": "Charge status",
   "fieldLastCharge": "Last charge",
+  "fieldStorage": "Storage",
   "appManagementTitle": "App management",
   "appManagementNone": "No installed apps",
   "appManagementShowSystemApps": "Show system apps",

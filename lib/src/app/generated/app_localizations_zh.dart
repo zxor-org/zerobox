@@ -428,6 +428,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get fieldLastCharge => '上次充电';
 
   @override
+  String get fieldStorage => '存储空间';
+
+  @override
   String get appManagementTitle => '应用管理';
 
   @override

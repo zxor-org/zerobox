@@ -92,11 +92,22 @@ Map<String, dynamic> _$AppInfoToJson(_AppInfo instance) => <String, dynamic>{
   'appName': instance.appName,
 };
 
+_StorageInfo _$StorageInfoFromJson(Map<String, dynamic> json) => _StorageInfo(
+  used: (json['used'] as num).toInt(),
+  total: (json['total'] as num).toInt(),
+);
+
+Map<String, dynamic> _$StorageInfoToJson(_StorageInfo instance) =>
+    <String, dynamic>{'used': instance.used, 'total': instance.total};
+
 _SystemInfo _$SystemInfoFromJson(Map<String, dynamic> json) => _SystemInfo(
   serialNumber: json['serialNumber'] as String,
   firmwareVersion: json['firmwareVersion'] as String,
   imei: json['imei'] as String,
   model: json['model'] as String,
+  storageInfo: json['storageInfo'] == null
+      ? null
+      : StorageInfo.fromJson(json['storageInfo'] as Map<String, dynamic>),
 );
 
 Map<String, dynamic> _$SystemInfoToJson(_SystemInfo instance) =>
@@ -105,6 +116,7 @@ Map<String, dynamic> _$SystemInfoToJson(_SystemInfo instance) =>
       'firmwareVersion': instance.firmwareVersion,
       'imei': instance.imei,
       'model': instance.model,
+      'storageInfo': instance.storageInfo,
     };
 
 _WatchfaceInfo _$WatchfaceInfoFromJson(Map<String, dynamic> json) =>

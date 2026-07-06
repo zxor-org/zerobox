@@ -434,6 +434,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get fieldLastCharge => 'Last charge';
 
   @override
+  String get fieldStorage => 'Storage';
+
+  @override
   String get appManagementTitle => 'App management';
 
   @override

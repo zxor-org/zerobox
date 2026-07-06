@@ -140,6 +140,7 @@
   "fieldBattery": "电量",
   "fieldChargeStatus": "充电状态",
   "fieldLastCharge": "上次充电",
+  "fieldStorage": "存储空间",
   "appManagementTitle": "应用管理",
   "appManagementNone": "没有已安装的应用",
   "appManagementShowSystemApps": "显示系统应用",

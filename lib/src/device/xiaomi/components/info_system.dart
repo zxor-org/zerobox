@@ -66,6 +66,26 @@ class XiaomiInfoSystem extends XiaomiPbSystem {
     return info;
   }
 
+  Future<models.StorageInfo> fetchStorageInfo() async {
+    _log.info('[${entity.id}] fetching storage info');
+    final response = await component.requestPool.request<pb_system.StorageInfo>(
+      packet: buildSystemPacket(pb_system.System_SystemID.GET_STORAGE_INFO),
+      typeMatcher: (p) =>
+          p.whichPayload() == pb.WearPacket_Payload.system &&
+          p.id == pb_system.System_SystemID.GET_STORAGE_INFO.value,
+      responseMapper: (p) => p.system.storageInfo,
+    );
+    final info = models.StorageInfo(
+      used: response.used.toInt(),
+      total: response.total.toInt(),
+    );
+    _log.info(
+      '[${entity.id}] storage info: used=${info.used}, total=${info.total}',
+    );
+    entity.emit(StorageInfoUpdated(deviceId: entity.id, info: info));
+    return info;
+  }
+
   Future<List<models.AppInfo>> fetchInstalledApps() async {
     _log.info('[${entity.id}] fetching installed apps');
     final response = await component.requestPool.request<pb_system.App_List>(

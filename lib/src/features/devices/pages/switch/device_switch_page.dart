@@ -431,7 +431,12 @@ class _SavedDeviceList extends ConsumerWidget {
       children: [
         _SectionHeader(title: l10n.savedDevices, hiddenOnMobile: true),
         if (state.pairedDevices.isEmpty)
-          const Expanded(child: _EmptyState(message: ''))
+          const Flexible(
+            child: SizedBox(
+              height: 240,
+              child: _EmptyState(message: ''),
+            ),
+          )
         else
           Expanded(
             child: ListView.builder(
@@ -495,9 +500,19 @@ class _ScanDeviceListState extends ConsumerState<_ScanDeviceList> {
           ),
         ),
         if (!state.scanning && state.scannedDevices.isEmpty)
-          const Expanded(child: _EmptyState(message: ''))
+          const Flexible(
+            child: SizedBox(
+              height: 240,
+              child: _EmptyState(message: ''),
+            ),
+          )
         else if (state.scanning && state.scannedDevices.isEmpty)
-          const Expanded(child: Center(child: CircularProgressIndicator()))
+          const Flexible(
+            child: SizedBox(
+              height: 240,
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          )
         else
           Expanded(
             child: ListView.builder(
@@ -538,9 +553,11 @@ class _SliverSavedDeviceList extends ConsumerWidget {
     final state = ref.watch(deviceManagerProvider);
 
     if (state.pairedDevices.isEmpty) {
-      return const SliverFillRemaining(
-        hasScrollBody: false,
-        child: _EmptyState(message: ''),
+      return const SliverToBoxAdapter(
+        child: SizedBox(
+          height: 240,
+          child: _EmptyState(message: ''),
+        ),
       );
     }
     return SliverList.builder(
@@ -613,15 +630,19 @@ class _SliverScanDeviceListState extends ConsumerState<_SliverScanDeviceList> {
     final state = ref.watch(deviceManagerProvider);
 
     if (!state.scanning && state.scannedDevices.isEmpty) {
-      return const SliverFillRemaining(
-        hasScrollBody: false,
-        child: _EmptyState(message: ''),
+      return const SliverToBoxAdapter(
+        child: SizedBox(
+          height: 240,
+          child: _EmptyState(message: ''),
+        ),
       );
     }
     if (state.scanning && state.scannedDevices.isEmpty) {
-      return const SliverFillRemaining(
-        hasScrollBody: false,
-        child: Center(child: CircularProgressIndicator()),
+      return const SliverToBoxAdapter(
+        child: SizedBox(
+          height: 240,
+          child: Center(child: CircularProgressIndicator()),
+        ),
       );
     }
     return SliverList.builder(

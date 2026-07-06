@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // coverage:ignore-file
-// ignore_for_file: type=lint, type=warning, deprecated_member_use, deprecated_member_use_from_same_package
+// ignore_for_file: type=lint
 // ignore_for_file: unused_element, deprecated_member_use, deprecated_member_use_from_same_package, use_function_type_syntax_for_parameters, unnecessary_const, avoid_init_to_null, invalid_override_different_default_values_named, prefer_expression_function_bodies, annotate_overrides, invalid_annotation_target, unnecessary_question_mark
 
 part of 'bt_models.dart';
@@ -9,7 +9,6 @@ part of 'bt_models.dart';
 // FreezedGenerator
 // **************************************************************************
 
-// GENERATED CODE - DO NOT MODIFY BY HAND
 // dart format off
 T _$identity<T>(T value) => value;
 
@@ -67,7 +66,7 @@ class _$BTDeviceInfoCopyWithImpl<$Res>
 /// Create a copy of BTDeviceInfo
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') @override $Res call({Object? name = null,Object? addr = null,Object? connectType = null,}) {
-  return _then(BTDeviceInfo(
+  return _then(_self.copyWith(
 name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,addr: null == addr ? _self.addr : addr // ignore: cast_nullable_to_non_nullable
 as String,connectType: null == connectType ? _self.connectType : connectType // ignore: cast_nullable_to_non_nullable
@@ -336,7 +335,7 @@ class _$MiWearStateCopyWithImpl<$Res>
 /// Create a copy of MiWearState
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') @override $Res call({Object? name = null,Object? addr = null,Object? connectType = null,Object? authkey = freezed,Object? codename = freezed,Object? disconnected = null,}) {
-  return _then(MiWearState(
+  return _then(_self.copyWith(
 name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,addr: null == addr ? _self.addr : addr // ignore: cast_nullable_to_non_nullable
 as String,connectType: null == connectType ? _self.connectType : connectType // ignore: cast_nullable_to_non_nullable
@@ -614,7 +613,7 @@ class _$ChargeInfoCopyWithImpl<$Res>
 /// Create a copy of ChargeInfo
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') @override $Res call({Object? state = null,Object? timestamp = freezed,}) {
-  return _then(ChargeInfo(
+  return _then(_self.copyWith(
 state: null == state ? _self.state : state // ignore: cast_nullable_to_non_nullable
 as int,timestamp: freezed == timestamp ? _self.timestamp : timestamp // ignore: cast_nullable_to_non_nullable
 as int?,
@@ -880,7 +879,7 @@ class _$BatteryStatusCopyWithImpl<$Res>
 /// Create a copy of BatteryStatus
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') @override $Res call({Object? capacity = null,Object? chargeStatus = null,Object? chargeInfo = freezed,}) {
-  return _then(BatteryStatus(
+  return _then(_self.copyWith(
 capacity: null == capacity ? _self.capacity : capacity // ignore: cast_nullable_to_non_nullable
 as int,chargeStatus: null == chargeStatus ? _self.chargeStatus : chargeStatus // ignore: cast_nullable_to_non_nullable
 as ChargeStatus,chargeInfo: freezed == chargeInfo ? _self.chargeInfo : chargeInfo // ignore: cast_nullable_to_non_nullable
@@ -1173,7 +1172,7 @@ class _$AppInfoCopyWithImpl<$Res>
 /// Create a copy of AppInfo
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') @override $Res call({Object? packageName = null,Object? fingerprint = null,Object? versionCode = null,Object? canRemove = null,Object? appName = null,}) {
-  return _then(AppInfo(
+  return _then(_self.copyWith(
 packageName: null == packageName ? _self.packageName : packageName // ignore: cast_nullable_to_non_nullable
 as String,fingerprint: null == fingerprint ? _self.fingerprint : fingerprint // ignore: cast_nullable_to_non_nullable
 as List<int>,versionCode: null == versionCode ? _self.versionCode : versionCode // ignore: cast_nullable_to_non_nullable
@@ -1320,7 +1319,7 @@ return $default(_that.packageName,_that.fingerprint,_that.versionCode,_that.canR
 @JsonSerializable()
 
 class _AppInfo implements AppInfo {
-  const _AppInfo({required this.packageName,  List<int> fingerprint = const <int>[], this.versionCode = 0, this.canRemove = false, required this.appName}): _fingerprint = fingerprint;
+  const _AppInfo({required this.packageName, final  List<int> fingerprint = const <int>[], this.versionCode = 0, this.canRemove = false, required this.appName}): _fingerprint = fingerprint;
   factory _AppInfo.fromJson(Map<String, dynamic> json) => _$AppInfoFromJson(json);
 
 @override final  String packageName;
@@ -1401,9 +1400,275 @@ as String,
 
 
 /// @nodoc
+mixin _$StorageInfo {
+
+ int get used; int get total;
+/// Create a copy of StorageInfo
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$StorageInfoCopyWith<StorageInfo> get copyWith => _$StorageInfoCopyWithImpl<StorageInfo>(this as StorageInfo, _$identity);
+
+  /// Serializes this StorageInfo to a JSON map.
+  Map<String, dynamic> toJson();
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is StorageInfo&&(identical(other.used, used) || other.used == used)&&(identical(other.total, total) || other.total == total));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode => Object.hash(runtimeType,used,total);
+
+@override
+String toString() {
+  return 'StorageInfo(used: $used, total: $total)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $StorageInfoCopyWith<$Res>  {
+  factory $StorageInfoCopyWith(StorageInfo value, $Res Function(StorageInfo) _then) = _$StorageInfoCopyWithImpl;
+@useResult
+$Res call({
+ int used, int total
+});
+
+
+
+
+}
+/// @nodoc
+class _$StorageInfoCopyWithImpl<$Res>
+    implements $StorageInfoCopyWith<$Res> {
+  _$StorageInfoCopyWithImpl(this._self, this._then);
+
+  final StorageInfo _self;
+  final $Res Function(StorageInfo) _then;
+
+/// Create a copy of StorageInfo
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? used = null,Object? total = null,}) {
+  return _then(_self.copyWith(
+used: null == used ? _self.used : used // ignore: cast_nullable_to_non_nullable
+as int,total: null == total ? _self.total : total // ignore: cast_nullable_to_non_nullable
+as int,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [StorageInfo].
+extension StorageInfoPatterns on StorageInfo {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _StorageInfo value)?  $default,{required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case _StorageInfo() when $default != null:
+return $default(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _StorageInfo value)  $default,){
+final _that = this;
+switch (_that) {
+case _StorageInfo():
+return $default(_that);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _StorageInfo value)?  $default,){
+final _that = this;
+switch (_that) {
+case _StorageInfo() when $default != null:
+return $default(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int used,  int total)?  $default,{required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case _StorageInfo() when $default != null:
+return $default(_that.used,_that.total);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int used,  int total)  $default,) {final _that = this;
+switch (_that) {
+case _StorageInfo():
+return $default(_that.used,_that.total);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int used,  int total)?  $default,) {final _that = this;
+switch (_that) {
+case _StorageInfo() when $default != null:
+return $default(_that.used,_that.total);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+@JsonSerializable()
+
+class _StorageInfo implements StorageInfo {
+  const _StorageInfo({required this.used, required this.total});
+  factory _StorageInfo.fromJson(Map<String, dynamic> json) => _$StorageInfoFromJson(json);
+
+@override final  int used;
+@override final  int total;
+
+/// Create a copy of StorageInfo
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+_$StorageInfoCopyWith<_StorageInfo> get copyWith => __$StorageInfoCopyWithImpl<_StorageInfo>(this, _$identity);
+
+@override
+Map<String, dynamic> toJson() {
+  return _$StorageInfoToJson(this, );
+}
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _StorageInfo&&(identical(other.used, used) || other.used == used)&&(identical(other.total, total) || other.total == total));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode => Object.hash(runtimeType,used,total);
+
+@override
+String toString() {
+  return 'StorageInfo(used: $used, total: $total)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class _$StorageInfoCopyWith<$Res> implements $StorageInfoCopyWith<$Res> {
+  factory _$StorageInfoCopyWith(_StorageInfo value, $Res Function(_StorageInfo) _then) = __$StorageInfoCopyWithImpl;
+@override @useResult
+$Res call({
+ int used, int total
+});
+
+
+
+
+}
+/// @nodoc
+class __$StorageInfoCopyWithImpl<$Res>
+    implements _$StorageInfoCopyWith<$Res> {
+  __$StorageInfoCopyWithImpl(this._self, this._then);
+
+  final _StorageInfo _self;
+  final $Res Function(_StorageInfo) _then;
+
+/// Create a copy of StorageInfo
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? used = null,Object? total = null,}) {
+  return _then(_StorageInfo(
+used: null == used ? _self.used : used // ignore: cast_nullable_to_non_nullable
+as int,total: null == total ? _self.total : total // ignore: cast_nullable_to_non_nullable
+as int,
+  ));
+}
+
+
+}
+
+
+/// @nodoc
 mixin _$SystemInfo {
 
- String get serialNumber; String get firmwareVersion; String get imei; String get model;
+ String get serialNumber; String get firmwareVersion; String get imei; String get model; StorageInfo? get storageInfo;
 /// Create a copy of SystemInfo
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1416,16 +1681,16 @@ $SystemInfoCopyWith<SystemInfo> get copyWith => _$SystemInfoCopyWithImpl<SystemI
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is SystemInfo&&(identical(other.serialNumber, serialNumber) || other.serialNumber == serialNumber)&&(identical(other.firmwareVersion, firmwareVersion) || other.firmwareVersion == firmwareVersion)&&(identical(other.imei, imei) || other.imei == imei)&&(identical(other.model, model) || other.model == model));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is SystemInfo&&(identical(other.serialNumber, serialNumber) || other.serialNumber == serialNumber)&&(identical(other.firmwareVersion, firmwareVersion) || other.firmwareVersion == firmwareVersion)&&(identical(other.imei, imei) || other.imei == imei)&&(identical(other.model, model) || other.model == model)&&(identical(other.storageInfo, storageInfo) || other.storageInfo == storageInfo));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,serialNumber,firmwareVersion,imei,model);
+int get hashCode => Object.hash(runtimeType,serialNumber,firmwareVersion,imei,model,storageInfo);
 
 @override
 String toString() {
-  return 'SystemInfo(serialNumber: $serialNumber, firmwareVersion: $firmwareVersion, imei: $imei, model: $model)';
+  return 'SystemInfo(serialNumber: $serialNumber, firmwareVersion: $firmwareVersion, imei: $imei, model: $model, storageInfo: $storageInfo)';
 }
 
 
@@ -1436,11 +1701,11 @@ abstract mixin class $SystemInfoCopyWith<$Res>  {
   factory $SystemInfoCopyWith(SystemInfo value, $Res Function(SystemInfo) _then) = _$SystemInfoCopyWithImpl;
 @useResult
 $Res call({
- String serialNumber, String firmwareVersion, String imei, String model
+ String serialNumber, String firmwareVersion, String imei, String model, StorageInfo? storageInfo
 });
 
 
-
+$StorageInfoCopyWith<$Res>? get storageInfo;
 
 }
 /// @nodoc
@@ -1453,16 +1718,29 @@ class _$SystemInfoCopyWithImpl<$Res>
 
 /// Create a copy of SystemInfo
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? serialNumber = null,Object? firmwareVersion = null,Object? imei = null,Object? model = null,}) {
-  return _then(SystemInfo(
+@pragma('vm:prefer-inline') @override $Res call({Object? serialNumber = null,Object? firmwareVersion = null,Object? imei = null,Object? model = null,Object? storageInfo = freezed,}) {
+  return _then(_self.copyWith(
 serialNumber: null == serialNumber ? _self.serialNumber : serialNumber // ignore: cast_nullable_to_non_nullable
 as String,firmwareVersion: null == firmwareVersion ? _self.firmwareVersion : firmwareVersion // ignore: cast_nullable_to_non_nullable
 as String,imei: null == imei ? _self.imei : imei // ignore: cast_nullable_to_non_nullable
 as String,model: null == model ? _self.model : model // ignore: cast_nullable_to_non_nullable
-as String,
+as String,storageInfo: freezed == storageInfo ? _self.storageInfo : storageInfo // ignore: cast_nullable_to_non_nullable
+as StorageInfo?,
   ));
 }
+/// Create a copy of SystemInfo
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$StorageInfoCopyWith<$Res>? get storageInfo {
+    if (_self.storageInfo == null) {
+    return null;
+  }
 
+  return $StorageInfoCopyWith<$Res>(_self.storageInfo!, (value) {
+    return _then(_self.copyWith(storageInfo: value));
+  });
+}
 }
 
 
@@ -1544,10 +1822,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String serialNumber,  String firmwareVersion,  String imei,  String model)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String serialNumber,  String firmwareVersion,  String imei,  String model,  StorageInfo? storageInfo)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _SystemInfo() when $default != null:
-return $default(_that.serialNumber,_that.firmwareVersion,_that.imei,_that.model);case _:
+return $default(_that.serialNumber,_that.firmwareVersion,_that.imei,_that.model,_that.storageInfo);case _:
   return orElse();
 
 }
@@ -1565,10 +1843,10 @@ return $default(_that.serialNumber,_that.firmwareVersion,_that.imei,_that.model)
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String serialNumber,  String firmwareVersion,  String imei,  String model)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String serialNumber,  String firmwareVersion,  String imei,  String model,  StorageInfo? storageInfo)  $default,) {final _that = this;
 switch (_that) {
 case _SystemInfo():
-return $default(_that.serialNumber,_that.firmwareVersion,_that.imei,_that.model);case _:
+return $default(_that.serialNumber,_that.firmwareVersion,_that.imei,_that.model,_that.storageInfo);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -1585,10 +1863,10 @@ return $default(_that.serialNumber,_that.firmwareVersion,_that.imei,_that.model)
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String serialNumber,  String firmwareVersion,  String imei,  String model)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String serialNumber,  String firmwareVersion,  String imei,  String model,  StorageInfo? storageInfo)?  $default,) {final _that = this;
 switch (_that) {
 case _SystemInfo() when $default != null:
-return $default(_that.serialNumber,_that.firmwareVersion,_that.imei,_that.model);case _:
+return $default(_that.serialNumber,_that.firmwareVersion,_that.imei,_that.model,_that.storageInfo);case _:
   return null;
 
 }
@@ -1600,13 +1878,14 @@ return $default(_that.serialNumber,_that.firmwareVersion,_that.imei,_that.model)
 @JsonSerializable()
 
 class _SystemInfo implements SystemInfo {
-  const _SystemInfo({required this.serialNumber, required this.firmwareVersion, required this.imei, required this.model});
+  const _SystemInfo({required this.serialNumber, required this.firmwareVersion, required this.imei, required this.model, this.storageInfo});
   factory _SystemInfo.fromJson(Map<String, dynamic> json) => _$SystemInfoFromJson(json);
 
 @override final  String serialNumber;
 @override final  String firmwareVersion;
 @override final  String imei;
 @override final  String model;
+@override final  StorageInfo? storageInfo;
 
 /// Create a copy of SystemInfo
 /// with the given fields replaced by the non-null parameter values.
@@ -1621,16 +1900,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _SystemInfo&&(identical(other.serialNumber, serialNumber) || other.serialNumber == serialNumber)&&(identical(other.firmwareVersion, firmwareVersion) || other.firmwareVersion == firmwareVersion)&&(identical(other.imei, imei) || other.imei == imei)&&(identical(other.model, model) || other.model == model));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _SystemInfo&&(identical(other.serialNumber, serialNumber) || other.serialNumber == serialNumber)&&(identical(other.firmwareVersion, firmwareVersion) || other.firmwareVersion == firmwareVersion)&&(identical(other.imei, imei) || other.imei == imei)&&(identical(other.model, model) || other.model == model)&&(identical(other.storageInfo, storageInfo) || other.storageInfo == storageInfo));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,serialNumber,firmwareVersion,imei,model);
+int get hashCode => Object.hash(runtimeType,serialNumber,firmwareVersion,imei,model,storageInfo);
 
 @override
 String toString() {
-  return 'SystemInfo(serialNumber: $serialNumber, firmwareVersion: $firmwareVersion, imei: $imei, model: $model)';
+  return 'SystemInfo(serialNumber: $serialNumber, firmwareVersion: $firmwareVersion, imei: $imei, model: $model, storageInfo: $storageInfo)';
 }
 
 
@@ -1641,11 +1920,11 @@ abstract mixin class _$SystemInfoCopyWith<$Res> implements $SystemInfoCopyWith<$
   factory _$SystemInfoCopyWith(_SystemInfo value, $Res Function(_SystemInfo) _then) = __$SystemInfoCopyWithImpl;
 @override @useResult
 $Res call({
- String serialNumber, String firmwareVersion, String imei, String model
+ String serialNumber, String firmwareVersion, String imei, String model, StorageInfo? storageInfo
 });
 
 
-
+@override $StorageInfoCopyWith<$Res>? get storageInfo;
 
 }
 /// @nodoc
@@ -1658,17 +1937,30 @@ class __$SystemInfoCopyWithImpl<$Res>
 
 /// Create a copy of SystemInfo
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? serialNumber = null,Object? firmwareVersion = null,Object? imei = null,Object? model = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? serialNumber = null,Object? firmwareVersion = null,Object? imei = null,Object? model = null,Object? storageInfo = freezed,}) {
   return _then(_SystemInfo(
 serialNumber: null == serialNumber ? _self.serialNumber : serialNumber // ignore: cast_nullable_to_non_nullable
 as String,firmwareVersion: null == firmwareVersion ? _self.firmwareVersion : firmwareVersion // ignore: cast_nullable_to_non_nullable
 as String,imei: null == imei ? _self.imei : imei // ignore: cast_nullable_to_non_nullable
 as String,model: null == model ? _self.model : model // ignore: cast_nullable_to_non_nullable
-as String,
+as String,storageInfo: freezed == storageInfo ? _self.storageInfo : storageInfo // ignore: cast_nullable_to_non_nullable
+as StorageInfo?,
   ));
 }
 
+/// Create a copy of SystemInfo
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$StorageInfoCopyWith<$Res>? get storageInfo {
+    if (_self.storageInfo == null) {
+    return null;
+  }
 
+  return $StorageInfoCopyWith<$Res>(_self.storageInfo!, (value) {
+    return _then(_self.copyWith(storageInfo: value));
+  });
+}
 }
 
 
@@ -1726,7 +2018,7 @@ class _$WatchfaceInfoCopyWithImpl<$Res>
 /// Create a copy of WatchfaceInfo
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? isCurrent = null,Object? canRemove = null,Object? versionCode = null,Object? canEdit = null,Object? backgroundColor = null,Object? backgroundImage = null,Object? style = null,Object? backgroundImageList = null,}) {
-  return _then(WatchfaceInfo(
+  return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,isCurrent: null == isCurrent ? _self.isCurrent : isCurrent // ignore: cast_nullable_to_non_nullable
@@ -1878,7 +2170,7 @@ return $default(_that.id,_that.name,_that.isCurrent,_that.canRemove,_that.versio
 @JsonSerializable()
 
 class _WatchfaceInfo implements WatchfaceInfo {
-  const _WatchfaceInfo({required this.id, required this.name, this.isCurrent = false, this.canRemove = false, this.versionCode = 0, this.canEdit = false, this.backgroundColor = '', this.backgroundImage = '', this.style = '',  List<String> backgroundImageList = const <String>[]}): _backgroundImageList = backgroundImageList;
+  const _WatchfaceInfo({required this.id, required this.name, this.isCurrent = false, this.canRemove = false, this.versionCode = 0, this.canEdit = false, this.backgroundColor = '', this.backgroundImage = '', this.style = '', final  List<String> backgroundImageList = const <String>[]}): _backgroundImageList = backgroundImageList;
   factory _WatchfaceInfo.fromJson(Map<String, dynamic> json) => _$WatchfaceInfoFromJson(json);
 
 @override final  String id;

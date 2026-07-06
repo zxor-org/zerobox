@@ -13,7 +13,7 @@ import 'package:zerobox/src/data/community/community_source.dart';
 import 'package:zerobox/src/device/core/xiaomi_wearable_catalog.dart';
 import 'package:zerobox/src/features/resources/controllers/resource_filter_controller.dart';
 
-const _resourceMarketMaxWidth = 748.0;
+
 
 class ResourcesPage extends ConsumerWidget {
   const ResourcesPage({super.key});
@@ -27,6 +27,7 @@ class ResourcesPage extends ConsumerWidget {
       appBar: SysAppBar(
         title: Text(l10n.resourcesTab),
         actions: [
+          if (mode == ResourceMode.library) const _CommunitySourceMenu(),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () {
@@ -50,40 +51,31 @@ class ResourcesPage extends ConsumerWidget {
                   horizontal: StyleConstants.pagePadding,
                   vertical: StyleConstants.pagePadding,
                 ),
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    SegmentedButton<ResourceMode>(
-                      showSelectedIcon: false,
-                      segments: [
-                        ButtonSegment(
-                          value: ResourceMode.home,
-                          label: Text(l10n.homeTab),
-                          icon: const Icon(Icons.home_outlined),
-                        ),
-                        ButtonSegment(
-                          value: ResourceMode.library,
-                          label: Text(l10n.resourceLibrary),
-                          icon: const Icon(Icons.library_books_outlined),
-                        ),
-                        ButtonSegment(
-                          value: ResourceMode.creator,
-                          label: Text(l10n.creatorCenter),
-                          icon: const Icon(Icons.create_outlined),
-                        ),
-                      ],
-                      selected: {mode},
-                      onSelectionChanged: (selected) {
-                        ref
-                            .read(resourceModeControllerProvider.notifier)
-                            .setMode(selected.first);
-                      },
+                child: SegmentedButton<ResourceMode>(
+                  showSelectedIcon: false,
+                  segments: [
+                    ButtonSegment(
+                      value: ResourceMode.home,
+                      label: Text(l10n.homeTab),
+                      icon: const Icon(Icons.home_outlined),
                     ),
-                    const Align(
-                      alignment: Alignment.centerRight,
-                      child: _CommunitySourceMenu(),
+                    ButtonSegment(
+                      value: ResourceMode.library,
+                      label: Text(l10n.resourceLibrary),
+                      icon: const Icon(Icons.library_books_outlined),
+                    ),
+                    ButtonSegment(
+                      value: ResourceMode.creator,
+                      label: Text(l10n.creatorCenter),
+                      icon: const Icon(Icons.create_outlined),
                     ),
                   ],
+                  selected: {mode},
+                  onSelectionChanged: (selected) {
+                    ref
+                        .read(resourceModeControllerProvider.notifier)
+                        .setMode(selected.first);
+                  },
                 ),
               ),
             ),
@@ -98,7 +90,7 @@ class ResourcesPage extends ConsumerWidget {
                 ResourceMode.library => const _ResourceLibraryView(
                   key: ValueKey('library'),
                 ),
-                ResourceMode.creator => const Placeholder(
+                ResourceMode.creator => const SizedBox.shrink(
                   key: ValueKey('creator'),
                 ),
               },
@@ -133,7 +125,6 @@ class _ResourceLibraryView extends ConsumerWidget {
         slivers: [
           SliverToBoxAdapter(
             child: PageContainer(
-              maxWidth: _resourceMarketMaxWidth,
               padding: const EdgeInsets.symmetric(
                 horizontal: StyleConstants.pagePadding,
                 vertical: StyleConstants.pagePadding,
@@ -168,13 +159,12 @@ class _ResourceLibraryView extends ConsumerWidget {
           ),
           indexAsync.when(
             data: (items) => SliverToBoxAdapter(
-              child: PageContainer(
-                maxWidth: _resourceMarketMaxWidth,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: StyleConstants.pagePadding,
-                ),
-                child: _ResourceGrid(items: items),
+            child: PageContainer(
+              padding: const EdgeInsets.symmetric(
+                horizontal: StyleConstants.pagePadding,
               ),
+              child: _ResourceGrid(items: items),
+            ),
             ),
             loading: () => const SliverFillRemaining(
               child: Center(child: CircularProgressIndicator()),
@@ -216,7 +206,7 @@ class _CommunitySourceMenu extends ConsumerWidget {
         );
       }).toList(),
       builder: (context, controller, child) {
-        return OutlinedButton.icon(
+        return TextButton.icon(
           onPressed: () {
             if (controller.isOpen) {
               controller.close();
@@ -225,7 +215,18 @@ class _CommunitySourceMenu extends ConsumerWidget {
             }
           },
           icon: const Icon(Icons.public_outlined, size: 18),
-          label: Text(source.displayName),
+          label: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(source.displayName),
+              const SizedBox(width: 2),
+              AnimatedRotation(
+                turns: controller.isOpen ? 0.5 : 0,
+                duration: const Duration(milliseconds: 200),
+                child: const Icon(Icons.arrow_drop_down, size: 18),
+              ),
+            ],
+          ),
         );
       },
     );

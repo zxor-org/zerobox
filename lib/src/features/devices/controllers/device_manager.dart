@@ -629,6 +629,19 @@ class DeviceManager extends Notifier<DeviceManagerState> {
       case AppListUpdated(:final apps):
         _log.info('event: app list ${apps.length}');
         state = state.copyWith(apps: apps);
+      case StorageInfoUpdated(:final info):
+        _log.info('storage info ${event.deviceId}: used=${info.used}, total=${info.total}');
+        final currentInfo = state.systemInfo;
+        state = state.copyWith(
+          systemInfo: currentInfo?.copyWith(storageInfo: info) ??
+              SystemInfo(
+                serialNumber: '',
+                firmwareVersion: '',
+                imei: '',
+                model: '',
+                storageInfo: info,
+              ),
+        );
       case WatchfaceListUpdated(:final watchfaces):
         _log.info('event: watchface list ${watchfaces.length}');
         state = state.copyWith(watchfaces: watchfaces);
@@ -774,6 +787,15 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     }
     final infoSystem = entity.system<XiaomiInfoSystem>()!;
     await infoSystem.fetchDeviceInfo();
+  }
+
+  Future<void> fetchStorageInfo() async {
+    final entity = _currentEntity;
+    if (entity == null || state.protocolState != ProtocolState.ready) {
+      throw ProtocolException('Device not ready');
+    }
+    final infoSystem = entity.system<XiaomiInfoSystem>()!;
+    await infoSystem.fetchStorageInfo();
   }
 
   Future<void> fetchApps() async {

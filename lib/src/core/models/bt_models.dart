@@ -75,12 +75,24 @@ abstract class AppInfo with _$AppInfo {
 }
 
 @freezed
+abstract class StorageInfo with _$StorageInfo {
+  const factory StorageInfo({
+    required int used,
+    required int total,
+  }) = _StorageInfo;
+
+  factory StorageInfo.fromJson(Map<String, dynamic> json) =>
+      _$StorageInfoFromJson(json);
+}
+
+@freezed
 abstract class SystemInfo with _$SystemInfo {
   const factory SystemInfo({
     required String serialNumber,
     required String firmwareVersion,
     required String imei,
     required String model,
+    StorageInfo? storageInfo,
   }) = _SystemInfo;
 
   factory SystemInfo.fromJson(Map<String, dynamic> json) =>

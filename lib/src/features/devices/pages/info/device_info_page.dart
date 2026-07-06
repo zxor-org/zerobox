@@ -5,6 +5,7 @@ import 'package:zerobox/src/app/generated/app_localizations.dart';
 import 'package:zerobox/src/app/widgets/page_container.dart';
 import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
+import 'package:zerobox/src/core/models/bt_models.dart';
 import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
 
 class DeviceInfoPage extends ConsumerStatefulWidget {
@@ -23,6 +24,7 @@ class _DeviceInfoPageState extends ConsumerState<DeviceInfoPage> {
       try {
         await manager.refreshBattery();
         await manager.fetchSystemInfo();
+        await manager.fetchStorageInfo();
       } catch (_) {
         // Saved device metadata is still useful when the watch is disconnected.
       }
@@ -38,10 +40,10 @@ class _DeviceInfoPageState extends ConsumerState<DeviceInfoPage> {
     return Scaffold(
       appBar: SysAppBar(title: Text(l10n.deviceInfoTitle)),
       body: PageContainer(
-        padding: EdgeInsets.zero,
         child: ListView(
           padding: const EdgeInsets.symmetric(
             horizontal: StyleConstants.pagePadding,
+            vertical: StyleConstants.pagePadding,
           ),
           children: [
             Padding(
@@ -91,6 +93,11 @@ class _DeviceInfoPageState extends ConsumerState<DeviceInfoPage> {
                     label: l10n.fieldSerial,
                     value: state.systemInfo!.serialNumber,
                   ),
+                  if (state.systemInfo!.storageInfo != null)
+                    _InfoRow(
+                      label: l10n.fieldStorage,
+                      value: _formatStorage(state.systemInfo!.storageInfo!),
+                    ),
                 ],
               ),
             if (state.battery != null)
@@ -155,10 +162,17 @@ class _InfoRow extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label, style: TextStyle(color: colorScheme.onSurfaceVariant)),
-            const Spacer(),
-            Flexible(
+            SizedBox(
+              width: 96,
+              child: Text(
+                label,
+                style: TextStyle(color: colorScheme.onSurfaceVariant),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
               child: GestureDetector(
                 onTap: () {
                   Clipboard.setData(ClipboardData(text: value));
@@ -168,8 +182,8 @@ class _InfoRow extends StatelessWidget {
                 },
                 child: Text(
                   value,
-                  textAlign: TextAlign.end,
-                  maxLines: 1,
+                  textAlign: TextAlign.start,
+                  maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -179,4 +193,19 @@ class _InfoRow extends StatelessWidget {
       ),
     );
   }
+}
+
+String _formatStorage(StorageInfo info) {
+  final used = _formatBytes(info.used);
+  final total = _formatBytes(info.total);
+  return '$used / $total';
+}
+
+String _formatBytes(int bytes) {
+  if (bytes < 1024) return '${bytes}B';
+  if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)}KB';
+  if (bytes < 1024 * 1024 * 1024) {
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)}MB';
+  }
+  return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)}GB';
 }
