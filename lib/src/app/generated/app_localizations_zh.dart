@@ -862,4 +862,19 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get acknowledgementsGadgetbridge => 'ZeppOS 与可穿戴设备协议研究参考';
+
+  @override
+  String get resourceHomeEmptyTitle => '首页未完成';
+
+  @override
+  String get resourceHomeEmptySubtitle => '您可以在资源库获取资源';
+
+  @override
+  String get resourceCreatorEmptyTitle => '创作者中心未完成';
+
+  @override
+  String get resourceCreatorEmptySubtitle => '您可以在资源库管理已获取资源';
+
+  @override
+  String get openResourceLibrary => '打开资源库';
 }

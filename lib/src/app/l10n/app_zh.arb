@@ -289,5 +289,10 @@
   "acknowledgementsAstroBoxNgAccount": "小米账号登录、设备同步与 authkey 获取流程参考",
   "acknowledgementsAstroBoxNgProvider": "社区资源索引、CDN 与清单解析流程参考",
   "acknowledgementsAstroBoxNgAppWasm": "Web Serial 与浏览器端连接流程参考",
-  "acknowledgementsGadgetbridge": "ZeppOS 与可穿戴设备协议研究参考"
+  "acknowledgementsGadgetbridge": "ZeppOS 与可穿戴设备协议研究参考",
+  "resourceHomeEmptyTitle": "首页未完成",
+  "resourceHomeEmptySubtitle": "您可以在资源库获取资源",
+  "resourceCreatorEmptyTitle": "创作者中心未完成",
+  "resourceCreatorEmptySubtitle": "您可以在资源库管理已获取资源",
+  "openResourceLibrary": "打开资源库"
 }

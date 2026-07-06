@@ -899,4 +899,22 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get acknowledgementsGadgetbridge =>
       'Reference for ZeppOS and wearable protocol research.';
+
+  @override
+  String get resourceHomeEmptyTitle => 'Home page is under construction';
+
+  @override
+  String get resourceHomeEmptySubtitle =>
+      'You can get resources from the library';
+
+  @override
+  String get resourceCreatorEmptyTitle =>
+      'Creator center is under construction';
+
+  @override
+  String get resourceCreatorEmptySubtitle =>
+      'You can manage acquired resources in the library';
+
+  @override
+  String get openResourceLibrary => 'Open resource library';
 }

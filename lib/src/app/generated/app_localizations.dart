@@ -1789,6 +1789,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Reference for ZeppOS and wearable protocol research.'**
   String get acknowledgementsGadgetbridge;
+
+  /// No description provided for @resourceHomeEmptyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Home page is under construction'**
+  String get resourceHomeEmptyTitle;
+
+  /// No description provided for @resourceHomeEmptySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'You can get resources from the library'**
+  String get resourceHomeEmptySubtitle;
+
+  /// No description provided for @resourceCreatorEmptyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Creator center is under construction'**
+  String get resourceCreatorEmptyTitle;
+
+  /// No description provided for @resourceCreatorEmptySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'You can manage acquired resources in the library'**
+  String get resourceCreatorEmptySubtitle;
+
+  /// No description provided for @openResourceLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'Open resource library'**
+  String get openResourceLibrary;
 }
 
 class _AppLocalizationsDelegate

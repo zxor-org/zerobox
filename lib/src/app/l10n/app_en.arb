@@ -288,5 +288,10 @@
   "acknowledgementsAstroBoxNgAccount": "Reference for Xiaomi account login, device sync, and authkey retrieval flows.",
   "acknowledgementsAstroBoxNgProvider": "Reference for community resource indexes, CDN handling, and manifest parsing flows.",
   "acknowledgementsAstroBoxNgAppWasm": "Reference for Web Serial and browser-side connection flows.",
-  "acknowledgementsGadgetbridge": "Reference for ZeppOS and wearable protocol research."
+  "acknowledgementsGadgetbridge": "Reference for ZeppOS and wearable protocol research.",
+  "resourceHomeEmptyTitle": "Home page is under construction",
+  "resourceHomeEmptySubtitle": "You can get resources from the library",
+  "resourceCreatorEmptyTitle": "Creator center is under construction",
+  "resourceCreatorEmptySubtitle": "You can manage acquired resources in the library",
+  "openResourceLibrary": "Open resource library"
 }

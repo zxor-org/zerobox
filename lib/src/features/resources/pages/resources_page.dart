@@ -84,19 +84,125 @@ class ResourcesPage extends ConsumerWidget {
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 200),
               child: switch (mode) {
-                ResourceMode.home => const SizedBox.shrink(
+                ResourceMode.home => _ResourceHomePlaceholder(
                   key: ValueKey('home'),
                 ),
                 ResourceMode.library => const _ResourceLibraryView(
                   key: ValueKey('library'),
                 ),
-                ResourceMode.creator => const SizedBox.shrink(
+                ResourceMode.creator => _ResourceCreatorPlaceholder(
                   key: ValueKey('creator'),
                 ),
               },
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ResourceHomePlaceholder extends ConsumerWidget {
+  const _ResourceHomePlaceholder({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context)!;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: StyleConstants.pageMaxWidth),
+        child: Padding(
+          padding: const EdgeInsets.all(StyleConstants.pagePadding),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.construction_outlined,
+                size: 64,
+                color: colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                l10n.resourceHomeEmptyTitle,
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                l10n.resourceHomeEmptySubtitle,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 24),
+              FilledButton.icon(
+                onPressed: () {
+                  ref
+                      .read(resourceModeControllerProvider.notifier)
+                      .setMode(ResourceMode.library);
+                },
+                icon: const Icon(Icons.library_books_outlined),
+                label: Text(l10n.openResourceLibrary),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ResourceCreatorPlaceholder extends ConsumerWidget {
+  const _ResourceCreatorPlaceholder({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context)!;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: StyleConstants.pageMaxWidth),
+        child: Padding(
+          padding: const EdgeInsets.all(StyleConstants.pagePadding),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.construction_outlined,
+                size: 64,
+                color: colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                l10n.resourceCreatorEmptyTitle,
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                l10n.resourceCreatorEmptySubtitle,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 24),
+              FilledButton.icon(
+                onPressed: () {
+                  ref
+                      .read(resourceModeControllerProvider.notifier)
+                      .setMode(ResourceMode.library);
+                },
+                icon: const Icon(Icons.library_books_outlined),
+                label: Text(l10n.openResourceLibrary),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
