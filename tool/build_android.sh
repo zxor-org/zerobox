@@ -4,73 +4,49 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/build_common.sh"
 
-DEV_MODE="false"
-
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --dev)
-      DEV_MODE="true"
-      shift
-      ;;
-    *)
-      log_error "Unknown option: $1"
-      exit 1
-      ;;
-  esac
-done
-
-VERSION="$(compute_version "${DEV_MODE}")"
+init_build "$@"
 log_info "Building Android release packages for version ${VERSION}"
 
 require_flutter
 setup_android_signing
 ensure_release_dir
 
-FLUTTER_BUILD_ARGS=(
-  build
-  apk
-  --release
-  --split-per-abi
-)
+mapfile -t DART_DEFINES < <(flutter_release_defines)
+BUILD_NUMBER="$(build_number_or_default)"
 
-log_info "Running: flutter ${FLUTTER_BUILD_ARGS[*]}"
-flutter "${FLUTTER_BUILD_ARGS[@]}"
+run_cmd flutter build apk \
+  --release \
+  --split-per-abi \
+  --obfuscate \
+  --split-debug-info=symbols/android-apk \
+  --build-name="${VERSION}" \
+  --build-number="${BUILD_NUMBER}" \
+  "${DART_DEFINES[@]}"
 
-ANDROID_BUILD_DIR="${PROJECT_ROOT}/build/app/outputs/flutter-apk"
-
-# Flutter names APKs like app-arm64-v8a-release.apk
-abi_mapping=(
-  "arm64-v8a:arm64-v8a"
-  "armeabi-v7a:armeabi-v7a"
-  "x86_64:x86_64"
-)
-
-for mapping in "${abi_mapping[@]}"; do
-  abi="${mapping%%:*}"
-  flutter_abi="${mapping##*:}"
-  src="${ANDROID_BUILD_DIR}/app-${flutter_abi}-release.apk"
-  dst="${RELEASE_DIR}/${APP_NAME}-${VERSION}-android-${abi}.apk"
-
-  if [[ ! -f "${src}" ]]; then
-    log_warn "Expected APK not found: ${src}"
-    continue
-  fi
-
-  cp "${src}" "${dst}"
-  log_info "Produced ${dst}"
+ANDROID_APK_DIR="${PROJECT_ROOT}/build/app/outputs/flutter-apk"
+for abi in arm64-v8a armeabi-v7a x86_64; do
+  copy_artifact \
+    "${ANDROID_APK_DIR}/app-${abi}-release.apk" \
+    "${RELEASE_DIR}/${APP_NAME}-${VERSION}-android-${abi}.apk"
 done
 
-log_info "Running: flutter build appbundle --release"
-flutter build appbundle --release
+run_cmd flutter build appbundle \
+  --release \
+  --obfuscate \
+  --split-debug-info=symbols/android-appbundle \
+  --build-name="${VERSION}" \
+  --build-number="${BUILD_NUMBER}" \
+  "${DART_DEFINES[@]}"
 
-AAB_SRC="${PROJECT_ROOT}/build/app/outputs/bundle/release/app-release.aab"
-AAB_DST="${RELEASE_DIR}/${APP_NAME}-${VERSION}-android-appbundle.aab"
+copy_artifact \
+  "${PROJECT_ROOT}/build/app/outputs/bundle/release/app-release.aab" \
+  "${RELEASE_DIR}/${APP_NAME}-${VERSION}-android-appbundle.aab"
 
-if [[ -f "${AAB_SRC}" ]]; then
-  cp "${AAB_SRC}" "${AAB_DST}"
-  log_info "Produced ${AAB_DST}"
-else
-  log_warn "Expected AAB not found: ${AAB_SRC}"
-fi
+archive_symbols_if_present \
+  "${PROJECT_ROOT}/symbols/android-apk" \
+  "${RELEASE_DIR}/${APP_NAME}-${VERSION}-android-apk.symbols.tar.gz"
+archive_symbols_if_present \
+  "${PROJECT_ROOT}/symbols/android-appbundle" \
+  "${RELEASE_DIR}/${APP_NAME}-${VERSION}-android-appbundle.symbols.tar.gz"
 
-log_info "Android build complete."
+log_info "Android build complete"

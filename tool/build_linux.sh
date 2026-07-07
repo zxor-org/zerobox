@@ -4,82 +4,69 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/build_common.sh"
 
-DEV_MODE="false"
-
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --dev)
-      DEV_MODE="true"
-      shift
-      ;;
-    *)
-      log_error "Unknown option: $1"
-      exit 1
-      ;;
-  esac
-done
-
-VERSION="$(compute_version "${DEV_MODE}")"
+init_build "$@"
 log_info "Building Linux release packages for version ${VERSION}"
 
 require_flutter
+require_command tar
 require_command dpkg-deb
-require_command rpmbuild
-require_command makepkg
 ensure_release_dir
 
-log_info "Running: flutter build linux --release --obfuscate --split-debug-info=symbols/"
-flutter build linux --release --obfuscate --split-debug-info=symbols/
+mapfile -t DART_DEFINES < <(flutter_release_defines)
+
+run_cmd flutter build linux \
+  --release \
+  --obfuscate \
+  --split-debug-info=symbols/linux \
+  "${DART_DEFINES[@]}"
 
 BUNDLE_DIR="${PROJECT_ROOT}/build/linux/x64/release/bundle"
-SYMBOLS_DIR="${PROJECT_ROOT}/build/linux/x64/release/symbols"
+SYMBOLS_DIR="${PROJECT_ROOT}/symbols/linux"
 if [[ ! -d "${BUNDLE_DIR}" ]]; then
   log_error "Linux build bundle not found: ${BUNDLE_DIR}"
   exit 1
 fi
 
-# 1. tar.gz
 TAR_DST="${RELEASE_DIR}/${APP_NAME}-${VERSION}-linux-amd64.tar.gz"
 rm -f "${TAR_DST}"
 (
-  cd "${BUNDLE_DIR}/.."
+  cd "$(dirname "${BUNDLE_DIR}")"
   tar czf "${TAR_DST}" "$(basename "${BUNDLE_DIR}")"
 )
 log_info "Produced ${TAR_DST}"
 
-# 1b. debug symbols tar.gz
-SYMBOLS_DST="${RELEASE_DIR}/${APP_NAME}-${VERSION}-linux-amd64.symbols.tar.gz"
-rm -f "${SYMBOLS_DST}"
-if [[ -d "${SYMBOLS_DIR}" ]]; then
-  (
-    cd "${SYMBOLS_DIR}/.."
-    tar czf "${SYMBOLS_DST}" "$(basename "${SYMBOLS_DIR}")"
-  )
-  log_info "Produced ${SYMBOLS_DST}"
-fi
+archive_symbols_if_present \
+  "${SYMBOLS_DIR}" \
+  "${RELEASE_DIR}/${APP_NAME}-${VERSION}-linux-amd64.symbols.tar.gz"
 
 STAGING_ROOT="${PROJECT_ROOT}/build/linux_staging"
-rm -rf "${STAGING_ROOT}"
 INSTALL_PREFIX="/opt/${APP_NAME}"
+DESKTOP_FILE="${PACKAGE_NAME}.desktop"
+rm -rf "${STAGING_ROOT}"
+mkdir -p "${STAGING_ROOT}"
 
-# Shared staging content
-mkdir -p "${STAGING_ROOT}${INSTALL_PREFIX}"
-cp -a "${BUNDLE_DIR}"/* "${STAGING_ROOT}${INSTALL_PREFIX}/"
+prepare_desktop_file() {
+  local dst="$1"
+  local exec_path="${2:-${INSTALL_PREFIX}/zerobox}"
+  mkdir -p "$(dirname "${dst}")"
+  cp "${PROJECT_ROOT}/linux/${DESKTOP_FILE}.in" "${dst}"
+  sed -i "s|@CMAKE_INSTALL_PREFIX@/zerobox|${exec_path}|g" "${dst}"
+}
 
-# Make sure the binary is executable
-chmod +x "${STAGING_ROOT}${INSTALL_PREFIX}/${APP_NAME}"
+copy_bundle_to() {
+  local root="$1"
+  mkdir -p "${root}${INSTALL_PREFIX}"
+  cp -a "${BUNDLE_DIR}/." "${root}${INSTALL_PREFIX}/"
+  chmod +x "${root}${INSTALL_PREFIX}/${APP_NAME}"
+  find "${root}${INSTALL_PREFIX}" -type f \( -name '*.so' -o -name "${APP_NAME}" \) \
+    -exec strip --strip-unneeded {} \; 2>/dev/null || true
+}
 
-# Strip unneeded symbols from native binaries and libraries
-find "${STAGING_ROOT}${INSTALL_PREFIX}" -type f \( -name '*.so' -o -name 'zerobox' \) -exec strip --strip-unneeded {} \; 2>/dev/null || true
-
-# Desktop file
-mkdir -p "${STAGING_ROOT}/usr/share/applications"
-cp "${PROJECT_ROOT}/linux/${PACKAGE_NAME}.desktop.in" "${STAGING_ROOT}/usr/share/applications/${PACKAGE_NAME}.desktop"
-sed -i "s|@CMAKE_INSTALL_PREFIX@|${INSTALL_PREFIX}|g" "${STAGING_ROOT}/usr/share/applications/${PACKAGE_NAME}.desktop"
-
-# 2. Debian package
 build_deb() {
   local deb_root="${STAGING_ROOT}/deb"
+  rm -rf "${deb_root}"
+  copy_bundle_to "${deb_root}"
+  prepare_desktop_file "${deb_root}/usr/share/applications/${DESKTOP_FILE}"
   mkdir -p "${deb_root}/DEBIAN"
 
   cat > "${deb_root}/DEBIAN/control" <<EOF
@@ -93,25 +80,25 @@ Maintainer: ${MAINTAINER}
 Description: ${DESCRIPTION}
 EOF
 
-  mkdir -p "${deb_root}${INSTALL_PREFIX}"
-  cp -a "${BUNDLE_DIR}"/* "${deb_root}${INSTALL_PREFIX}/"
-  mkdir -p "${deb_root}/usr/share/applications"
-  cp "${STAGING_ROOT}/usr/share/applications/${PACKAGE_NAME}.desktop" "${deb_root}/usr/share/applications/"
-
   local deb_out="${RELEASE_DIR}/${APP_NAME}_${VERSION}_amd64.deb"
-  dpkg-deb --build "${deb_root}" "${deb_out}"
+  rm -f "${deb_out}"
+  run_cmd dpkg-deb --root-owner-group --build "${deb_root}" "${deb_out}"
   log_info "Produced ${deb_out}"
 }
 
-# 3. RPM package
 build_rpm() {
-  local rpm_top="${STAGING_ROOT}/rpm"
-  mkdir -p "${rpm_top}"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+  if ! command -v rpmbuild >/dev/null 2>&1; then
+    log_warn "rpmbuild not found; skipped RPM package"
+    return 0
+  fi
 
+  local rpm_top="${STAGING_ROOT}/rpm"
+  local rpm_version="${VERSION//-/.}"
   local release_num="1"
-  local rpm_version="${VERSION}"
-  # RPM versions cannot contain '-'; Debian/Ubuntu uses '.' separators.
-  rpm_version="${rpm_version//-/.}"
+  rm -rf "${rpm_top}"
+  mkdir -p "${rpm_top}"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+  mkdir -p "${rpm_top}/rpmdb"
+  prepare_desktop_file "${STAGING_ROOT}/rpm-desktop/${DESKTOP_FILE}"
 
   cat > "${rpm_top}/SPECS/${APP_NAME}.spec" <<EOF
 Name:           ${APP_NAME}
@@ -130,33 +117,40 @@ rm -rf %{buildroot}
 mkdir -p %{buildroot}${INSTALL_PREFIX}
 cp -a ${BUNDLE_DIR}/* %{buildroot}${INSTALL_PREFIX}/
 mkdir -p %{buildroot}/usr/share/applications
-cp ${STAGING_ROOT}/usr/share/applications/${PACKAGE_NAME}.desktop %{buildroot}/usr/share/applications/
+cp ${STAGING_ROOT}/rpm-desktop/${DESKTOP_FILE} %{buildroot}/usr/share/applications/
 
 %files
 ${INSTALL_PREFIX}
-/usr/share/applications/${PACKAGE_NAME}.desktop
+/usr/share/applications/${DESKTOP_FILE}
 
 %changelog
-* $(date +"%a %b %d %Y") ${MAINTAINER} - ${rpm_version}-${release_num}
+* $(LC_ALL=C date +"%a %b %d %Y") ${MAINTAINER} - ${rpm_version}-${release_num}
 - Package release
 EOF
 
-  rpmbuild --define "_topdir ${rpm_top}" -bb "${rpm_top}/SPECS/${APP_NAME}.spec"
-  local rpm_out_src
-  rpm_out_src="$(find "${rpm_top}/RPMS" -name '*.rpm' | head -n 1)"
-  if [[ -z "${rpm_out_src}" ]]; then
+  run_cmd rpmbuild \
+    --define "_topdir ${rpm_top}" \
+    --define "_dbpath ${rpm_top}/rpmdb" \
+    -bb "${rpm_top}/SPECS/${APP_NAME}.spec"
+  local rpm_src
+  rpm_src="$(find "${rpm_top}/RPMS" -name '*.rpm' | head -n 1)"
+  if [[ -z "${rpm_src}" ]]; then
     log_error "RPM build failed: no .rpm file produced"
     exit 1
   fi
-  local rpm_out="${RELEASE_DIR}/${APP_NAME}-${VERSION}-${release_num}.x86_64.rpm"
-  cp "${rpm_out_src}" "${rpm_out}"
-  log_info "Produced ${rpm_out}"
+  copy_artifact "${rpm_src}" "${RELEASE_DIR}/${APP_NAME}-${VERSION}-${release_num}.x86_64.rpm"
 }
 
-# 4. Arch package
 build_arch() {
+  if ! command -v makepkg >/dev/null 2>&1; then
+    log_warn "makepkg not found; skipped Arch package"
+    return 0
+  fi
+
   local arch_root="${STAGING_ROOT}/arch"
+  rm -rf "${arch_root}"
   mkdir -p "${arch_root}"
+  prepare_desktop_file "${STAGING_ROOT}/arch-desktop/${DESKTOP_FILE}"
 
   cat > "${arch_root}/PKGBUILD" <<EOF
 # Maintainer: ${MAINTAINER}
@@ -168,34 +162,137 @@ arch=('x86_64')
 url="${HOMEPAGE}"
 license=('${LICENSE}')
 depends=('gtk3' 'libblockdev' 'xz' 'webkit2gtk-4.1' 'bluez')
+options=('!debug')
 source=()
 
 package() {
   mkdir -p "\${pkgdir}${INSTALL_PREFIX}"
   cp -a "${BUNDLE_DIR}"/* "\${pkgdir}${INSTALL_PREFIX}/"
   mkdir -p "\${pkgdir}/usr/share/applications"
-  cp "${STAGING_ROOT}/usr/share/applications/${PACKAGE_NAME}.desktop" "\${pkgdir}/usr/share/applications/"
+  cp "${STAGING_ROOT}/arch-desktop/${DESKTOP_FILE}" "\${pkgdir}/usr/share/applications/"
 }
 EOF
 
   (
     cd "${arch_root}"
-    makepkg -f --skipchecksums
+    run_cmd makepkg -f --skipchecksums
   )
 
-  local arch_out_src
-  arch_out_src="$(find "${arch_root}" -maxdepth 1 -name '*.pkg.tar.zst' ! -name '*-debug-*' | head -n 1)"
-  if [[ -z "${arch_out_src}" ]]; then
+  local arch_src
+  arch_src="$(find "${arch_root}" -maxdepth 1 -name '*.pkg.tar.zst' ! -name '*-debug-*' | head -n 1)"
+  if [[ -z "${arch_src}" ]]; then
     log_error "Arch package build failed: no .pkg.tar.zst file produced"
     exit 1
   fi
-  local arch_out="${RELEASE_DIR}/${APP_NAME}-${VERSION}-1-x86_64.pkg.tar.zst"
-  cp "${arch_out_src}" "${arch_out}"
-  log_info "Produced ${arch_out}"
+  copy_artifact "${arch_src}" "${RELEASE_DIR}/${APP_NAME}-${VERSION}-1-x86_64.pkg.tar.zst"
+}
+
+build_appimage() {
+  local tool=""
+  if command -v linuxdeploy >/dev/null 2>&1; then
+    tool="linuxdeploy"
+  elif command -v appimagetool >/dev/null 2>&1; then
+    tool="appimagetool"
+  else
+    log_warn "linuxdeploy/appimagetool not found; skipped AppImage package"
+    return 0
+  fi
+
+  local appdir="${STAGING_ROOT}/appimage/AppDir"
+  rm -rf "${appdir}"
+  copy_bundle_to "${appdir}"
+  mkdir -p "${appdir}/usr/bin"
+  cat > "${appdir}/usr/bin/${APP_NAME}" <<EOF
+#!/usr/bin/env bash
+HERE="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+exec "\${HERE}/../../opt/${APP_NAME}/${APP_NAME}" "\$@"
+EOF
+  chmod +x "${appdir}/usr/bin/${APP_NAME}"
+  prepare_desktop_file "${appdir}/usr/share/applications/${DESKTOP_FILE}" "${APP_NAME}"
+  mkdir -p "${appdir}/usr/share/icons/hicolor/512x512/apps"
+  cp "${PROJECT_ROOT}/linux/icons/hicolor/512x512/apps/${PACKAGE_NAME}.png" \
+    "${appdir}/usr/share/icons/hicolor/512x512/apps/${PACKAGE_NAME}.png"
+  cp "${appdir}/usr/share/applications/${DESKTOP_FILE}" "${appdir}/${DESKTOP_FILE}"
+  cp "${PROJECT_ROOT}/linux/icons/hicolor/512x512/apps/${PACKAGE_NAME}.png" \
+    "${appdir}/${PACKAGE_NAME}.png"
+  cat > "${appdir}/AppRun" <<EOF
+#!/usr/bin/env bash
+HERE="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+exec "\${HERE}/opt/${APP_NAME}/${APP_NAME}" "\$@"
+EOF
+  chmod +x "${appdir}/AppRun"
+
+  local output="${RELEASE_DIR}/${APP_NAME}-${VERSION}-linux-amd64.AppImage"
+  rm -f "${output}"
+  if [[ "${tool}" == "linuxdeploy" ]]; then
+    (
+      cd "${PROJECT_ROOT}"
+      OUTPUT="${output}" run_cmd linuxdeploy \
+        --appdir "${appdir}" \
+        --desktop-file "${appdir}/usr/share/applications/${DESKTOP_FILE}" \
+        --icon-file "${PROJECT_ROOT}/linux/icons/hicolor/512x512/apps/${PACKAGE_NAME}.png" \
+        --output appimage
+    )
+  else
+    run_cmd appimagetool "${appdir}" "${output}"
+  fi
+
+  if [[ -f "${output}" ]]; then
+    log_info "Produced ${output}"
+  else
+    log_error "AppImage build failed: no AppImage produced"
+    exit 1
+  fi
+}
+
+build_flatpak() {
+  if ! command -v flatpak-builder >/dev/null 2>&1; then
+    log_warn "flatpak-builder not found; skipped Flatpak package"
+    return 0
+  fi
+
+  local manifest="${PROJECT_ROOT}/tool/flatpak/${PACKAGE_NAME}.yml"
+  local runtime_version
+  runtime_version="$(awk -F'"' '/^runtime-version:/ { print $2; exit }' "${manifest}")"
+  if ! flatpak info "org.gnome.Sdk//${runtime_version}" >/dev/null 2>&1; then
+    log_warn "Flatpak SDK org.gnome.Sdk//${runtime_version} not installed; skipped Flatpak package"
+    log_warn "Install it with: flatpak install flathub org.gnome.Sdk//${runtime_version} org.gnome.Platform//${runtime_version}"
+    return 0
+  fi
+  if ! flatpak info "org.gnome.Platform//${runtime_version}" >/dev/null 2>&1; then
+    log_warn "Flatpak runtime org.gnome.Platform//${runtime_version} not installed; skipped Flatpak package"
+    log_warn "Install it with: flatpak install flathub org.gnome.Sdk//${runtime_version} org.gnome.Platform//${runtime_version}"
+    return 0
+  fi
+
+  local flatpak_stage="${STAGING_ROOT}/flatpak"
+  local flatpak_build="${STAGING_ROOT}/flatpak-build"
+  local flatpak_repo="${STAGING_ROOT}/flatpak-repo"
+  local output="${RELEASE_DIR}/${APP_NAME}-${VERSION}-linux-amd64.flatpak"
+  rm -rf "${flatpak_stage}" "${flatpak_build}" "${flatpak_repo}"
+  mkdir -p "${flatpak_stage}"
+  prepare_desktop_file "${flatpak_stage}/${DESKTOP_FILE}" "${APP_NAME}"
+  rm -f "${output}"
+
+  run_cmd flatpak-builder \
+    --force-clean \
+    --default-branch=stable \
+    --repo="${flatpak_repo}" \
+    "${flatpak_build}" \
+    "${manifest}"
+
+  run_cmd flatpak build-bundle \
+    "${flatpak_repo}" \
+    "${output}" \
+    "${PACKAGE_NAME}" \
+    stable
+  log_info "Produced ${output}"
 }
 
 build_deb
 build_rpm
 build_arch
+build_appimage
+build_flatpak
 
-log_info "Linux build complete."
+log_info "Linux build complete"

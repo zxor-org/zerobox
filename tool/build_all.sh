@@ -4,31 +4,35 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/build_common.sh"
 
-DEV_MODE="false"
-
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --dev)
-      DEV_MODE="true"
-      shift
-      ;;
-    *)
-      log_error "Unknown option: $1"
-      exit 1
-      ;;
-  esac
-done
-
-VERSION="$(compute_version "${DEV_MODE}")"
-log_info "Building all ZeroBox release packages for version ${VERSION}"
+init_build "$@"
+log_info "Building ZeroBox release packages for version ${VERSION}"
 
 clean_release_dir
 
-"${SCRIPT_DIR}/build_android.sh" "$([[ "${DEV_MODE}" == "true" ]] && echo --dev)"
-"${SCRIPT_DIR}/build_web.sh" "$([[ "${DEV_MODE}" == "true" ]] && echo --dev)"
-"${SCRIPT_DIR}/build_linux.sh" "$([[ "${DEV_MODE}" == "true" ]] && echo --dev)"
+BUILD_ARGS=()
+if [[ "${DEV_MODE}" == "true" ]]; then
+  BUILD_ARGS+=(--dev)
+fi
+
+"${SCRIPT_DIR}/build_android.sh" "${BUILD_ARGS[@]}"
+"${SCRIPT_DIR}/build_web.sh" "${BUILD_ARGS[@]}"
+
+case "$(host_os)" in
+  linux)
+    "${SCRIPT_DIR}/build_linux.sh" "${BUILD_ARGS[@]}"
+    ;;
+  macos)
+    "${SCRIPT_DIR}/build_macos.sh" "${BUILD_ARGS[@]}"
+    ;;
+  windows)
+    log_warn "Use tool\\build_windows.bat for Windows desktop packages"
+    ;;
+  *)
+    log_warn "Skipping desktop package: unsupported host OS"
+    ;;
+esac
 
 generate_checksums "${RELEASE_DIR}"
 
-log_info "All builds complete. See ${RELEASE_DIR}"
+log_info "All requested builds complete. See ${RELEASE_DIR}"
 ls -lh "${RELEASE_DIR}"

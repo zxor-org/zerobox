@@ -1,0 +1,36 @@
+app-id: org.zxor.zerobox
+runtime: org.gnome.Platform
+runtime-version: "49"
+sdk: org.gnome.Sdk
+command: zerobox
+
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=system-bus
+  - --device=all
+  - --filesystem=xdg-download
+  - --filesystem=xdg-documents
+
+modules:
+  - name: zerobox
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/zerobox
+      - cp -a bundle/. /app/zerobox/
+      - install -Dm755 zerobox-wrapper /app/bin/zerobox
+      - install -Dm644 org.zxor.zerobox.desktop /app/share/applications/org.zxor.zerobox.desktop
+      - install -Dm644 org.zxor.zerobox.png /app/share/icons/hicolor/512x512/apps/org.zxor.zerobox.png
+    sources:
+      - type: dir
+        path: ../../build/linux/x64/release/bundle
+        dest: bundle
+      - type: file
+        path: ../../build/linux_staging/flatpak/org.zxor.zerobox.desktop
+      - type: file
+        path: ../../linux/icons/hicolor/512x512/apps/org.zxor.zerobox.png
+      - type: script
+        dest-filename: zerobox-wrapper
+        commands:
+          - exec /app/zerobox/zerobox "$@"
