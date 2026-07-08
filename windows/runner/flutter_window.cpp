@@ -4,6 +4,7 @@
 
 #include "classic_spp_channel.h"
 #include "flutter/generated_plugin_registrant.h"
+#include "mi_account_2fa_channel.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -27,6 +28,8 @@ bool FlutterWindow::OnCreate() {
   }
   RegisterPlugins(flutter_controller_->engine());
   RegisterRfcommChannel(flutter_controller_->engine()->messenger());
+  RegisterMiAccountTwoFactorChannel(flutter_controller_->engine()->messenger(),
+                                    GetHandle());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
