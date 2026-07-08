@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:zerobox/src/core/network/dio_provider.dart';
 import 'package:zerobox/src/features/accounts/models/mi_account_models.dart';
 
 class MiAccountService {
@@ -512,5 +513,5 @@ class _Rc4 {
 }
 
 final miAccountServiceProvider = Provider<MiAccountService>((ref) {
-  return MiAccountService();
+  return MiAccountService(dio: ref.read(appDioProvider));
 });

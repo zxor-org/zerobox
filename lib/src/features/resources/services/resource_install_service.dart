@@ -7,6 +7,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:zerobox/src/core/network/dio_provider.dart';
 import 'package:zerobox/src/data/astrobox/models/astrobox_models.dart';
 import 'package:zerobox/src/data/community/community_resource_repository.dart';
 import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
@@ -429,7 +430,7 @@ class ResourceInstallService {
 }
 
 final resourceInstallServiceProvider = Provider<ResourceInstallService>((ref) {
-  return ResourceInstallService();
+  return ResourceInstallService(dio: ref.read(appDioProvider));
 });
 
 extension ResourceTypeLabel on AstroBoxResourceType {

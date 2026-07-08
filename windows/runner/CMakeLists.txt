@@ -91,7 +91,7 @@ if(WEBVIEW2_SDK_DIR AND EXISTS "${WEBVIEW2_SDK_DIR}/build/native/include/WebView
     message(WARNING "WebView2 SDK found, but no loader library was found for ${WEBVIEW2_ARCH}. Windows Xiaomi 2FA will be unavailable.")
   endif()
 else()
-  message(WARNING "Microsoft.Web.WebView2 SDK not found. Set WEBVIEW2_SDK_DIR to enable Windows Xiaomi 2FA WebView.")
+  message(WARNING "Microsoft.Web.WebView2 SDK not found. Run windows\\scripts\\install_webview2_sdk.ps1 or set WEBVIEW2_SDK_DIR to enable Windows Xiaomi 2FA WebView.")
 endif()
 
 # Run the Flutter tool portions of the build. This must not be removed.

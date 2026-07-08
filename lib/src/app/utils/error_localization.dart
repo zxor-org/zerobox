@@ -17,6 +17,13 @@ String localizedErrorMessage(AppLocalizations l10n, Object? error) {
     return l10n.errorWebSerialUnavailable;
   }
 
+  if (normalized.contains('certificate_verify_failed') ||
+      normalized.contains('self signed certificate') ||
+      normalized.contains('handshakeexception') ||
+      normalized.contains('certificate verify failed')) {
+    return l10n.errorCertificateVerificationFailed;
+  }
+
   if (normalized.contains('timeout') ||
       normalized.contains('timed out') ||
       normalized.contains('future not completed') ||

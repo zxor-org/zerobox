@@ -79,6 +79,7 @@
   "errorAccountPasswordIncorrect": "Xiaomi account username or password is incorrect",
   "errorAccountTwoFactorIncomplete": "Xiaomi account two-factor verification was not completed. Sign in again",
   "errorUnsupportedFileType": "Unsupported or unrecognized file type",
+  "errorCertificateVerificationFailed": "Certificate verification failed. If you are using a proxy, disable HTTPS interception for this app or make sure its certificate is trusted by Flutter/Dart",
   "errorUnknownWithDetail": "Operation failed: {detail}",
   "@errorUnknownWithDetail": {
     "placeholders": {

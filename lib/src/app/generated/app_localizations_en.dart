@@ -256,6 +256,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Unsupported or unrecognized file type';
 
   @override
+  String get errorCertificateVerificationFailed =>
+      'Certificate verification failed. If you are using a proxy, disable HTTPS interception for this app or make sure its certificate is trusted by Flutter/Dart';
+
+  @override
   String errorUnknownWithDetail(Object detail) {
     return 'Operation failed: $detail';
   }

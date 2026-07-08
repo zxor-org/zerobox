@@ -572,6 +572,12 @@ abstract class AppLocalizations {
   /// **'Unsupported or unrecognized file type'**
   String get errorUnsupportedFileType;
 
+  /// No description provided for @errorCertificateVerificationFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Certificate verification failed. If you are using a proxy, disable HTTPS interception for this app or make sure its certificate is trusted by Flutter/Dart'**
+  String get errorCertificateVerificationFailed;
+
   /// No description provided for @errorUnknownWithDetail.
   ///
   /// In en, this message translates to:

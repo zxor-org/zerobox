@@ -250,6 +250,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get errorUnsupportedFileType => '不支持或无法识别的文件类型';
 
   @override
+  String get errorCertificateVerificationFailed =>
+      '证书校验失败。如果正在使用代理，请关闭对本应用的 HTTPS 接管，或确认 Flutter/Dart 能信任其证书';
+
+  @override
   String errorUnknownWithDetail(Object detail) {
     return '操作失败：$detail';
   }

@@ -202,6 +202,21 @@ class DownloadQueueNotifier extends Notifier<List<ResourceTask>> {
     double progress,
     String? error,
   ) {
+    final current = state.cast<ResourceTask?>().firstWhere(
+      (task) => task?.id == taskId,
+      orElse: () => null,
+    );
+    if (current == null) return;
+    final currentIsTerminal =
+        current.status == ResourceTaskStatus.failed ||
+        current.status == ResourceTaskStatus.completed;
+    final nextIsTerminal =
+        status == ResourceTaskStatus.failed ||
+        status == ResourceTaskStatus.completed;
+    if (currentIsTerminal && !nextIsTerminal) {
+      return;
+    }
+
     state = [
       for (final t in state)
         if (t.id == taskId)
