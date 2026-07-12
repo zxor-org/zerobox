@@ -11,6 +11,7 @@ import 'package:zerobox/src/core/providers/app_settings_providers.dart';
 import 'package:zerobox/src/data/community/community_source.dart';
 import 'package:zerobox/src/data/bandbbs/bandbbs_resource_provider.dart';
 import 'package:zerobox/src/device/core/xiaomi_wearable_catalog.dart';
+import 'package:zerobox/src/features/accounts/services/huami_auth_service.dart';
 import 'package:zerobox/src/features/resources/application/resource_catalog_providers.dart';
 import 'package:zerobox/src/features/resources/controllers/resource_filter_controller.dart';
 import 'package:zerobox/src/features/resources/domain/community_resource.dart';
@@ -380,7 +381,8 @@ class _ResourceLibraryViewState extends ConsumerState<_ResourceLibraryView> {
                 padding: const EdgeInsets.symmetric(
                   horizontal: StyleConstants.pagePadding,
                 ),
-                child: source == CommunitySourceId.bandbbs
+                child: source == CommunitySourceId.bandbbs ||
+                        source == CommunitySourceId.huamiAppStore
                     ? _BandBbsResourceList(items: _items)
                     : _ResourceGrid(items: _items),
               ),
@@ -410,6 +412,7 @@ class _CommunitySourceMenu extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final source = ref.watch(selectedCommunitySourceProvider);
+    final l10n = AppLocalizations.of(context)!;
     return MenuAnchor(
       menuChildren: CommunitySourceId.values
           .map(
@@ -422,9 +425,20 @@ class _CommunitySourceMenu extends ConsumerWidget {
                   : null,
               onPressed: candidate == source
                   ? null
-                  : () => ref
-                        .read(appSettingsProvider.notifier)
-                        .setCommunitySource(candidate),
+                  : () async {
+                      if (candidate == CommunitySourceId.huamiAppStore &&
+                          !ref.read(huamiAuthProvider).isSignedIn) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(l10n.settingsHuamiAccountRequired),
+                          ),
+                        );
+                        return;
+                      }
+                      await ref
+                          .read(appSettingsProvider.notifier)
+                          .setCommunitySource(candidate);
+                    },
               child: Text(candidate.displayName),
             ),
           )
@@ -456,8 +470,8 @@ class _FilterBar extends ConsumerWidget {
         .where((id) => !knownDeviceIds.contains(id))
         .toList();
     final categoryTitles = <String, String>{};
-    if (ref.watch(selectedCommunitySourceProvider) ==
-        CommunitySourceId.bandbbs) {
+    final source = ref.watch(selectedCommunitySourceProvider);
+    if (source == CommunitySourceId.bandbbs) {
       void collect(List<BandBbsCategoryNode> nodes) {
         for (final node in nodes) {
           categoryTitles['${BandBbsCategorySidebar.categoryFilterPrefix}${node.id}'] =
@@ -500,7 +514,12 @@ class _FilterBar extends ConsumerWidget {
             (codename) => Padding(
               padding: const EdgeInsets.only(right: 8),
               child: FilterChip(
-                label: Text(categoryTitles[codename] ?? codename),
+                label: Text(
+                  source == CommunitySourceId.huamiAppStore &&
+                          int.tryParse(codename) != null
+                      ? '\u8bbe\u5907\u6e90 $codename'
+                      : categoryTitles[codename] ?? codename,
+                ),
                 selected: true,
                 onSelected: (_) => ref
                     .read(resourceFiltersProvider.notifier)
@@ -513,7 +532,13 @@ class _FilterBar extends ConsumerWidget {
             Padding(
               padding: EdgeInsets.zero,
               child: FilterChip(
-                label: Text(_typeLabel(l10n, filters.type!)),
+                label: Text(
+                  _typeLabel(
+                    l10n,
+                    filters.type!,
+                    source: source,
+                  ),
+                ),
                 selected: true,
                 onSelected: (_) =>
                     ref.read(resourceFiltersProvider.notifier).setType(null),
@@ -620,7 +645,13 @@ class _FilterSheet extends ConsumerWidget {
           runSpacing: 8,
           children: [
             FilterChip(
-              label: Text(l10n.quickApps),
+              label: Text(
+                _typeLabel(
+                  l10n,
+                  CommunityResourceType.quickApp,
+                  source: source,
+                ),
+              ),
               selected: filters.type == CommunityResourceType.quickApp,
               onSelected: (_) => ref
                   .read(resourceFiltersProvider.notifier)
@@ -672,6 +703,10 @@ class _FilterSheet extends ConsumerWidget {
               )
               .toList(),
         ),
+        if (source == CommunitySourceId.huamiAppStore) ...[
+          const SizedBox(height: 12),
+          _HuamiDeviceSourceInput(filters: filters),
+        ],
         const SizedBox(height: 16),
         Text(l10n.paid, style: Theme.of(context).textTheme.titleSmall),
         const SizedBox(height: 8),
@@ -696,6 +731,100 @@ class _FilterSheet extends ConsumerWidget {
         ),
       ],
     );
+  }
+}
+
+class _HuamiDeviceSourceInput extends ConsumerStatefulWidget {
+  const _HuamiDeviceSourceInput({required this.filters});
+
+  final ResourceFilters filters;
+
+  @override
+  ConsumerState<_HuamiDeviceSourceInput> createState() =>
+      _HuamiDeviceSourceInputState();
+}
+
+class _HuamiDeviceSourceInputState
+    extends ConsumerState<_HuamiDeviceSourceInput> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: _firstNumericDeviceSource());
+  }
+
+  @override
+  void didUpdateWidget(covariant _HuamiDeviceSourceInput oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final value = _firstNumericDeviceSource();
+    if (value != _controller.text) {
+      _controller.text = value;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _controller,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              labelText: '\u8bbe\u5907\u6e90',
+              hintText: '260',
+              prefixIcon: const Icon(Icons.numbers),
+              isDense: true,
+              border: const OutlineInputBorder(),
+              suffixIcon: widget.filters.selectedDevices.any(_isNumeric)
+                  ? IconButton(
+                      tooltip: MaterialLocalizations.of(context).deleteButtonTooltip,
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _controller.clear();
+                        ref
+                            .read(resourceFiltersProvider.notifier)
+                            .clearNumericDevices();
+                      },
+                    )
+                  : null,
+            ),
+            onSubmitted: (_) => _apply(),
+          ),
+        ),
+        const SizedBox(width: 8),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: color.primaryContainer,
+            foregroundColor: color.onPrimaryContainer,
+          ),
+          onPressed: _apply,
+          child: const Text('\u5e94\u7528'),
+        ),
+      ],
+    );
+  }
+
+  void _apply() {
+    final source = int.tryParse(_controller.text.trim());
+    if (source == null || source <= 0) return;
+    ref.read(resourceFiltersProvider.notifier).setNumericDevice(source);
+  }
+
+  String _firstNumericDeviceSource() =>
+      widget.filters.selectedDevices.firstWhere(_isNumeric, orElse: () => '');
+
+  bool _isNumeric(String value) {
+    final parsed = int.tryParse(value);
+    return parsed != null && parsed > 0;
   }
 }
 
@@ -728,9 +857,15 @@ List<_DeviceFilterOption> _buildDeviceFilterOptions(
     ..sort((a, b) => a.label.compareTo(b.label));
 }
 
-String _typeLabel(AppLocalizations l10n, CommunityResourceType type) =>
+String _typeLabel(
+  AppLocalizations l10n,
+  CommunityResourceType type, {
+  CommunitySourceId? source,
+}) =>
     switch (type) {
-      CommunityResourceType.quickApp => l10n.quickApps,
+      CommunityResourceType.quickApp => source == CommunitySourceId.huamiAppStore
+          ? '\u5c0f\u7a0b\u5e8f'
+          : l10n.quickApps,
       CommunityResourceType.watchface => l10n.watchfaces,
       CommunityResourceType.firmware => l10n.firmwareTools,
       CommunityResourceType.fontpack => l10n.fontPack,
@@ -849,6 +984,7 @@ class _ResourceCard extends StatelessWidget {
                         label: _typeLabel(
                           AppLocalizations.of(context)!,
                           item.type,
+                          source: item.ref.source,
                         ),
                         color: color.primary,
                       ),

@@ -5,6 +5,7 @@ import 'package:zerobox/src/app/generated/app_localizations.dart';
 import 'package:zerobox/src/app/widgets/horizontal_scroller.dart';
 import 'package:zerobox/src/app/widgets/network_img_layer.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
+import 'package:zerobox/src/data/community/community_source.dart';
 import 'package:zerobox/src/features/resources/application/resource_catalog_providers.dart';
 import 'package:zerobox/src/features/resources/domain/community_resource.dart';
 
@@ -22,6 +23,12 @@ class BandBbsResourceCard extends ConsumerWidget {
     final color = theme.colorScheme;
     final l10n = AppLocalizations.of(context)!;
     final author = item.authors.firstOrNull;
+    final detail = item.ref.source == CommunitySourceId.huamiAppStore
+        ? ref.watch(communityResourceDetailProvider(item.ref)).value
+        : null;
+    final authorName = detail?.authorName.isNotEmpty == true
+        ? detail!.authorName
+        : item.authorName;
     return Card(
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
@@ -40,16 +47,19 @@ class BandBbsResourceCard extends ConsumerWidget {
                   children: [
                     Row(
                       children: [
-                        NetworkImgLayer(
-                          src: author?.avatarUrl?.toString() ?? '',
-                          width: 20,
-                          height: 20,
-                          type: 'avatar',
-                        ),
-                        const SizedBox(width: 6),
+                        if (item.ref.source !=
+                            CommunitySourceId.huamiAppStore) ...[
+                          NetworkImgLayer(
+                            src: author?.avatarUrl?.toString() ?? '',
+                            width: 20,
+                            height: 20,
+                            type: 'avatar',
+                          ),
+                          const SizedBox(width: 6),
+                        ],
                         Flexible(
                           child: Text(
-                            item.authorName,
+                            authorName,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.bodyMedium?.copyWith(
@@ -95,7 +105,11 @@ class BandBbsResourceCard extends ConsumerWidget {
                       runSpacing: 4,
                       children: [
                         _StatChip(
-                          label: _typeLabel(l10n, item.type),
+                          label: _typeLabel(
+                            l10n,
+                            item.type,
+                            source: item.ref.source,
+                          ),
                           color: _typeColor(color, item.type),
                         ),
                         if (item.tags.firstOrNull != null)
@@ -257,9 +271,15 @@ Color _typeColor(ColorScheme color, CommunityResourceType type) =>
       CommunityResourceType.iconpack => color.secondary,
     };
 
-String _typeLabel(AppLocalizations l10n, CommunityResourceType type) =>
+String _typeLabel(
+  AppLocalizations l10n,
+  CommunityResourceType type, {
+  CommunitySourceId? source,
+}) =>
     switch (type) {
-      CommunityResourceType.quickApp => l10n.quickApp,
+      CommunityResourceType.quickApp => source == CommunitySourceId.huamiAppStore
+          ? '\u5c0f\u7a0b\u5e8f'
+          : l10n.quickApp,
       CommunityResourceType.watchface => l10n.watchface,
       CommunityResourceType.firmware => l10n.firmwareTool,
       CommunityResourceType.fontpack => l10n.fontPack,

@@ -14,6 +14,7 @@ import 'package:zerobox/src/features/devices/providers/pending_shared_device_pro
 import 'package:zerobox/src/features/devices/services/device_share_link.dart';
 import 'package:zerobox/src/features/resources/pages/creator/creator_dashboard_page.dart';
 import 'package:zerobox/src/features/resources/pages/creator/creator_editor_shell.dart';
+import 'package:zerobox/src/features/resources/pages/huami_publisher_page.dart';
 import 'package:zerobox/src/features/resources/pages/queue_page.dart';
 import 'package:zerobox/src/features/resources/pages/resource_detail_page.dart';
 import 'package:zerobox/src/features/resources/pages/resources_page.dart';
@@ -76,6 +77,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                         ),
                       );
                     },
+                  ),
+                  GoRoute(
+                    path: 'huami-publisher',
+                    builder: (context, state) => HuamiPublisherPage(
+                      publisherName: state.uri.queryParameters['name'] ?? '',
+                    ),
                   ),
                   GoRoute(
                     path: 'creator',

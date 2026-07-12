@@ -732,6 +732,47 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get settingsHuamiAccount => 'Huami account';
+
+  @override
+  String get settingsHuamiAccountDesc =>
+      'Sign in and save credentials for Zepp store access';
+
+  @override
+  String get settingsHuamiAccountSigningIn => 'Signing in';
+
+  @override
+  String get settingsHuamiAccountSignedIn => 'Huami account signed in';
+
+  @override
+  String settingsHuamiAccountUser(Object username) {
+    return 'Account: $username';
+  }
+
+  @override
+  String get settingsHuamiAccountLoginTitle => 'Huami account login';
+
+  @override
+  String get settingsHuamiAccountUsername => 'Account';
+
+  @override
+  String get settingsHuamiAccountPassword => 'Password';
+
+  @override
+  String get settingsHuamiAccountRememberCredentials => 'Remember password';
+
+  @override
+  String get settingsHuamiAccountLoginAndSave => 'Sign in and save';
+
+  @override
+  String get settingsHuamiAccountMissingCredentials =>
+      'Enter your Huami account and password';
+
+  @override
+  String get settingsHuamiAccountRequired =>
+      'Sign in to your Huami account in Settings first';
+
+  @override
   String get settingsGeneralLanguage => 'Language';
 
   @override

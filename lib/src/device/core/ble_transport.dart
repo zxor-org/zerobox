@@ -6,7 +6,7 @@ import 'package:zerobox/src/core/services/ble_gatt_driver.dart';
 import 'package:zerobox/src/device/core/bluetooth_platform.dart';
 import 'package:zerobox/src/device/core/transport.dart';
 
-class BleTransport implements Transport {
+class BleTransport implements CharacteristicTransport {
   BleTransport.xiaomi(BleConnection connection)
     : _bleConnection = connection,
       _bluetoothConnection = null,
@@ -107,21 +107,36 @@ class BleTransport implements Transport {
   @override
   Future<void> send(Uint8List data) async {
     _log.fine('[$deviceId] sending ${data.length} bytes');
+    await sendToCharacteristic(
+      data,
+      BleRequiredCharacteristic(
+        serviceUuid: _serviceUuid,
+        characteristicUuid: _sentCharUuid,
+      ),
+    );
+  }
+
+  @override
+  Future<void> sendToCharacteristic(
+    Uint8List data,
+    BleRequiredCharacteristic characteristic,
+  ) async {
+    _log.fine(
+      '[$deviceId] sending ${data.length} bytes to '
+      '${characteristic.characteristicUuid}',
+    );
     final bleConnection = _bleConnection;
     if (bleConnection != null) {
       await bleConnection.write(
-        _serviceUuid,
-        _sentCharUuid,
+        characteristic.serviceUuid,
+        characteristic.characteristicUuid,
         data,
         withResponse: false,
       );
     } else {
       await _bluetoothConnection!.send(
         data,
-        characteristic: BleRequiredCharacteristic(
-          serviceUuid: _serviceUuid,
-          characteristicUuid: _sentCharUuid,
-        ),
+        characteristic: characteristic,
       );
     }
   }

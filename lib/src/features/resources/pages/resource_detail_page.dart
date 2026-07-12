@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:zerobox/src/app/generated/app_localizations.dart';
 import 'package:zerobox/src/app/utils/error_localization.dart';
@@ -91,19 +92,7 @@ class _DetailContent extends ConsumerWidget {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Wrap(
-                        spacing: 8,
-                        children: detail.authors
-                            .map(
-                              (author) => Text(
-                                '@${author.name}',
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: theme.colorScheme.primary,
-                                ),
-                              ),
-                            )
-                            .toList(),
-                      ),
+                      _Authors(detail: detail),
                       const SizedBox(height: 10),
                       Wrap(
                         spacing: 8,
@@ -112,6 +101,7 @@ class _DetailContent extends ConsumerWidget {
                             label: _typeLabel(
                               AppLocalizations.of(context)!,
                               detail.type,
+                              source: detail.ref.source,
                             ),
                             color: theme.colorScheme.primary,
                           ),
@@ -201,6 +191,72 @@ class _DetailContent extends ConsumerWidget {
         ),
       ],
     );
+  }
+}
+
+class _Authors extends StatelessWidget {
+  const _Authors({required this.detail});
+
+  final CommunityResourceDetail detail;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    if (detail.authors.isEmpty) return const SizedBox.shrink();
+    return Wrap(
+      spacing: 6,
+      runSpacing: 4,
+      children: detail.authors
+          .map(
+            (author) => InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => _openAuthor(context, detail, author),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '@${author.name}',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                    if (detail.ref.source == CommunitySourceId.huamiAppStore)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 3),
+                        child: Icon(
+                          Icons.chevron_right,
+                          size: 16,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          )
+          .toList(),
+    );
+  }
+
+  void _openAuthor(
+    BuildContext context,
+    CommunityResourceDetail detail,
+    CommunityResourceAuthor author,
+  ) {
+    if (detail.ref.source == CommunitySourceId.huamiAppStore) {
+      final name = author.name.trim();
+      if (name.isEmpty) return;
+      context.push(
+        '/resources/huami-publisher?name=${Uri.encodeQueryComponent(name)}',
+      );
+      return;
+    }
+    final url = author.url;
+    if (url != null) {
+      launchUrl(url, mode: LaunchMode.externalApplication);
+    }
   }
 }
 
@@ -645,9 +701,15 @@ class _Chip extends StatelessWidget {
   );
 }
 
-String _typeLabel(AppLocalizations l10n, CommunityResourceType type) =>
+String _typeLabel(
+  AppLocalizations l10n,
+  CommunityResourceType type, {
+  CommunitySourceId? source,
+}) =>
     switch (type) {
-      CommunityResourceType.quickApp => l10n.quickApp,
+      CommunityResourceType.quickApp => source == CommunitySourceId.huamiAppStore
+          ? '\u5c0f\u7a0b\u5e8f'
+          : l10n.quickApp,
       CommunityResourceType.watchface => l10n.watchface,
       CommunityResourceType.firmware => l10n.firmwareTool,
       CommunityResourceType.fontpack => l10n.fontPack,

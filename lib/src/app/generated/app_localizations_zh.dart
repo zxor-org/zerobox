@@ -711,6 +711,44 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get settingsHuamiAccount => '华米账号';
+
+  @override
+  String get settingsHuamiAccountDesc => '登录并保存访问 Zepp 商店所需凭据';
+
+  @override
+  String get settingsHuamiAccountSigningIn => '正在登录';
+
+  @override
+  String get settingsHuamiAccountSignedIn => '华米账号登录成功';
+
+  @override
+  String settingsHuamiAccountUser(Object username) {
+    return '账号：$username';
+  }
+
+  @override
+  String get settingsHuamiAccountLoginTitle => '华米账号登录';
+
+  @override
+  String get settingsHuamiAccountUsername => '账号';
+
+  @override
+  String get settingsHuamiAccountPassword => '密码';
+
+  @override
+  String get settingsHuamiAccountRememberCredentials => '记住密码';
+
+  @override
+  String get settingsHuamiAccountLoginAndSave => '登录并保存';
+
+  @override
+  String get settingsHuamiAccountMissingCredentials => '请输入华米账号和密码';
+
+  @override
+  String get settingsHuamiAccountRequired => '请先在设置中登录华米账号';
+
+  @override
   String get settingsGeneralLanguage => '语言';
 
   @override

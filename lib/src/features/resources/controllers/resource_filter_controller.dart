@@ -91,6 +91,14 @@ class ResourceFiltersNotifier extends Notifier<ResourceFilters> {
     state = state.copyWith(selectedDevices: {device});
   }
 
+  void setNumericDevice(int deviceSource) {
+    if (deviceSource <= 0) return;
+    final updated = Set<String>.from(state.selectedDevices)
+      ..removeWhere((id) => int.tryParse(id) != null)
+      ..add(deviceSource.toString());
+    state = state.copyWith(selectedDevices: updated);
+  }
+
   void toggleDeviceGroup(Iterable<String> devices) {
     final ids = devices.where((id) => id.isNotEmpty).toSet();
     if (ids.isEmpty) return;
@@ -105,4 +113,10 @@ class ResourceFiltersNotifier extends Notifier<ResourceFilters> {
   }
 
   void clearDevices() => state = state.copyWith(selectedDevices: const {});
+
+  void clearNumericDevices() {
+    final updated = Set<String>.from(state.selectedDevices)
+      ..removeWhere((id) => int.tryParse(id) != null);
+    state = state.copyWith(selectedDevices: updated);
+  }
 }

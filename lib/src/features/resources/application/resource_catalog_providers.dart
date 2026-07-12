@@ -4,7 +4,9 @@ import 'package:zerobox/src/core/providers/app_settings_providers.dart';
 import 'package:zerobox/src/data/astrobox/astrobox_repo_resource_provider.dart';
 import 'package:zerobox/src/data/bandbbs/bandbbs_resource_provider.dart';
 import 'package:zerobox/src/data/community/community_source.dart';
+import 'package:zerobox/src/data/huami/huami_app_store_resource_provider.dart';
 import 'package:zerobox/src/features/accounts/services/bandbbs_auth_service.dart';
+import 'package:zerobox/src/features/accounts/services/huami_auth_service.dart';
 import 'package:zerobox/src/features/resources/domain/community_resource.dart';
 import 'package:zerobox/src/features/resources/domain/resource_catalog.dart';
 
@@ -27,6 +29,10 @@ final communityCatalogProviderForSource =
         CommunitySourceId.bandbbs => BandBbsCatalog(
           dio: dio,
           auth: ref.read(bandBbsAuthProvider.notifier),
+        ),
+        CommunitySourceId.huamiAppStore => HuamiAppStoreCatalog(
+          dio: dio,
+          auth: ref.read(huamiAuthProvider.notifier),
         ),
       };
     });
@@ -57,4 +63,17 @@ final bandbbsCategoryTreeProvider =
         communityCatalogProviderForSource(CommunitySourceId.bandbbs),
       );
       return (catalog as BandBbsCatalog).getCategoryTree();
+    });
+
+final huamiPublisherResourcesProvider =
+    FutureProvider.autoDispose.family<List<CommunityResource>, String>((
+      ref,
+      publisherName,
+    ) {
+      final catalog = ref.watch(
+        communityCatalogProviderForSource(CommunitySourceId.huamiAppStore),
+      );
+      return (catalog as HuamiAppStoreCatalog).getPublisherResources(
+        publisherName: publisherName,
+      );
     });

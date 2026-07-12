@@ -25,6 +25,8 @@ import 'package:zerobox/src/device/xiaomi/components/resource_system.dart';
 import 'package:zerobox/src/device/xiaomi/components/thirdparty_app_system.dart';
 import 'package:zerobox/src/device/xiaomi/components/xiaomi_device_component.dart';
 import 'package:zerobox/src/device/xiaomi/xiaomi_device_factory.dart';
+import 'package:zerobox/src/device/zeppos/systems/zeppos_auth_system.dart';
+import 'package:zerobox/src/device/zeppos/zeppos_device_factory.dart';
 import 'package:zerobox/src/features/accounts/models/mi_account_models.dart';
 import 'package:zerobox/src/protocols/common/device_protocol.dart'
     hide ChargeStatus, BatteryInfo, DeviceInfo;
@@ -160,6 +162,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
   static const _connectionProbeInterval = Duration(seconds: 10);
   static const _connectionProbeTimeout = Duration(seconds: 8);
   static const _connectionProbeFailureLimit = 3;
+  static const _zeppOsBleServiceUuid = '00001530-0000-3512-2118-0009af100700';
 
   late BluetoothPlatform _bluetooth;
   late DeviceRuntime _runtime;
@@ -244,7 +247,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
       await _bluetooth.requestPermissions();
       await _bluetooth.startScan(
         BluetoothScanOptions(
-          connectTypes: {connectType},
+          connectTypes: _scanConnectTypes(connectType),
           timeout: const Duration(seconds: 15),
         ),
       );
@@ -259,6 +262,14 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     }
   }
 
+  Set<ConnectType> _scanConnectTypes(ConnectType connectType) {
+    if (kIsWeb) return const {ConnectType.ble};
+    if (connectType == ConnectType.ble) {
+      return const {ConnectType.ble, ConnectType.spp};
+    }
+    return {connectType};
+  }
+
   Future<void> stopBluetoothScan() async {
     _log.info('stopping scan');
     _scanTimer?.cancel();
@@ -267,14 +278,33 @@ class DeviceManager extends Notifier<DeviceManagerState> {
   }
 
   void _onBluetoothEndpoint(BluetoothEndpoint endpoint) {
-    final exists = state.scannedDevices.any((d) => d.addr == endpoint.address);
-    if (exists) return;
-
     final savedAddrs = state.pairedDevices.map((d) => d.addr).toSet();
     if (savedAddrs.contains(endpoint.address)) return;
 
-    final displayName = xiaomiDisplayNameForIdentity(name: endpoint.name);
-    final resolvedProfile = DeviceRegistry.resolveIdentity(name: endpoint.name);
+    final resolvedProfile = _resolveEndpointProfile(endpoint);
+    final rawDisplayName = xiaomiDisplayNameForIdentity(name: endpoint.name);
+    final displayName = _scanDisplayName(endpoint, rawDisplayName);
+    final existingIndex = state.scannedDevices.indexWhere(
+      (d) => d.addr == endpoint.address,
+    );
+    if (existingIndex >= 0) {
+      final existing = state.scannedDevices[existingIndex];
+      final existingProfile = DeviceRegistry.resolveIdentity(
+        name: existing.name,
+      );
+      if (existingProfile.kind == DeviceKind.zepp ||
+          resolvedProfile.kind != DeviceKind.zepp) {
+        return;
+      }
+      final updated = List<BTDeviceInfo>.from(state.scannedDevices);
+      updated[existingIndex] = BTDeviceInfo(
+        name: displayName,
+        addr: endpoint.address,
+        connectType: resolvedProfile.preferredConnectType.name,
+      );
+      state = state.copyWith(scannedDevices: updated);
+      return;
+    }
     _log.fine(
       'scan add ${endpoint.address} "$displayName" '
       'via ${resolvedProfile.preferredConnectType.name}',
@@ -289,6 +319,32 @@ class DeviceManager extends Notifier<DeviceManagerState> {
         ),
       ],
     );
+  }
+
+  DeviceProfile _resolveEndpointProfile(BluetoothEndpoint endpoint) {
+    final profile = DeviceRegistry.resolveIdentity(name: endpoint.name);
+    if (profile.kind == DeviceKind.zepp) return profile;
+
+    final hasZeppService = endpoint.serviceUuids.any(
+      (uuid) => uuid.toLowerCase() == _zeppOsBleServiceUuid,
+    );
+    if (!hasZeppService) return profile;
+
+    return DeviceRegistry.profiles.firstWhere(
+      (candidate) => candidate.id == 'zeppos',
+      orElse: () => profile,
+    );
+  }
+
+  String _scanDisplayName(BluetoothEndpoint endpoint, String rawDisplayName) {
+    final profile = _resolveEndpointProfile(endpoint);
+    if (profile.kind != DeviceKind.zepp ||
+        DeviceRegistry.resolveIdentity(name: endpoint.name).kind ==
+            DeviceKind.zepp) {
+      return rawDisplayName;
+    }
+    final name = rawDisplayName.trim().isEmpty ? 'Device' : rawDisplayName;
+    return 'ZeppOS $name';
   }
 
   MiWearState _normalizeDeviceIdentity(MiWearState device) {
@@ -406,7 +462,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
         ? profile.preferredConnectType.name
         : connectType.toLowerCase();
     final effectiveConnectType = kIsWeb
-        ? ConnectType.spp.name
+        ? ConnectType.ble.name
         : requestedConnectType;
     _log.info(
       'connect request $addr rawName="$name" displayName="$displayName" '
@@ -424,12 +480,6 @@ class DeviceManager extends Notifier<DeviceManagerState> {
       await stopBluetoothScan();
       await _cleanupConnection();
 
-      if (effectiveKind != DeviceKind.xiaomi) {
-        throw UnsupportedError(
-          '${deviceKindLabel(effectiveKind)} protocol is not implemented yet',
-        );
-      }
-
       final transportType = effectiveConnectType == ConnectType.spp.name
           ? ConnectType.spp
           : ConnectType.ble;
@@ -442,40 +492,54 @@ class DeviceManager extends Notifier<DeviceManagerState> {
 
       final Transport transport;
       if (transportType == ConnectType.spp) {
-        final sppTransport = SppTransport.xiaomiBluetooth(
-          _bluetoothConnection!,
-        );
+        final sppTransport = effectiveKind == DeviceKind.zepp
+            ? SppTransport.zeppBtbrBluetooth(_bluetoothConnection!)
+            : SppTransport.xiaomiBluetooth(_bluetoothConnection!);
         await sppTransport.start();
         transport = sppTransport;
       } else {
-        final bleTransport = BleTransport.xiaomiBluetooth(
-          _bluetoothConnection!,
-        );
+        final bleTransport = effectiveKind == DeviceKind.zepp
+            ? BleTransport.zeppBluetooth(_bluetoothConnection!)
+            : BleTransport.xiaomiBluetooth(_bluetoothConnection!);
         await bleTransport.start();
         transport = bleTransport;
       }
 
       final entity = _runtime.spawnDevice(
         id: addr,
-        kind: deviceKindString(kind),
+        kind: deviceKindString(effectiveKind),
         transport: transport,
-        factory: XiaomiDeviceFactory(),
+        factory: effectiveKind == DeviceKind.zepp
+            ? ZeppOsDeviceFactory()
+            : XiaomiDeviceFactory(),
       );
       _currentEntity = entity;
 
-      final component = entity.get<XiaomiDeviceComponent>()!;
-      await component
-          .startSession(
-            spp: effectiveConnectType.toLowerCase() == ConnectType.spp.name,
-          )
-          .timeout(const Duration(seconds: 10));
+      if (effectiveKind == DeviceKind.zepp) {
+        if (transportType == ConnectType.spp) {
+          throw UnsupportedError(
+            'ZeppOS BTBR transport is discovered but channel/session auth is not implemented yet',
+          );
+        }
+        final authSystem = entity.system<ZeppOsAuthSystem>()!;
+        _log.info('starting ZeppOS authentication');
+        await authSystem.authenticate(authKey);
+        _log.info('ZeppOS authentication succeeded');
+      } else {
+        final component = entity.get<XiaomiDeviceComponent>()!;
+        await component
+            .startSession(
+              spp: effectiveConnectType.toLowerCase() == ConnectType.spp.name,
+            )
+            .timeout(const Duration(seconds: 10));
 
-      final authSystem = entity.system<XiaomiAuthSystem>()!;
-      _log.info('starting authentication');
-      await authSystem
-          .authenticate(authKey)
-          .timeout(const Duration(seconds: 10));
-      _log.info('authentication succeeded');
+        final authSystem = entity.system<XiaomiAuthSystem>()!;
+        _log.info('starting authentication');
+        await authSystem
+            .authenticate(authKey)
+            .timeout(const Duration(seconds: 10));
+        _log.info('authentication succeeded');
+      }
 
       final connected = MiWearState(
         name: displayName,

@@ -246,6 +246,23 @@
       }
     }
   },
+  "settingsHuamiAccount": "Huami account",
+  "settingsHuamiAccountDesc": "Sign in and save credentials for Zepp store access",
+  "settingsHuamiAccountSigningIn": "Signing in",
+  "settingsHuamiAccountSignedIn": "Huami account signed in",
+  "settingsHuamiAccountUser": "Account: {username}",
+  "@settingsHuamiAccountUser": {
+    "placeholders": {
+      "username": {}
+    }
+  },
+  "settingsHuamiAccountLoginTitle": "Huami account login",
+  "settingsHuamiAccountUsername": "Account",
+  "settingsHuamiAccountPassword": "Password",
+  "settingsHuamiAccountRememberCredentials": "Remember password",
+  "settingsHuamiAccountLoginAndSave": "Sign in and save",
+  "settingsHuamiAccountMissingCredentials": "Enter your Huami account and password",
+  "settingsHuamiAccountRequired": "Sign in to your Huami account in Settings first",
   "settingsGeneralLanguage": "Language",
   "settingsGeneralLanguageDesc": "Change app display language",
   "settingsWideNavigationPosition": "Navigation position",

@@ -246,6 +246,23 @@
       }
     }
   },
+  "settingsHuamiAccount": "华米账号",
+  "settingsHuamiAccountDesc": "登录并保存访问 Zepp 商店所需凭据",
+  "settingsHuamiAccountSigningIn": "正在登录",
+  "settingsHuamiAccountSignedIn": "华米账号登录成功",
+  "settingsHuamiAccountUser": "账号：{username}",
+  "@settingsHuamiAccountUser": {
+    "placeholders": {
+      "username": {}
+    }
+  },
+  "settingsHuamiAccountLoginTitle": "华米账号登录",
+  "settingsHuamiAccountUsername": "账号",
+  "settingsHuamiAccountPassword": "密码",
+  "settingsHuamiAccountRememberCredentials": "记住密码",
+  "settingsHuamiAccountLoginAndSave": "登录并保存",
+  "settingsHuamiAccountMissingCredentials": "请输入华米账号和密码",
+  "settingsHuamiAccountRequired": "请先在设置中登录华米账号",
   "settingsGeneralLanguage": "语言",
   "settingsGeneralLanguageDesc": "更改应用显示语言",
   "settingsWideNavigationPosition": "导航位置",

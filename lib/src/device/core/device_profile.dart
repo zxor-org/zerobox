@@ -100,7 +100,7 @@ class DeviceRegistry {
           label: 'zeppos chunked 2021 write',
         ),
       ],
-      bleDesiredMtu: 247,
+      bleDesiredMtu: 23,
       classicServiceUuid: '00000022-0000-3512-2118-0009af100700',
     ),
   ];

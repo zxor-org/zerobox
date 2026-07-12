@@ -1472,6 +1472,78 @@ abstract class AppLocalizations {
   /// **'Synced {count} Mi devices'**
   String settingsMiAccountSyncedDevices(int count);
 
+  /// No description provided for @settingsHuamiAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Huami account'**
+  String get settingsHuamiAccount;
+
+  /// No description provided for @settingsHuamiAccountDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in and save credentials for Zepp store access'**
+  String get settingsHuamiAccountDesc;
+
+  /// No description provided for @settingsHuamiAccountSigningIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Signing in'**
+  String get settingsHuamiAccountSigningIn;
+
+  /// No description provided for @settingsHuamiAccountSignedIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Huami account signed in'**
+  String get settingsHuamiAccountSignedIn;
+
+  /// No description provided for @settingsHuamiAccountUser.
+  ///
+  /// In en, this message translates to:
+  /// **'Account: {username}'**
+  String settingsHuamiAccountUser(Object username);
+
+  /// No description provided for @settingsHuamiAccountLoginTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Huami account login'**
+  String get settingsHuamiAccountLoginTitle;
+
+  /// No description provided for @settingsHuamiAccountUsername.
+  ///
+  /// In en, this message translates to:
+  /// **'Account'**
+  String get settingsHuamiAccountUsername;
+
+  /// No description provided for @settingsHuamiAccountPassword.
+  ///
+  /// In en, this message translates to:
+  /// **'Password'**
+  String get settingsHuamiAccountPassword;
+
+  /// No description provided for @settingsHuamiAccountRememberCredentials.
+  ///
+  /// In en, this message translates to:
+  /// **'Remember password'**
+  String get settingsHuamiAccountRememberCredentials;
+
+  /// No description provided for @settingsHuamiAccountLoginAndSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in and save'**
+  String get settingsHuamiAccountLoginAndSave;
+
+  /// No description provided for @settingsHuamiAccountMissingCredentials.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your Huami account and password'**
+  String get settingsHuamiAccountMissingCredentials;
+
+  /// No description provided for @settingsHuamiAccountRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in to your Huami account in Settings first'**
+  String get settingsHuamiAccountRequired;
+
   /// No description provided for @settingsGeneralLanguage.
   ///
   /// In en, this message translates to:

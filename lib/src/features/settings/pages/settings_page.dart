@@ -16,6 +16,7 @@ import 'package:zerobox/src/data/astrobox/astrobox_cdn.dart';
 import 'package:zerobox/src/features/resources/application/resource_catalog_providers.dart';
 import 'package:zerobox/src/features/accounts/models/mi_account_models.dart';
 import 'package:zerobox/src/features/accounts/services/bandbbs_auth_service.dart';
+import 'package:zerobox/src/features/accounts/services/huami_auth_service.dart';
 import 'package:zerobox/src/features/accounts/services/mi_account_service.dart';
 import 'package:zerobox/src/features/accounts/services/mi_account_two_factor_resolver.dart';
 import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
@@ -26,6 +27,8 @@ class SettingsPage extends ConsumerWidget {
   static const _keyMiAccountRemember = 'mi_account.remember_credentials';
   static const _keyMiAccountUsername = 'mi_account.username';
   static const _keyMiAccountPassword = 'mi_account.password';
+  static const _keyHuamiAccountRemember = 'huami_account.remember_credentials';
+  static const _keyHuamiAccountPassword = 'huami_account.password';
   static const _colorSchemes = <Color>[
     Color(0xFFE91E63),
     Color(0xFF6750A4),
@@ -62,6 +65,45 @@ class SettingsPage extends ConsumerWidget {
                 leading: const Icon(Icons.account_circle_outlined),
                 title: Text(l10n.settingsMiAccount),
                 description: Text(l10n.settingsMiAccountDesc),
+              ),
+              SettingsTile.navigation(
+                onPressed: (_) => _showHuamiAccountLogin(context, ref),
+                leading: const Icon(Icons.functions),
+                title: Text(l10n.settingsHuamiAccount),
+                description: Consumer(
+                  builder: (context, ref, _) {
+                    final account = ref.watch(huamiAuthProvider);
+                    if (account.isBusy) {
+                      return Text(l10n.settingsHuamiAccountSigningIn);
+                    }
+                    if (account.isSignedIn) {
+                      return Text(
+                        account.username?.isNotEmpty == true
+                            ? l10n.settingsHuamiAccountUser(
+                                account.username!,
+                              )
+                            : l10n.settingsConnected,
+                      );
+                    }
+                    return Text(l10n.settingsHuamiAccountDesc);
+                  },
+                ),
+                value: Consumer(
+                  builder: (context, ref, _) {
+                    final account = ref.watch(huamiAuthProvider);
+                    if (account.isBusy) {
+                      return const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      );
+                    }
+                    return Text(
+                      account.isSignedIn
+                          ? l10n.settingsConnected
+                          : l10n.settingsTapToSignIn,
+                    );
+                  },
+                ),
               ),
               SettingsTile.navigation(
                 onPressed: (_) {
@@ -591,6 +633,201 @@ class SettingsPage extends ConsumerWidget {
     }
     await prefs.setString(_keyMiAccountUsername, username);
     await prefs.setString(_keyMiAccountPassword, password);
+  }
+
+  Future<void> _showHuamiAccountLogin(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final rootContext = context;
+    final l10n = AppLocalizations.of(context)!;
+    final prefs = SharedPrefsService.instance;
+    final existing = ref.read(huamiAuthProvider);
+    var rememberCredentials =
+        prefs.getBool(_keyHuamiAccountRemember) ?? false;
+    final usernameController = TextEditingController(
+      text: existing.username,
+    );
+    final passwordController = TextEditingController(
+      text: rememberCredentials ? prefs.getString(_keyHuamiAccountPassword) : null,
+    );
+    var running = false;
+    var obscurePassword = true;
+    String? error;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            Future<void> submit() async {
+              final username = usernameController.text.trim();
+              final password = passwordController.text;
+              if (username.isEmpty || password.isEmpty) {
+                setState(() {
+                  error = l10n.settingsHuamiAccountMissingCredentials;
+                });
+                return;
+              }
+              setState(() {
+                running = true;
+                error = null;
+              });
+              try {
+                await ref
+                    .read(huamiAuthProvider.notifier)
+                    .login(username: username, password: password);
+                await _persistHuamiAccountCredentials(
+                  remember: rememberCredentials,
+                  password: password,
+                );
+                if (dialogContext.mounted) {
+                  Navigator.of(dialogContext).pop();
+                }
+                if (rootContext.mounted) {
+                  ScaffoldMessenger.of(rootContext).showSnackBar(
+                    SnackBar(
+                      content: Text(l10n.settingsHuamiAccountSignedIn),
+                    ),
+                  );
+                }
+              } catch (e) {
+                setState(() {
+                  running = false;
+                  error = localizedErrorMessage(l10n, e);
+                });
+              }
+            }
+
+            Future<void> signOut() async {
+              setState(() {
+                running = true;
+                error = null;
+              });
+              await ref.read(huamiAuthProvider.notifier).signOut();
+              await _persistHuamiAccountCredentials(
+                remember: false,
+                password: '',
+              );
+              if (dialogContext.mounted) {
+                Navigator.of(dialogContext).pop();
+              }
+            }
+
+            return AlertDialog(
+              title: Text(l10n.settingsHuamiAccountLoginTitle),
+              content: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: usernameController,
+                      enabled: !running,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: InputDecoration(
+                        labelText: l10n.settingsHuamiAccountUsername,
+                        prefixIcon: const Icon(Icons.functions),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: passwordController,
+                      enabled: !running,
+                      obscureText: obscurePassword,
+                      decoration: InputDecoration(
+                        labelText: l10n.settingsHuamiAccountPassword,
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        suffixIcon: IconButton(
+                          onPressed: running
+                              ? null
+                              : () {
+                                  setState(() {
+                                    obscurePassword = !obscurePassword;
+                                  });
+                                },
+                          icon: Icon(
+                            obscurePassword
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined,
+                          ),
+                        ),
+                      ),
+                      onSubmitted: (_) {
+                        if (!running) submit();
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    CheckboxListTile(
+                      value: rememberCredentials,
+                      onChanged: running
+                          ? null
+                          : (value) {
+                              setState(() {
+                                rememberCredentials = value ?? false;
+                              });
+                            },
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: Text(l10n.settingsHuamiAccountRememberCredentials),
+                      dense: true,
+                    ),
+                    if (running) ...[
+                      const SizedBox(height: 20),
+                      const LinearProgressIndicator(),
+                    ],
+                    if (error != null) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        error!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                if (existing.isSignedIn)
+                  TextButton(
+                    onPressed: running ? null : signOut,
+                    child: Text(l10n.bandBbsLogout),
+                  ),
+                TextButton(
+                  onPressed: running
+                      ? null
+                      : () {
+                          Navigator.of(dialogContext).pop();
+                        },
+                  child: Text(l10n.settingsCancel),
+                ),
+                FilledButton(
+                  onPressed: running ? null : submit,
+                  child: Text(l10n.settingsHuamiAccountLoginAndSave),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    usernameController.dispose();
+    passwordController.dispose();
+  }
+
+  Future<void> _persistHuamiAccountCredentials({
+    required bool remember,
+    required String password,
+  }) async {
+    final prefs = SharedPrefsService.instance;
+    await prefs.setBool(_keyHuamiAccountRemember, remember);
+    if (!remember) {
+      await prefs.remove(_keyHuamiAccountPassword);
+      return;
+    }
+    await prefs.setString(_keyHuamiAccountPassword, password);
   }
 
   Future<void> _showLanguageSelector(

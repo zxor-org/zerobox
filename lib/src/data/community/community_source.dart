@@ -1,6 +1,7 @@
 enum CommunitySourceId {
   astroboxRepo('astrobox-repo'),
-  bandbbs('bandbbs');
+  bandbbs('bandbbs'),
+  huamiAppStore('huami-appstore');
 
   const CommunitySourceId(this.storageKey);
 
@@ -10,6 +11,7 @@ enum CommunitySourceId {
     return switch (this) {
       CommunitySourceId.astroboxRepo => 'AstroBox Repo',
       CommunitySourceId.bandbbs => '米坛社区',
+      CommunitySourceId.huamiAppStore => '华米应用商店',
     };
   }
 }
