@@ -260,6 +260,18 @@ abstract class AppLocalizations {
   /// **'Firmware / Tools'**
   String get firmwareTools;
 
+  /// No description provided for @resourceTypeFontpack.
+  ///
+  /// In en, this message translates to:
+  /// **'Font pack'**
+  String get resourceTypeFontpack;
+
+  /// No description provided for @resourceTypeIconpack.
+  ///
+  /// In en, this message translates to:
+  /// **'Icon pack'**
+  String get resourceTypeIconpack;
+
   /// No description provided for @localResources.
   ///
   /// In en, this message translates to:
@@ -631,6 +643,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Devices'**
   String get devices;
+
+  /// No description provided for @categories.
+  ///
+  /// In en, this message translates to:
+  /// **'Categories'**
+  String get categories;
 
   /// No description provided for @advanced.
   ///
@@ -1298,11 +1316,83 @@ abstract class AppLocalizations {
   /// **'Sign in to sync purchased resources'**
   String get settingsAccountLoginBBSDesc;
 
+  /// No description provided for @settingsAccountBandBbsSigningIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Signing in'**
+  String get settingsAccountBandBbsSigningIn;
+
+  /// No description provided for @settingsAccountBandBbsOpenedBrowser.
+  ///
+  /// In en, this message translates to:
+  /// **'Browser opened. Complete BandBBS authorization there'**
+  String get settingsAccountBandBbsOpenedBrowser;
+
+  /// No description provided for @settingsAccountBandBbsSignedIn.
+  ///
+  /// In en, this message translates to:
+  /// **'BandBBS signed in'**
+  String get settingsAccountBandBbsSignedIn;
+
+  /// No description provided for @settingsAccountBandBbsLoginFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'BandBBS sign-in failed'**
+  String get settingsAccountBandBbsLoginFailed;
+
+  /// No description provided for @settingsAccountBandBbsUser.
+  ///
+  /// In en, this message translates to:
+  /// **'User ID: {userId}'**
+  String settingsAccountBandBbsUser(Object userId);
+
   /// No description provided for @settingsAccountBBSAccount.
   ///
   /// In en, this message translates to:
   /// **'BandBBS account'**
   String get settingsAccountBBSAccount;
+
+  /// No description provided for @bandBbsAccountTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'BandBBS account'**
+  String get bandBbsAccountTitle;
+
+  /// No description provided for @bandBbsPurchasedResources.
+  ///
+  /// In en, this message translates to:
+  /// **'Purchased resources'**
+  String get bandBbsPurchasedResources;
+
+  /// No description provided for @bandBbsResourceId.
+  ///
+  /// In en, this message translates to:
+  /// **'Resource ID'**
+  String get bandBbsResourceId;
+
+  /// No description provided for @bandBbsResourceIdHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter BandBBS resource ID'**
+  String get bandBbsResourceIdHint;
+
+  /// No description provided for @bandBbsQueryResource.
+  ///
+  /// In en, this message translates to:
+  /// **'Query'**
+  String get bandBbsQueryResource;
+
+  /// No description provided for @bandBbsOpenResource.
+  ///
+  /// In en, this message translates to:
+  /// **'View on BandBBS'**
+  String get bandBbsOpenResource;
+
+  /// No description provided for @bandBbsLogout.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign out'**
+  String get bandBbsLogout;
 
   /// No description provided for @settingsAccountSyncDevices.
   ///
@@ -1657,6 +1747,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Tap to sign in'**
   String get settingsTapToSignIn;
+
+  /// No description provided for @settingsConnected.
+  ///
+  /// In en, this message translates to:
+  /// **'Connected'**
+  String get settingsConnected;
 
   /// No description provided for @settingsNotConnected.
   ///
@@ -2101,6 +2197,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Unsupported file'**
   String get installQueueUnsupportedFile;
+
+  /// No description provided for @timeTodayAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Today {time}'**
+  String timeTodayAt(Object time);
+
+  /// No description provided for @timeYesterdayAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Yesterday {time}'**
+  String timeYesterdayAt(Object time);
 }
 
 class _AppLocalizationsDelegate

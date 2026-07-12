@@ -33,8 +33,8 @@ class SysAppBar extends StatelessWidget implements PreferredSizeWidget {
         statusBarColor: Colors.transparent,
         statusBarIconBrightness:
             Theme.of(context).brightness == Brightness.light
-                ? Brightness.dark
-                : Brightness.light,
+            ? Brightness.dark
+            : Brightness.light,
         systemNavigationBarColor: Colors.transparent,
         systemNavigationBarDividerColor: Colors.transparent,
       ),

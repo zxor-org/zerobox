@@ -1,11 +1,7 @@
 import 'package:flutter/material.dart';
 
 class FadeInListItem extends StatelessWidget {
-  const FadeInListItem({
-    super.key,
-    required this.index,
-    required this.child,
-  });
+  const FadeInListItem({super.key, required this.index, required this.child});
 
   final int index;
   final Widget child;

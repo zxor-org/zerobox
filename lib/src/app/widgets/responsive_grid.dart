@@ -23,8 +23,8 @@ class ResponsiveGrid extends StatelessWidget {
     final crossCount = _resolveCrossAxisCount(width);
 
     return GridView.builder(
-      padding: padding ??
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding:
+          padding ?? const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossCount,
         crossAxisSpacing: 12,

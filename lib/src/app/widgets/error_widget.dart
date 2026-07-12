@@ -1,11 +1,7 @@
 import 'package:flutter/material.dart';
 
 class GeneralErrorWidget extends StatelessWidget {
-  const GeneralErrorWidget({
-    super.key,
-    required this.errMsg,
-    this.actions,
-  });
+  const GeneralErrorWidget({super.key, required this.errMsg, this.actions});
 
   final String errMsg;
   final List<Widget>? actions;

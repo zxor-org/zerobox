@@ -40,7 +40,8 @@ class AcknowledgementsPage extends StatelessWidget {
       AcknowledgementItem(
         name: 'AstroBox-NG-Module-Bluetooth',
         description: l10n.acknowledgementsAstroBoxNgBluetooth,
-        url: 'https://github.com/AstralSightStudios/AstroBox-NG-Module-Bluetooth',
+        url:
+            'https://github.com/AstralSightStudios/AstroBox-NG-Module-Bluetooth',
       ),
       AcknowledgementItem(
         name: 'AstroBox-NG-Module-Account',
@@ -50,7 +51,8 @@ class AcknowledgementsPage extends StatelessWidget {
       AcknowledgementItem(
         name: 'AstroBox-NG-Module-Provider',
         description: l10n.acknowledgementsAstroBoxNgProvider,
-        url: 'https://github.com/AstralSightStudios/AstroBox-NG-Module-Provider',
+        url:
+            'https://github.com/AstralSightStudios/AstroBox-NG-Module-Provider',
       ),
       AcknowledgementItem(
         name: 'AstroBox-NG-Module-AppWasm',

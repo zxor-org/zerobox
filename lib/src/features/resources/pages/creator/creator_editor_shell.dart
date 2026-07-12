@@ -43,19 +43,15 @@ class _CreatorEditorShellState extends State<CreatorEditorShell> {
           icon: const Icon(Icons.close),
           onPressed: () => context.pop(),
         ),
-        actions: [
-          TextButton(
-            onPressed: () {},
-            child: Text(l10n.drafts),
-          ),
-        ],
+        actions: [TextButton(onPressed: () {}, child: Text(l10n.drafts))],
       ),
       body: Row(
         children: [
           if (MediaQuery.sizeOf(context).width >= 700)
             NavigationRail(
               selectedIndex: _currentStep,
-              onDestinationSelected: (index) => setState(() => _currentStep = index),
+              onDestinationSelected: (index) =>
+                  setState(() => _currentStep = index),
               labelType: NavigationRailLabelType.all,
               destinations: List.generate(titles.length, (index) {
                 return NavigationRailDestination(
@@ -304,8 +300,10 @@ class _PublishPreviewForm extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: const [
-                Text('Manifest preview',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
+                Text(
+                  'Manifest preview',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
                 SizedBox(height: 8),
                 Text('{\n  "name": "Minimal Dark",\n  "version": "1.2.0"\n}'),
               ],
@@ -379,8 +377,8 @@ class _StatusTimelineTile extends StatelessWidget {
     final color = isDone
         ? Colors.green
         : isActive
-            ? colorScheme.primary
-            : colorScheme.outline;
+        ? colorScheme.primary
+        : colorScheme.outline;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -395,8 +393,14 @@ class _StatusTimelineTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
-                Text(subtitle, style: TextStyle(color: colorScheme.onSurfaceVariant)),
+                Text(
+                  title,
+                  style: TextStyle(color: color, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  subtitle,
+                  style: TextStyle(color: colorScheme.onSurfaceVariant),
+                ),
               ],
             ),
           ),

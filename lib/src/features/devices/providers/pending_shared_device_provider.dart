@@ -10,5 +10,5 @@ class PendingSharedDeviceNotifier extends Notifier<MiWearState?> {
 
 final pendingSharedDeviceProvider =
     NotifierProvider<PendingSharedDeviceNotifier, MiWearState?>(
-  PendingSharedDeviceNotifier.new,
-);
+      PendingSharedDeviceNotifier.new,
+    );

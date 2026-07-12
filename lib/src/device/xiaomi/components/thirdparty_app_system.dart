@@ -7,10 +7,7 @@ import 'package:zerobox/src/protocols/generated/xiaomi/wear_thirdparty_app.pb.da
     as pb_thirdparty;
 
 class ThirdpartyAppInfo {
-  ThirdpartyAppInfo({
-    required this.packageName,
-    required this.fingerprint,
-  });
+  ThirdpartyAppInfo({required this.packageName, required this.fingerprint});
 
   final String packageName;
   final Uint8List fingerprint;
@@ -36,8 +33,9 @@ class XiaomiThirdpartyAppSystem extends XiaomiPbSystem {
     ThirdpartyAppInfo app,
     pb_thirdparty.PhoneAppStatus_Status status,
   ) async {
-    await component
-        .sendPbPacket(_buildThirdpartyAppSyncStatus(_toBasicInfo(app), status));
+    await component.sendPbPacket(
+      _buildThirdpartyAppSyncStatus(_toBasicInfo(app), status),
+    );
   }
 
   void _handleBasicInfo(pb_thirdparty.BasicInfo basicInfo) {
@@ -87,8 +85,7 @@ pb.WearPacket _buildThirdpartyAppSyncStatus(
 
   return pb.WearPacket(
     type: pb.WearPacket_Type.THIRDPARTY_APP,
-    id: pb_thirdparty
-        .ThirdpartyApp_ThirdpartyAppID.SYNC_PHONE_APP_STATUS.value,
+    id: pb_thirdparty.ThirdpartyApp_ThirdpartyAppID.SYNC_PHONE_APP_STATUS.value,
     thirdpartyApp: pb_thirdparty.ThirdpartyApp(appStatus: phoneStatus),
   );
 }
@@ -126,9 +123,7 @@ pb.WearPacket _buildThirdpartyAppUninstall(ThirdpartyAppInfo app) {
   return pb.WearPacket(
     type: pb.WearPacket_Type.THIRDPARTY_APP,
     id: pb_thirdparty.ThirdpartyApp_ThirdpartyAppID.REMOVE_APP.value,
-    thirdpartyApp: pb_thirdparty.ThirdpartyApp(
-      basicInfo: _toBasicInfo(app),
-    ),
+    thirdpartyApp: pb_thirdparty.ThirdpartyApp(basicInfo: _toBasicInfo(app)),
   );
 }
 

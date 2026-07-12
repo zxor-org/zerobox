@@ -637,7 +637,7 @@ $AstroBoxManifestItemCopyWith<$Res> get item {
 /// @nodoc
 mixin _$AstroBoxManifestItem {
 
- String get id; AstroBoxResourceType get restype; String get name; String get description; List<String> get preview; String get icon; String get cover; AstroBoxPaidType? get paidType; List<AstroBoxManifestAuthor> get author;
+ String get id; AstroBoxResourceType get restype; String get name; String get description; String? get descriptionHtml; String? get descriptionBaseUrl; List<String> get preview; String get icon; String get cover; AstroBoxPaidType? get paidType; List<AstroBoxManifestAuthor> get author;
 /// Create a copy of AstroBoxManifestItem
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -650,16 +650,16 @@ $AstroBoxManifestItemCopyWith<AstroBoxManifestItem> get copyWith => _$AstroBoxMa
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is AstroBoxManifestItem&&(identical(other.id, id) || other.id == id)&&(identical(other.restype, restype) || other.restype == restype)&&(identical(other.name, name) || other.name == name)&&(identical(other.description, description) || other.description == description)&&const DeepCollectionEquality().equals(other.preview, preview)&&(identical(other.icon, icon) || other.icon == icon)&&(identical(other.cover, cover) || other.cover == cover)&&(identical(other.paidType, paidType) || other.paidType == paidType)&&const DeepCollectionEquality().equals(other.author, author));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is AstroBoxManifestItem&&(identical(other.id, id) || other.id == id)&&(identical(other.restype, restype) || other.restype == restype)&&(identical(other.name, name) || other.name == name)&&(identical(other.description, description) || other.description == description)&&(identical(other.descriptionHtml, descriptionHtml) || other.descriptionHtml == descriptionHtml)&&(identical(other.descriptionBaseUrl, descriptionBaseUrl) || other.descriptionBaseUrl == descriptionBaseUrl)&&const DeepCollectionEquality().equals(other.preview, preview)&&(identical(other.icon, icon) || other.icon == icon)&&(identical(other.cover, cover) || other.cover == cover)&&(identical(other.paidType, paidType) || other.paidType == paidType)&&const DeepCollectionEquality().equals(other.author, author));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,restype,name,description,const DeepCollectionEquality().hash(preview),icon,cover,paidType,const DeepCollectionEquality().hash(author));
+int get hashCode => Object.hash(runtimeType,id,restype,name,description,descriptionHtml,descriptionBaseUrl,const DeepCollectionEquality().hash(preview),icon,cover,paidType,const DeepCollectionEquality().hash(author));
 
 @override
 String toString() {
-  return 'AstroBoxManifestItem(id: $id, restype: $restype, name: $name, description: $description, preview: $preview, icon: $icon, cover: $cover, paidType: $paidType, author: $author)';
+  return 'AstroBoxManifestItem(id: $id, restype: $restype, name: $name, description: $description, descriptionHtml: $descriptionHtml, descriptionBaseUrl: $descriptionBaseUrl, preview: $preview, icon: $icon, cover: $cover, paidType: $paidType, author: $author)';
 }
 
 
@@ -670,7 +670,7 @@ abstract mixin class $AstroBoxManifestItemCopyWith<$Res>  {
   factory $AstroBoxManifestItemCopyWith(AstroBoxManifestItem value, $Res Function(AstroBoxManifestItem) _then) = _$AstroBoxManifestItemCopyWithImpl;
 @useResult
 $Res call({
- String id, AstroBoxResourceType restype, String name, String description, List<String> preview, String icon, String cover, AstroBoxPaidType? paidType, List<AstroBoxManifestAuthor> author
+ String id, AstroBoxResourceType restype, String name, String description, String? descriptionHtml, String? descriptionBaseUrl, List<String> preview, String icon, String cover, AstroBoxPaidType? paidType, List<AstroBoxManifestAuthor> author
 });
 
 
@@ -687,13 +687,15 @@ class _$AstroBoxManifestItemCopyWithImpl<$Res>
 
 /// Create a copy of AstroBoxManifestItem
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? restype = null,Object? name = null,Object? description = null,Object? preview = null,Object? icon = null,Object? cover = null,Object? paidType = freezed,Object? author = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? restype = null,Object? name = null,Object? description = null,Object? descriptionHtml = freezed,Object? descriptionBaseUrl = freezed,Object? preview = null,Object? icon = null,Object? cover = null,Object? paidType = freezed,Object? author = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,restype: null == restype ? _self.restype : restype // ignore: cast_nullable_to_non_nullable
 as AstroBoxResourceType,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,description: null == description ? _self.description : description // ignore: cast_nullable_to_non_nullable
-as String,preview: null == preview ? _self.preview : preview // ignore: cast_nullable_to_non_nullable
+as String,descriptionHtml: freezed == descriptionHtml ? _self.descriptionHtml : descriptionHtml // ignore: cast_nullable_to_non_nullable
+as String?,descriptionBaseUrl: freezed == descriptionBaseUrl ? _self.descriptionBaseUrl : descriptionBaseUrl // ignore: cast_nullable_to_non_nullable
+as String?,preview: null == preview ? _self.preview : preview // ignore: cast_nullable_to_non_nullable
 as List<String>,icon: null == icon ? _self.icon : icon // ignore: cast_nullable_to_non_nullable
 as String,cover: null == cover ? _self.cover : cover // ignore: cast_nullable_to_non_nullable
 as String,paidType: freezed == paidType ? _self.paidType : paidType // ignore: cast_nullable_to_non_nullable
@@ -783,10 +785,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  AstroBoxResourceType restype,  String name,  String description,  List<String> preview,  String icon,  String cover,  AstroBoxPaidType? paidType,  List<AstroBoxManifestAuthor> author)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  AstroBoxResourceType restype,  String name,  String description,  String? descriptionHtml,  String? descriptionBaseUrl,  List<String> preview,  String icon,  String cover,  AstroBoxPaidType? paidType,  List<AstroBoxManifestAuthor> author)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _AstroBoxManifestItem() when $default != null:
-return $default(_that.id,_that.restype,_that.name,_that.description,_that.preview,_that.icon,_that.cover,_that.paidType,_that.author);case _:
+return $default(_that.id,_that.restype,_that.name,_that.description,_that.descriptionHtml,_that.descriptionBaseUrl,_that.preview,_that.icon,_that.cover,_that.paidType,_that.author);case _:
   return orElse();
 
 }
@@ -804,10 +806,10 @@ return $default(_that.id,_that.restype,_that.name,_that.description,_that.previe
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  AstroBoxResourceType restype,  String name,  String description,  List<String> preview,  String icon,  String cover,  AstroBoxPaidType? paidType,  List<AstroBoxManifestAuthor> author)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  AstroBoxResourceType restype,  String name,  String description,  String? descriptionHtml,  String? descriptionBaseUrl,  List<String> preview,  String icon,  String cover,  AstroBoxPaidType? paidType,  List<AstroBoxManifestAuthor> author)  $default,) {final _that = this;
 switch (_that) {
 case _AstroBoxManifestItem():
-return $default(_that.id,_that.restype,_that.name,_that.description,_that.preview,_that.icon,_that.cover,_that.paidType,_that.author);case _:
+return $default(_that.id,_that.restype,_that.name,_that.description,_that.descriptionHtml,_that.descriptionBaseUrl,_that.preview,_that.icon,_that.cover,_that.paidType,_that.author);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -824,10 +826,10 @@ return $default(_that.id,_that.restype,_that.name,_that.description,_that.previe
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  AstroBoxResourceType restype,  String name,  String description,  List<String> preview,  String icon,  String cover,  AstroBoxPaidType? paidType,  List<AstroBoxManifestAuthor> author)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  AstroBoxResourceType restype,  String name,  String description,  String? descriptionHtml,  String? descriptionBaseUrl,  List<String> preview,  String icon,  String cover,  AstroBoxPaidType? paidType,  List<AstroBoxManifestAuthor> author)?  $default,) {final _that = this;
 switch (_that) {
 case _AstroBoxManifestItem() when $default != null:
-return $default(_that.id,_that.restype,_that.name,_that.description,_that.preview,_that.icon,_that.cover,_that.paidType,_that.author);case _:
+return $default(_that.id,_that.restype,_that.name,_that.description,_that.descriptionHtml,_that.descriptionBaseUrl,_that.preview,_that.icon,_that.cover,_that.paidType,_that.author);case _:
   return null;
 
 }
@@ -839,13 +841,15 @@ return $default(_that.id,_that.restype,_that.name,_that.description,_that.previe
 @JsonSerializable()
 
 class _AstroBoxManifestItem implements AstroBoxManifestItem {
-  const _AstroBoxManifestItem({required this.id, required this.restype, required this.name, required this.description, final  List<String> preview = const [], required this.icon, required this.cover, this.paidType, final  List<AstroBoxManifestAuthor> author = const []}): _preview = preview,_author = author;
+  const _AstroBoxManifestItem({required this.id, required this.restype, required this.name, required this.description, this.descriptionHtml, this.descriptionBaseUrl, final  List<String> preview = const [], required this.icon, required this.cover, this.paidType, final  List<AstroBoxManifestAuthor> author = const []}): _preview = preview,_author = author;
   factory _AstroBoxManifestItem.fromJson(Map<String, dynamic> json) => _$AstroBoxManifestItemFromJson(json);
 
 @override final  String id;
 @override final  AstroBoxResourceType restype;
 @override final  String name;
 @override final  String description;
+@override final  String? descriptionHtml;
+@override final  String? descriptionBaseUrl;
  final  List<String> _preview;
 @override@JsonKey() List<String> get preview {
   if (_preview is EqualUnmodifiableListView) return _preview;
@@ -877,16 +881,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _AstroBoxManifestItem&&(identical(other.id, id) || other.id == id)&&(identical(other.restype, restype) || other.restype == restype)&&(identical(other.name, name) || other.name == name)&&(identical(other.description, description) || other.description == description)&&const DeepCollectionEquality().equals(other._preview, _preview)&&(identical(other.icon, icon) || other.icon == icon)&&(identical(other.cover, cover) || other.cover == cover)&&(identical(other.paidType, paidType) || other.paidType == paidType)&&const DeepCollectionEquality().equals(other._author, _author));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _AstroBoxManifestItem&&(identical(other.id, id) || other.id == id)&&(identical(other.restype, restype) || other.restype == restype)&&(identical(other.name, name) || other.name == name)&&(identical(other.description, description) || other.description == description)&&(identical(other.descriptionHtml, descriptionHtml) || other.descriptionHtml == descriptionHtml)&&(identical(other.descriptionBaseUrl, descriptionBaseUrl) || other.descriptionBaseUrl == descriptionBaseUrl)&&const DeepCollectionEquality().equals(other._preview, _preview)&&(identical(other.icon, icon) || other.icon == icon)&&(identical(other.cover, cover) || other.cover == cover)&&(identical(other.paidType, paidType) || other.paidType == paidType)&&const DeepCollectionEquality().equals(other._author, _author));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,restype,name,description,const DeepCollectionEquality().hash(_preview),icon,cover,paidType,const DeepCollectionEquality().hash(_author));
+int get hashCode => Object.hash(runtimeType,id,restype,name,description,descriptionHtml,descriptionBaseUrl,const DeepCollectionEquality().hash(_preview),icon,cover,paidType,const DeepCollectionEquality().hash(_author));
 
 @override
 String toString() {
-  return 'AstroBoxManifestItem(id: $id, restype: $restype, name: $name, description: $description, preview: $preview, icon: $icon, cover: $cover, paidType: $paidType, author: $author)';
+  return 'AstroBoxManifestItem(id: $id, restype: $restype, name: $name, description: $description, descriptionHtml: $descriptionHtml, descriptionBaseUrl: $descriptionBaseUrl, preview: $preview, icon: $icon, cover: $cover, paidType: $paidType, author: $author)';
 }
 
 
@@ -897,7 +901,7 @@ abstract mixin class _$AstroBoxManifestItemCopyWith<$Res> implements $AstroBoxMa
   factory _$AstroBoxManifestItemCopyWith(_AstroBoxManifestItem value, $Res Function(_AstroBoxManifestItem) _then) = __$AstroBoxManifestItemCopyWithImpl;
 @override @useResult
 $Res call({
- String id, AstroBoxResourceType restype, String name, String description, List<String> preview, String icon, String cover, AstroBoxPaidType? paidType, List<AstroBoxManifestAuthor> author
+ String id, AstroBoxResourceType restype, String name, String description, String? descriptionHtml, String? descriptionBaseUrl, List<String> preview, String icon, String cover, AstroBoxPaidType? paidType, List<AstroBoxManifestAuthor> author
 });
 
 
@@ -914,13 +918,15 @@ class __$AstroBoxManifestItemCopyWithImpl<$Res>
 
 /// Create a copy of AstroBoxManifestItem
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? restype = null,Object? name = null,Object? description = null,Object? preview = null,Object? icon = null,Object? cover = null,Object? paidType = freezed,Object? author = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? restype = null,Object? name = null,Object? description = null,Object? descriptionHtml = freezed,Object? descriptionBaseUrl = freezed,Object? preview = null,Object? icon = null,Object? cover = null,Object? paidType = freezed,Object? author = null,}) {
   return _then(_AstroBoxManifestItem(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,restype: null == restype ? _self.restype : restype // ignore: cast_nullable_to_non_nullable
 as AstroBoxResourceType,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,description: null == description ? _self.description : description // ignore: cast_nullable_to_non_nullable
-as String,preview: null == preview ? _self._preview : preview // ignore: cast_nullable_to_non_nullable
+as String,descriptionHtml: freezed == descriptionHtml ? _self.descriptionHtml : descriptionHtml // ignore: cast_nullable_to_non_nullable
+as String?,descriptionBaseUrl: freezed == descriptionBaseUrl ? _self.descriptionBaseUrl : descriptionBaseUrl // ignore: cast_nullable_to_non_nullable
+as String?,preview: null == preview ? _self._preview : preview // ignore: cast_nullable_to_non_nullable
 as List<String>,icon: null == icon ? _self.icon : icon // ignore: cast_nullable_to_non_nullable
 as String,cover: null == cover ? _self.cover : cover // ignore: cast_nullable_to_non_nullable
 as String,paidType: freezed == paidType ? _self.paidType : paidType // ignore: cast_nullable_to_non_nullable

@@ -1,15 +1,11 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 
-import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:zerobox/src/core/network/dio_provider.dart';
-import 'package:zerobox/src/data/astrobox/models/astrobox_models.dart';
-import 'package:zerobox/src/data/community/community_resource_repository.dart';
+import 'package:zerobox/src/features/resources/domain/community_resource.dart';
+import 'package:zerobox/src/features/resources/domain/resource_catalog.dart';
 import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
 import 'package:archive/archive.dart';
 
@@ -32,15 +28,11 @@ class DownloadedResource {
 }
 
 class ResourceInstallService {
-  ResourceInstallService({Dio? dio, this.cancelToken}) : _dio = dio ?? Dio();
-
-  final Dio _dio;
-  final CancelToken? cancelToken;
-
   Future<DownloadedResource?> downloadResource({
-    required AstroBoxIndexItem item,
-    required AstroBoxManifestDownload download,
-    required CommunityResourceRepository repo,
+    required CommunityResourceDetail resource,
+    required CommunityResourceFile file,
+    required CommunityResourceCatalog catalog,
+    String? targetDevice,
     required void Function(
       ResourceTaskStatus status,
       double progress,
@@ -48,106 +40,32 @@ class ResourceInstallService {
     )
     onUpdate,
   }) async {
-    final resolvedUrl = repo.resolveDownloadUrl(item, download);
-    if (resolvedUrl.isEmpty) {
-      onUpdate(ResourceTaskStatus.failed, 0, 'Download URL missing');
-      return null;
-    }
-
     onUpdate(ResourceTaskStatus.downloading, 0, null);
-
-    final displayName = (download.displayName?.isNotEmpty ?? false)
-        ? download.displayName!
-        : download.fileName;
-    final safeName = displayName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
-
-    if (kIsWeb) {
-      try {
-        final response = await _dio.get<Uint8List>(
-          resolvedUrl,
-          cancelToken: cancelToken,
-          options: Options(responseType: ResponseType.bytes),
-          onReceiveProgress: (received, total) {
-            if (total > 0) {
-              onUpdate(ResourceTaskStatus.downloading, received / total, null);
-            }
-          },
-        );
-        final bytes = response.data;
-        if (bytes == null) {
-          onUpdate(ResourceTaskStatus.failed, 0, 'Download empty');
-          return null;
-        }
-        onUpdate(ResourceTaskStatus.completed, 1, null);
-        return DownloadedResource(
-          path: '/zerobox_downloads/$safeName',
-          fileName: displayName,
-          bytes: bytes,
-        );
-      } on DioException catch (e) {
-        if (CancelToken.isCancel(e)) {
-          onUpdate(ResourceTaskStatus.failed, 0, 'Cancelled');
-        } else {
-          final actual = e.requestOptions.uri.toString();
-          onUpdate(
-            ResourceTaskStatus.failed,
-            0,
-            'Download failed [$actual]: $e',
-          );
-        }
-        return null;
-      } catch (e) {
-        onUpdate(
-          ResourceTaskStatus.failed,
-          0,
-          'Download failed [$resolvedUrl]: $e',
-        );
-        return null;
-      }
-    }
-
-    final tempDir = await getTemporaryDirectory();
-    final savePath = '${tempDir.path}/zerobox_downloads/$safeName';
-    await Directory(
-      '${tempDir.path}/zerobox_downloads',
-    ).create(recursive: true);
-
     try {
-      await _dio.download(
-        resolvedUrl,
-        savePath,
-        cancelToken: cancelToken,
-        onReceiveProgress: (received, total) {
-          if (total > 0) {
-            onUpdate(ResourceTaskStatus.downloading, received / total, null);
-          }
-        },
+      final result = await catalog.download(
+        CommunityDownloadRequest(
+          resource: resource,
+          file: file,
+          targetDevice: targetDevice,
+          onProgress: (progress, {status = ''}) =>
+              onUpdate(ResourceTaskStatus.downloading, progress, null),
+        ),
       );
-    } on DioException catch (e) {
-      if (CancelToken.isCancel(e)) {
-        onUpdate(ResourceTaskStatus.failed, 0, 'Cancelled');
-      } else {
-        final actual = e.requestOptions.uri.toString();
-        onUpdate(ResourceTaskStatus.failed, 0, 'Download failed [$actual]: $e');
-      }
-      return null;
+      onUpdate(ResourceTaskStatus.completed, 1, null);
+      return DownloadedResource(
+        path: result.path,
+        fileName: result.fileName,
+        bytes: result.bytes,
+      );
     } catch (e) {
-      onUpdate(
-        ResourceTaskStatus.failed,
-        0,
-        'Download failed [$resolvedUrl]: $e',
-      );
+      onUpdate(ResourceTaskStatus.failed, 0, 'Download failed: $e');
       return null;
     }
-
-    onUpdate(ResourceTaskStatus.completed, 1, null);
-    return DownloadedResource(path: savePath, fileName: displayName);
   }
 
   Future<void> installDownloadedResource({
-    required AstroBoxIndexItem item,
-    required AstroBoxManifest manifest,
-    required AstroBoxManifestDownload download,
+    required CommunityResourceDetail resource,
+    required CommunityResourceFile file,
     required String filePath,
     Uint8List? bytes,
     required DeviceManager deviceManager,
@@ -163,9 +81,8 @@ class ResourceInstallService {
     try {
       final payload = bytes ?? await File(filePath).readAsBytes();
       await _installByType(
-        item: item,
-        manifest: manifest,
-        download: download,
+        resource: resource,
+        file: file,
         bytes: payload,
         deviceManager: deviceManager,
         onProgress: (progress) =>
@@ -184,10 +101,10 @@ class ResourceInstallService {
   }
 
   Future<void> downloadAndInstall({
-    required AstroBoxIndexItem item,
-    required AstroBoxManifest manifest,
-    required AstroBoxManifestDownload download,
-    required CommunityResourceRepository repo,
+    required CommunityResourceDetail resource,
+    required CommunityResourceFile file,
+    required CommunityResourceCatalog catalog,
+    String? targetDevice,
     required DeviceManager deviceManager,
     required void Function(
       ResourceTaskStatus status,
@@ -198,16 +115,16 @@ class ResourceInstallService {
     required String taskId,
   }) async {
     final downloaded = await downloadResource(
-      item: item,
-      download: download,
-      repo: repo,
+      resource: resource,
+      file: file,
+      catalog: catalog,
+      targetDevice: targetDevice,
       onUpdate: onUpdate,
     );
     if (downloaded == null) return;
     await installDownloadedResource(
-      item: item,
-      manifest: manifest,
-      download: download,
+      resource: resource,
+      file: file,
       filePath: downloaded.path,
       bytes: downloaded.bytes,
       deviceManager: deviceManager,
@@ -305,36 +222,34 @@ class ResourceInstallService {
   }
 
   Future<void> _installByType({
-    required AstroBoxIndexItem item,
-    required AstroBoxManifest manifest,
-    required AstroBoxManifestDownload download,
+    required CommunityResourceDetail resource,
+    required CommunityResourceFile file,
     required Uint8List bytes,
     required DeviceManager deviceManager,
     required void Function(double progress) onProgress,
   }) async {
-    switch (item.type) {
-      case AstroBoxResourceType.quickApp:
+    switch (resource.type) {
+      case CommunityResourceType.quickApp:
         final packageName =
-            _extractAppPackageName(bytes) ??
-            _guessPackageName(download.fileName);
+            _extractAppPackageName(bytes) ?? _guessPackageName(file.fileName);
         await deviceManager.installApp(
           bytes,
           packageName: packageName,
           onProgress: onProgress,
         );
-      case AstroBoxResourceType.watchface:
+      case CommunityResourceType.watchface:
         final watchfaceId =
-            _extractWatchfaceId(bytes) ?? _guessWatchfaceId(download.fileName);
+            _extractWatchfaceId(bytes) ?? _guessWatchfaceId(file.fileName);
         await deviceManager.installWatchface(
           bytes,
           watchfaceId: watchfaceId,
           onProgress: onProgress,
         );
-      case AstroBoxResourceType.firmware:
+      case CommunityResourceType.firmware:
         await deviceManager.installFirmware(bytes, onProgress: onProgress);
-      case AstroBoxResourceType.fontpack:
-      case AstroBoxResourceType.iconpack:
-        throw UnsupportedError('${item.type} install not implemented yet');
+      case CommunityResourceType.fontpack:
+      case CommunityResourceType.iconpack:
+        throw UnsupportedError('${resource.type} install not implemented yet');
     }
   }
 
@@ -430,17 +345,17 @@ class ResourceInstallService {
 }
 
 final resourceInstallServiceProvider = Provider<ResourceInstallService>((ref) {
-  return ResourceInstallService(dio: ref.read(appDioProvider));
+  return ResourceInstallService();
 });
 
-extension ResourceTypeLabel on AstroBoxResourceType {
+extension ResourceTypeLabel on CommunityResourceType {
   String get fileExtensionHint {
     return switch (this) {
-      AstroBoxResourceType.quickApp => 'bin/rpk/zpk/zip',
-      AstroBoxResourceType.watchface => 'bin/face/mwz/zip',
-      AstroBoxResourceType.firmware => 'zip/bin',
-      AstroBoxResourceType.fontpack => 'zip',
-      AstroBoxResourceType.iconpack => 'zip',
+      CommunityResourceType.quickApp => 'bin/rpk/zpk/zip',
+      CommunityResourceType.watchface => 'bin/face/mwz/zip',
+      CommunityResourceType.firmware => 'zip/bin',
+      CommunityResourceType.fontpack => 'zip',
+      CommunityResourceType.iconpack => 'zip',
     };
   }
 }

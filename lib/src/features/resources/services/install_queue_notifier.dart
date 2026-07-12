@@ -3,8 +3,8 @@ import 'dart:typed_data';
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zerobox/src/core/providers/app_settings_providers.dart';
-import 'package:zerobox/src/data/astrobox/models/astrobox_models.dart';
 import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
+import 'package:zerobox/src/features/resources/domain/community_resource.dart';
 import 'package:zerobox/src/features/resources/services/resource_install_service.dart';
 import 'package:zerobox/src/protocols/common/device_protocol.dart' as proto;
 
@@ -21,9 +21,8 @@ class InstallTask {
     required this.type,
     required this.filePath,
     this.bytes,
-    this.item,
-    this.manifest,
-    this.download,
+    this.resource,
+    this.file,
     this.deleteAfterInstall = false,
     this.status = ResourceTaskStatus.pending,
     this.progress = 0,
@@ -47,23 +46,21 @@ class InstallTask {
   }
 
   factory InstallTask.resource({
-    required AstroBoxIndexItem item,
-    required AstroBoxManifest manifest,
-    required AstroBoxManifestDownload download,
+    required CommunityResourceDetail resource,
+    required CommunityResourceFile file,
     required String codename,
     required String filePath,
     Uint8List? bytes,
   }) {
     return InstallTask(
-      id: '${item.id}_$codename',
-      name: item.name,
+      id: '${resource.ref.key}:${file.id}:$codename',
+      name: resource.name,
       description: codename,
-      type: _installTypeForResource(item.type),
+      type: _installTypeForResource(resource.type),
       filePath: filePath,
       bytes: bytes,
-      item: item,
-      manifest: manifest,
-      download: download,
+      resource: resource,
+      file: file,
       deleteAfterInstall: true,
     );
   }
@@ -74,9 +71,8 @@ class InstallTask {
   final LocalDeviceInstallType type;
   final String filePath;
   final Uint8List? bytes;
-  final AstroBoxIndexItem? item;
-  final AstroBoxManifest? manifest;
-  final AstroBoxManifestDownload? download;
+  final CommunityResourceDetail? resource;
+  final CommunityResourceFile? file;
   final bool deleteAfterInstall;
   final ResourceTaskStatus status;
   final double progress;
@@ -94,9 +90,8 @@ class InstallTask {
       type: type,
       filePath: filePath,
       bytes: bytes,
-      item: item,
-      manifest: manifest,
-      download: download,
+      resource: resource,
+      file: file,
       deleteAfterInstall: deleteAfterInstall,
       status: status ?? this.status,
       progress: progress ?? this.progress,
@@ -190,26 +185,31 @@ class InstallQueueNotifier extends Notifier<InstallQueueState> {
   }
 
   void enqueueResource({
-    required AstroBoxIndexItem item,
-    required AstroBoxManifest manifest,
-    required AstroBoxManifestDownload download,
+    required CommunityResourceDetail resource,
+    required CommunityResourceFile file,
     required String codename,
     required String filePath,
     Uint8List? bytes,
   }) {
     _addTask(
       InstallTask.resource(
-        item: item,
-        manifest: manifest,
-        download: download,
+        resource: resource,
+        file: file,
         codename: codename,
         filePath: filePath,
         bytes: bytes,
       ),
     );
-    if (ref.read(appSettingsProvider).autoInstall) {
+    if (ref.read(appSettingsProvider).autoInstall && _deviceReady()) {
       start();
     }
+  }
+
+  bool _deviceReady() {
+    final deviceState = ref.read(deviceManagerProvider);
+    return deviceState.protocolState == proto.ProtocolState.ready &&
+        deviceState.currentDevice != null &&
+        !deviceState.currentDevice!.disconnected;
   }
 
   void _addTask(InstallTask task) {
@@ -232,16 +232,16 @@ class InstallQueueNotifier extends Notifier<InstallQueueState> {
     );
   }
 
-  void clearCompleted() {
+  void clearTerminal() {
     state = state.copyWith(
       tasks: state.tasks
-          .where((task) => task.status != ResourceTaskStatus.completed)
+          .where(
+            (task) =>
+                task.status != ResourceTaskStatus.completed &&
+                task.status != ResourceTaskStatus.failed,
+          )
           .toList(),
     );
-  }
-
-  void clear() {
-    state = state.copyWith(tasks: [], runStatus: QueueRunStatus.pending);
   }
 
   void retry(String taskId) {
@@ -329,11 +329,10 @@ class InstallQueueNotifier extends Notifier<InstallQueueState> {
     }
     final deviceManager = ref.read(deviceManagerProvider.notifier);
 
-    if (task.item != null && task.manifest != null && task.download != null) {
+    if (task.resource != null && task.file != null) {
       await service.installDownloadedResource(
-        item: task.item!,
-        manifest: task.manifest!,
-        download: task.download!,
+        resource: task.resource!,
+        file: task.file!,
         filePath: task.filePath,
         bytes: task.bytes,
         deviceManager: deviceManager,
@@ -396,12 +395,12 @@ String _localTypeDescription(LocalDeviceInstallType type) {
   };
 }
 
-LocalDeviceInstallType _installTypeForResource(AstroBoxResourceType type) {
+LocalDeviceInstallType _installTypeForResource(CommunityResourceType type) {
   return switch (type) {
-    AstroBoxResourceType.quickApp => LocalDeviceInstallType.app,
-    AstroBoxResourceType.watchface => LocalDeviceInstallType.watchface,
-    AstroBoxResourceType.firmware => LocalDeviceInstallType.firmware,
-    AstroBoxResourceType.fontpack || AstroBoxResourceType.iconpack =>
+    CommunityResourceType.quickApp => LocalDeviceInstallType.app,
+    CommunityResourceType.watchface => LocalDeviceInstallType.watchface,
+    CommunityResourceType.firmware => LocalDeviceInstallType.firmware,
+    CommunityResourceType.fontpack || CommunityResourceType.iconpack =>
       throw UnsupportedError('$type install not implemented yet'),
   };
 }

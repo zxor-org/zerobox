@@ -27,6 +27,8 @@
   "watchfaces": "表盘",
   "quickApps": "快应用",
   "firmwareTools": "固件 / 工具",
+  "resourceTypeFontpack": "字体包",
+  "resourceTypeIconpack": "图标包",
   "localResources": "本地资源",
   "zeroBox": "ZeroBox",
   "bandbbs": "BandBBS",
@@ -66,7 +68,6 @@
   "discoveredDevices": "发现设备",
   "overview": "概览",
   "apps": "应用",
-  "watchfaces": "表盘",
   "connection": "连接",
   "protocol": "协议",
   "error": "错误",
@@ -95,6 +96,7 @@
   "appearance": "外观",
   "resources": "资源",
   "devices": "设备",
+  "categories": "分区",
   "advanced": "高级",
   "aboutZeroBox": "关于 ZeroBox",
   "openSourceLicenses": "开放源代码许可",
@@ -206,7 +208,24 @@
   "settingsAbout": "关于",
   "settingsAccountLoginBBS": "登录 BandBBS",
   "settingsAccountLoginBBSDesc": "登录以同步已购资源",
+  "settingsAccountBandBbsSigningIn": "正在登录",
+  "settingsAccountBandBbsOpenedBrowser": "已打开浏览器，请完成 BandBBS 授权",
+  "settingsAccountBandBbsSignedIn": "BandBBS 登录成功",
+  "settingsAccountBandBbsLoginFailed": "BandBBS 登录失败",
+  "settingsAccountBandBbsUser": "用户 ID：{userId}",
+  "@settingsAccountBandBbsUser": {
+    "placeholders": {
+      "userId": {}
+    }
+  },
   "settingsAccountBBSAccount": "BandBBS 账号",
+  "bandBbsAccountTitle": "BandBBS 账号",
+  "bandBbsPurchasedResources": "已购资源",
+  "bandBbsResourceId": "资源 ID",
+  "bandBbsResourceIdHint": "输入米坛资源 ID",
+  "bandBbsQueryResource": "查询",
+  "bandBbsOpenResource": "在米坛查看",
+  "bandBbsLogout": "退出登录",
   "settingsAccountSyncDevices": "同步设备",
   "settingsAccountSyncDevicesDesc": "登录小米账号同步配对设备",
   "settingsMiAccount": "小米账号",
@@ -273,6 +292,7 @@
   "settingsAboutLicencesDesc": "查看 Flutter、依赖库与开源组件许可证",
   "settingsGuest": "访客",
   "settingsTapToSignIn": "点击登录",
+  "settingsConnected": "已连接",
   "settingsNotConnected": "未连接",
   "settingsNotSet": "未设置",
   "settingsOn": "开启",
@@ -367,5 +387,17 @@
     }
   },
   "installQueueReadFailed": "读取失败",
-  "installQueueUnsupportedFile": "不支持的文件"
+  "installQueueUnsupportedFile": "不支持的文件",
+  "timeTodayAt": "今天 {time}",
+  "@timeTodayAt": {
+    "placeholders": {
+      "time": {}
+    }
+  },
+  "timeYesterdayAt": "昨天 {time}",
+  "@timeYesterdayAt": {
+    "placeholders": {
+      "time": {}
+    }
+  }
 }

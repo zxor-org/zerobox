@@ -46,16 +46,16 @@ final class AppListUpdated extends DeviceEvent {
 }
 
 final class WatchfaceListUpdated extends DeviceEvent {
-  const WatchfaceListUpdated({required super.deviceId, required this.watchfaces});
+  const WatchfaceListUpdated({
+    required super.deviceId,
+    required this.watchfaces,
+  });
 
   final List<WatchfaceInfo> watchfaces;
 }
 
 final class StorageInfoUpdated extends DeviceEvent {
-  const StorageInfoUpdated({
-    required super.deviceId,
-    required this.info,
-  });
+  const StorageInfoUpdated({required super.deviceId, required this.info});
 
   final StorageInfo info;
 }

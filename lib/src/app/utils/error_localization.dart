@@ -56,8 +56,8 @@ String localizedErrorMessage(AppLocalizations l10n, Object? error) {
   }
 
   if (normalized.contains('connect_failed') ||
-      normalized.contains('connect failed') ||
-      normalized.contains('connection failed') ||
+      normalized.contains('connect failed on channel') ||
+      normalized.contains('universalble.connect failed') ||
       normalized.contains('连接被拒绝') ||
       normalized.contains('设备或资源忙') ||
       normalized.contains('无法分配内存')) {

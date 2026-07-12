@@ -1,5 +1,6 @@
 enum CommunitySourceId {
-  astroboxRepo('astrobox-repo');
+  astroboxRepo('astrobox-repo'),
+  bandbbs('bandbbs');
 
   const CommunitySourceId(this.storageKey);
 
@@ -8,6 +9,7 @@ enum CommunitySourceId {
   String get displayName {
     return switch (this) {
       CommunitySourceId.astroboxRepo => 'AstroBox Repo',
+      CommunitySourceId.bandbbs => '米坛社区',
     };
   }
 }

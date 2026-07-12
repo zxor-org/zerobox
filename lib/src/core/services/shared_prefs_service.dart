@@ -31,8 +31,7 @@ class SharedPrefsService {
       _safePrefs.setBool(key, value);
 
   int? getInt(String key) => _safePrefs.getInt(key);
-  Future<bool> setInt(String key, int value) =>
-      _safePrefs.setInt(key, value);
+  Future<bool> setInt(String key, int value) => _safePrefs.setInt(key, value);
 
   double? getDouble(String key) => _safePrefs.getDouble(key);
   Future<bool> setDouble(String key, double value) =>

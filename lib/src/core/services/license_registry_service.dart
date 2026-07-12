@@ -3,29 +3,26 @@ import 'package:flutter/services.dart';
 
 class LicenseRegistryService {
   static const _licenses = [
-    (
-      package: 'AstroBox-Public',
-      asset: 'assets/licenses/astrobox_public.txt'
-    ),
+    (package: 'AstroBox-Public', asset: 'assets/licenses/astrobox_public.txt'),
     (
       package: 'AstroBox-NG-Module-Core',
-      asset: 'assets/licenses/astrobox_ng_core.txt'
+      asset: 'assets/licenses/astrobox_ng_core.txt',
     ),
     (
       package: 'AstroBox-NG-Module-AppWasm',
-      asset: 'assets/licenses/astrobox_ng_appwasm.txt'
+      asset: 'assets/licenses/astrobox_ng_appwasm.txt',
     ),
     (
       package: 'AstroBox-NG-Module-Provider',
-      asset: 'assets/licenses/astrobox_ng_provider.txt'
+      asset: 'assets/licenses/astrobox_ng_provider.txt',
     ),
     (
       package: 'AstroBox-NG-Module-Account',
-      asset: 'assets/licenses/astrobox_ng_account.txt'
+      asset: 'assets/licenses/astrobox_ng_account.txt',
     ),
     (
       package: 'AstroBox-NG-Module-Bluetooth',
-      asset: 'assets/licenses/astrobox_ng_bluetooth.txt'
+      asset: 'assets/licenses/astrobox_ng_bluetooth.txt',
     ),
     (package: 'Gadgetbridge', asset: 'assets/licenses/gadgetbridge.txt'),
     (package: 'Kazumi', asset: 'assets/licenses/kazumi.txt'),

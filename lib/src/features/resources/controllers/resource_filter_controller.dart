@@ -1,40 +1,41 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:zerobox/src/data/astrobox/astrobox_providers.dart';
-import 'package:zerobox/src/data/astrobox/models/astrobox_models.dart';
-import 'package:zerobox/src/data/community/community_resource_repository.dart';
+import 'package:zerobox/src/features/resources/domain/community_resource.dart';
+import 'package:zerobox/src/features/resources/domain/resource_catalog.dart';
 
 enum ResourceMode { home, library, creator }
 
-enum ResourceSortRule { random, name, time }
+const Object _unset = Object();
 
 class ResourceFilters {
   const ResourceFilters({
     this.query = '',
     this.type,
-    this.sort = ResourceSortRule.random,
+    this.sort = CommunitySortRule.random,
     this.hidePaid = false,
     this.hideForcePaid = false,
     this.selectedDevices = const {},
   });
 
   final String query;
-  final AstroBoxResourceType? type;
-  final ResourceSortRule sort;
+  final CommunityResourceType? type;
+  final CommunitySortRule sort;
   final bool hidePaid;
   final bool hideForcePaid;
   final Set<String> selectedDevices;
 
   ResourceFilters copyWith({
     String? query,
-    AstroBoxResourceType? type,
-    ResourceSortRule? sort,
+    Object? type = _unset,
+    CommunitySortRule? sort,
     bool? hidePaid,
     bool? hideForcePaid,
     Set<String>? selectedDevices,
   }) {
     return ResourceFilters(
       query: query ?? this.query,
-      type: type ?? this.type,
+      type: identical(type, _unset)
+          ? this.type
+          : type as CommunityResourceType?,
       sort: sort ?? this.sort,
       hidePaid: hidePaid ?? this.hidePaid,
       hideForcePaid: hideForcePaid ?? this.hideForcePaid,
@@ -65,9 +66,9 @@ class ResourceFiltersNotifier extends Notifier<ResourceFilters> {
   ResourceFilters build() => const ResourceFilters();
 
   void setQuery(String value) => state = state.copyWith(query: value);
-  void setType(AstroBoxResourceType? value) =>
+  void setType(CommunityResourceType? value) =>
       state = state.copyWith(type: value);
-  void setSort(ResourceSortRule value) => state = state.copyWith(sort: value);
+  void setSort(CommunitySortRule value) => state = state.copyWith(sort: value);
   void setHidePaid(bool value) => state = state.copyWith(hidePaid: value);
   void setHideForcePaid(bool value) =>
       state = state.copyWith(hideForcePaid: value);
@@ -80,6 +81,14 @@ class ResourceFiltersNotifier extends Notifier<ResourceFilters> {
       updated.add(device);
     }
     state = state.copyWith(selectedDevices: updated);
+  }
+
+  void selectDevice(String device) {
+    if (state.selectedDevices.length == 1 &&
+        state.selectedDevices.contains(device)) {
+      return;
+    }
+    state = state.copyWith(selectedDevices: {device});
   }
 
   void toggleDeviceGroup(Iterable<String> devices) {
@@ -97,26 +106,3 @@ class ResourceFiltersNotifier extends Notifier<ResourceFilters> {
 
   void clearDevices() => state = state.copyWith(selectedDevices: const {});
 }
-
-final filteredAstroBoxIndexProvider =
-    FutureProvider.autoDispose<List<AstroBoxIndexItem>>((ref) async {
-      final repo = ref.watch(astroBoxRepositoryProvider);
-      final filters = ref.watch(resourceFiltersProvider);
-
-      return repo.getPage(
-        page: 0,
-        limit: 100000,
-        search: CommunitySearchConfig(
-          query: filters.query,
-          sort: switch (filters.sort) {
-            ResourceSortRule.random => CommunitySortRule.random,
-            ResourceSortRule.name => CommunitySortRule.name,
-            ResourceSortRule.time => CommunitySortRule.time,
-          },
-          type: filters.type,
-          hidePaid: filters.hidePaid,
-          hideForcePaid: filters.hideForcePaid,
-          selectedDevices: filters.selectedDevices,
-        ),
-      );
-    });

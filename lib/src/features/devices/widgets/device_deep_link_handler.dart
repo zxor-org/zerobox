@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zerobox/src/app/generated/app_localizations.dart';
 import 'package:zerobox/src/core/models/bt_models.dart';
+import 'package:zerobox/src/features/accounts/services/bandbbs_auth_service.dart';
 import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
 import 'package:zerobox/src/features/devices/services/device_share_link.dart';
 
@@ -62,10 +63,43 @@ class _DeviceDeepLinkHandlerState extends ConsumerState<DeviceDeepLinkHandler> {
 
   Future<bool> _handleLink(String link) async {
     if (!_handledLinks.add(link)) return false;
+    final uri = Uri.tryParse(link);
+    if (uri != null) {
+      final handled = await _handleBandBbsCallback(uri);
+      if (handled) return true;
+    }
     final device = DeviceShareLink.parse(link);
     if (device == null) return false;
     await _showDeviceDialog(device);
     return true;
+  }
+
+  Future<bool> _handleBandBbsCallback(Uri uri) async {
+    try {
+      final handled = await ref
+          .read(bandBbsAuthProvider.notifier)
+          .handleCallback(uri);
+      if (!handled || !mounted) return handled;
+      final l10n = AppLocalizations.of(context)!;
+      final state = ref.read(bandBbsAuthProvider);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            state.isSignedIn
+                ? l10n.settingsAccountBandBbsSignedIn
+                : l10n.settingsAccountBandBbsLoginFailed,
+          ),
+        ),
+      );
+      return true;
+    } catch (_) {
+      if (!mounted) return true;
+      final l10n = AppLocalizations.of(context)!;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.settingsAccountBandBbsLoginFailed)),
+      );
+      return true;
+    }
   }
 
   Future<void> _showDeviceDialog(MiWearState device) async {

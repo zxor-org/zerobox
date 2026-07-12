@@ -3,12 +3,7 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 part 'bt_models.freezed.dart';
 part 'bt_models.g.dart';
 
-enum ChargeStatus {
-  unknown,
-  charging,
-  notCharging,
-  full,
-}
+enum ChargeStatus { unknown, charging, notCharging, full }
 
 @freezed
 abstract class BTDeviceInfo with _$BTDeviceInfo {
@@ -39,10 +34,8 @@ abstract class MiWearState with _$MiWearState {
 
 @freezed
 abstract class ChargeInfo with _$ChargeInfo {
-  const factory ChargeInfo({
-    @Default(0) int state,
-    int? timestamp,
-  }) = _ChargeInfo;
+  const factory ChargeInfo({@Default(0) int state, int? timestamp}) =
+      _ChargeInfo;
 
   factory ChargeInfo.fromJson(Map<String, dynamic> json) =>
       _$ChargeInfoFromJson(json);
@@ -76,10 +69,8 @@ abstract class AppInfo with _$AppInfo {
 
 @freezed
 abstract class StorageInfo with _$StorageInfo {
-  const factory StorageInfo({
-    required int used,
-    required int total,
-  }) = _StorageInfo;
+  const factory StorageInfo({required int used, required int total}) =
+      _StorageInfo;
 
   factory StorageInfo.fromJson(Map<String, dynamic> json) =>
       _$StorageInfoFromJson(json);

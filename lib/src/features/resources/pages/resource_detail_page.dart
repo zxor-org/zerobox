@@ -3,74 +3,64 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:zerobox/src/app/generated/app_localizations.dart';
 import 'package:zerobox/src/app/utils/error_localization.dart';
+import 'package:zerobox/src/app/widgets/horizontal_scroller.dart';
 import 'package:zerobox/src/app/widgets/network_img_layer.dart';
 import 'package:zerobox/src/app/widgets/page_container.dart';
-import 'package:zerobox/src/app/widgets/status_chips.dart';
 import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
-import 'package:zerobox/src/data/astrobox/astrobox_providers.dart';
-import 'package:zerobox/src/data/astrobox/models/astrobox_models.dart';
+import 'package:zerobox/src/data/community/community_source.dart';
 import 'package:zerobox/src/device/core/xiaomi_wearable_catalog.dart';
 import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
+import 'package:zerobox/src/features/resources/application/resource_catalog_providers.dart';
+import 'package:zerobox/src/features/resources/domain/community_resource.dart';
 import 'package:zerobox/src/features/resources/services/download_queue_notifier.dart';
 import 'package:zerobox/src/features/resources/services/install_queue_notifier.dart';
+import 'package:zerobox/src/features/resources/widgets/community_html_content.dart';
 
 class ResourceDetailPage extends ConsumerWidget {
-  const ResourceDetailPage({super.key, required this.item});
-
-  final AstroBoxIndexItem item;
+  const ResourceDetailPage({super.key, required this.resource});
+  final CommunityResource resource;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context)!;
-    final manifestAsync = ref.watch(astroBoxManifestProvider(item));
-
+    final detail = ref.watch(communityResourceDetailProvider(resource.ref));
     return Scaffold(
-      appBar: SysAppBar(title: Text(item.name)),
-      body: manifestAsync.when(
-        data: (manifest) {
-          if (manifest == null) {
-            return Center(child: Text(l10n.notFound));
-          }
-          return _ResourceDetailContent(item: item, manifest: manifest);
-        },
+      appBar: SysAppBar(title: Text(resource.name)),
+      body: detail.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, _) =>
-            Center(child: Text(localizedErrorMessage(l10n, err))),
+        error: (error, _) =>
+            Center(child: Text(localizedErrorMessage(l10n, error))),
+        data: (value) => _DetailContent(detail: value),
       ),
     );
   }
 }
 
-class _ResourceDetailContent extends ConsumerWidget {
-  const _ResourceDetailContent({required this.item, required this.manifest});
-
-  final AstroBoxIndexItem item;
-  final AstroBoxManifest manifest;
+class _DetailContent extends ConsumerWidget {
+  const _DetailContent({required this.detail});
+  final CommunityResourceDetail detail;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final l10n = AppLocalizations.of(context)!;
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-    final repo = ref.watch(astroBoxRepositoryProvider);
+    final theme = Theme.of(context);
     final deviceState = ref.watch(deviceManagerProvider);
-    final currentDevice = deviceState.currentDevice;
-    final currentCodename = currentDevice?.codename;
-    final isReady = deviceState.protocolState.name == 'ready';
-
-    final iconUrl = repo.resolveImageUrl(item, manifest.item.icon);
-    final coverUrl = repo.resolveImageUrl(item, manifest.item.cover);
-    final previewUrls = manifest.item.preview
-        .map((p) => repo.resolveImageUrl(item, p))
-        .where((u) => u.isNotEmpty)
-        .toList();
-
+    final current = deviceState.currentDevice;
+    final currentCodename = normalizeXiaomiWearableCodename(current?.codename);
+    final image = detail.coverUrl ?? detail.iconUrl;
+    final isBandBbs = detail.ref.source == CommunitySourceId.bandbbs;
+    final previews = isBandBbs
+        ? detail.previewImages
+              .where(
+                (image) => !detail.content.value.contains(image.url.toString()),
+              )
+              .toList()
+        : detail.previewImages;
     return ListView(
       padding: EdgeInsets.zero,
       children: [
-        _DetailHero(
-          coverUrl: coverUrl.isNotEmpty ? coverUrl : previewUrls.firstOrNull,
+        _Hero(
+          image: image,
           child: PageContainer(
             padding: const EdgeInsets.fromLTRB(
               StyleConstants.pagePadding,
@@ -78,127 +68,133 @@ class _ResourceDetailContent extends ConsumerWidget {
               StyleConstants.pagePadding,
               24,
             ),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final wide = constraints.maxWidth >= 720;
-                final titleBlock = Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Hero(
-                      tag: 'resource-icon-${item.id}',
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(18),
-                        child: NetworkImgLayer(
-                          src: iconUrl,
-                          width: wide ? 88 : 72,
-                          height: wide ? 88 : 72,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: NetworkImgLayer(
+                    src: detail.iconUrl?.toString() ?? '',
+                    width: 76,
+                    height: 76,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        detail.name,
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 8,
+                        children: detail.authors
+                            .map(
+                              (author) => Text(
+                                '@${author.name}',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
                         children: [
-                          Text(
-                            item.name,
-                            style: textTheme.headlineSmall?.copyWith(
-                              fontWeight: FontWeight.w800,
-                              height: 1.15,
+                          _Chip(
+                            label: _typeLabel(
+                              AppLocalizations.of(context)!,
+                              detail.type,
                             ),
+                            color: theme.colorScheme.primary,
                           ),
-                          const SizedBox(height: 4),
-                          _AuthorLinks(
-                            authors: manifest.item.author,
-                            fallback: item.repoOwner,
+                          _Chip(
+                            label: _paidLabel(
+                              AppLocalizations.of(context)!,
+                              detail.paidType,
+                            ),
+                            color: detail.paidType == CommunityPaidType.free
+                                ? Colors.green
+                                : theme.colorScheme.tertiary,
                           ),
-                          const SizedBox(height: 10),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              _ResourceTypeChip(type: item.type, l10n: l10n),
-                              _PaidTypeChip(paidType: item.paidType),
-                            ],
-                          ),
+                          if (detail.ref.source == CommunitySourceId.bandbbs)
+                            ...detail.tags
+                                .take(1)
+                                .map(
+                                  (tag) => _Chip(
+                                    label: tag,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
                         ],
                       ),
-                    ),
-                  ],
-                );
-
-                if (!wide) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [titleBlock],
-                  );
-                }
-
-                return titleBlock;
-              },
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         ),
         PageContainer(
-          padding: const EdgeInsets.symmetric(
-            horizontal: StyleConstants.pagePadding,
-            vertical: StyleConstants.pagePadding,
-          ),
+          padding: const EdgeInsets.all(StyleConstants.pagePadding),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (manifest.item.description.isNotEmpty) ...[
+              if (detail.summary.isNotEmpty &&
+                  detail.summary != detail.content.value) ...[
                 Text(
-                  manifest.item.description,
-                  style: textTheme.bodyLarge?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                    height: 1.5,
+                  detail.summary,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(height: 16),
               ],
-              _ProductActions(
-                item: item,
-                manifest: manifest,
-                currentCodename: currentCodename,
-                isReady: isReady,
-                links: manifest.links,
-              ),
-              const SizedBox(height: 22),
-              if (previewUrls.isNotEmpty) ...[
-                SectionHeader(title: l10n.preview),
-                SizedBox(
-                  height: 220,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: previewUrls.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 14),
-                    itemBuilder: (context, index) {
-                      return Card(
-                        elevation: 0,
-                        margin: EdgeInsets.zero,
-                        clipBehavior: Clip.antiAlias,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(
-                            StyleConstants.cardRadius,
-                          ),
-                        ),
-                        child: NetworkImgLayer(
-                          src: previewUrls[index],
-                          width: 320,
-                          height: 220,
-                        ),
-                      );
-                    },
+              _Actions(detail: detail, currentCodename: currentCodename),
+              if (previews.isNotEmpty && !isBandBbs) ...[
+                const SizedBox(height: 24),
+                _PreviewGallery(previews: previews),
+              ],
+              if (detail.content.value.trim().isNotEmpty) ...[
+                const SizedBox(height: 24),
+                Text(
+                  AppLocalizations.of(context)!.description,
+                  style: theme.textTheme.titleLarge,
+                ),
+                const SizedBox(height: 12),
+                switch (detail.content.format) {
+                  ResourceContentFormat.html => CommunityHtmlContent(
+                    html: detail.content.value,
+                    baseUri: detail.content.baseUri,
+                  ),
+                  ResourceContentFormat.plainText => SelectableText(
+                    detail.content.value,
+                    style: theme.textTheme.bodyLarge,
+                  ),
+                },
+              ],
+              if (previews.isNotEmpty && isBandBbs) ...[
+                const SizedBox(height: 24),
+                _PreviewGallery(previews: previews),
+              ],
+              if (currentCodename.isNotEmpty) ...[
+                const SizedBox(height: 24),
+                _Compatibility(
+                  detail: detail,
+                  codename: currentCodename,
+                  deviceName: xiaomiDisplayNameForIdentity(
+                    name: current?.name.toString() ?? currentCodename,
+                    codename: currentCodename,
                   ),
                 ),
-                const SizedBox(height: StyleConstants.sectionSpacing),
               ],
-              _DeviceRequirementNote(
-                currentDeviceName: currentDevice?.name.toString(),
-                currentCodename: currentCodename,
-                downloads: manifest.downloads,
-              ),
               const SizedBox(height: 32),
             ],
           ),
@@ -208,201 +204,76 @@ class _ResourceDetailContent extends ConsumerWidget {
   }
 }
 
-class _DetailHero extends StatelessWidget {
-  const _DetailHero({required this.child, this.coverUrl});
+class _PreviewGallery extends StatelessWidget {
+  const _PreviewGallery({required this.previews});
+  final List<CommunityResourceImage> previews;
 
-  final Widget child;
-  final String? coverUrl;
+  static const _height = 240.0;
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Stack(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Positioned.fill(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: colorScheme.primaryContainer.withValues(alpha: 0.22),
-            ),
-          ),
+        Text(
+          AppLocalizations.of(context)!.preview,
+          style: Theme.of(context).textTheme.titleLarge,
         ),
-        if (coverUrl?.isNotEmpty == true)
-          Positioned.fill(
-            child: Opacity(
-              opacity: Theme.of(context).brightness == Brightness.dark
-                  ? 0.24
-                  : 0.18,
-              child: NetworkImgLayer(
-                src: coverUrl,
-                width: double.infinity,
-                height: double.infinity,
+        const SizedBox(height: 10),
+        HorizontalScroller(
+          height: _height,
+          spacing: 12,
+          children: [
+            for (final image in previews)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: _sized(image)
+                    ? NetworkImgLayer(
+                        src: image.url.toString(),
+                        width: _height * _aspectOf(image),
+                        height: _height,
+                        fit: BoxFit.contain,
+                      )
+                    : NetworkImgAutoWidth(
+                        src: image.url.toString(),
+                        height: _height,
+                      ),
               ),
-            ),
-          ),
-        Positioned.fill(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  colorScheme.surface.withValues(alpha: 0.10),
-                  colorScheme.surface,
-                ],
-              ),
-            ),
-          ),
+          ],
         ),
-        child,
       ],
     );
   }
-}
 
-class _AuthorLinks extends StatelessWidget {
-  const _AuthorLinks({required this.authors, required this.fallback});
+  bool _sized(CommunityResourceImage image) =>
+      image.width != null && image.height != null && image.height! > 0;
 
-  final List<AstroBoxManifestAuthor> authors;
-  final String fallback;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    final colorScheme = Theme.of(context).colorScheme;
-    final effectiveAuthors = authors.where((a) => a.name.isNotEmpty).toList();
-    final displayAuthors = effectiveAuthors.isEmpty
-        ? [AstroBoxManifestAuthor(name: fallback)]
-        : effectiveAuthors;
-
-    return Wrap(
-      spacing: 8,
-      children: displayAuthors.map((author) {
-        return Text(
-          '@${author.name}',
-          style: textTheme.bodyLarge?.copyWith(
-            color: colorScheme.onSurfaceVariant,
-          ),
-        );
-      }).toList(),
-    );
+  double _aspectOf(CommunityResourceImage image) {
+    final width = image.width;
+    final height = image.height;
+    if (width == null || height == null || height <= 0) return 3 / 2;
+    return width / height;
   }
 }
 
-class _ResourceTypeChip extends StatelessWidget {
-  const _ResourceTypeChip({required this.type, required this.l10n});
-
-  final AstroBoxResourceType type;
-  final AppLocalizations l10n;
-
-  @override
-  Widget build(BuildContext context) {
-    final label = switch (type) {
-      AstroBoxResourceType.quickApp => l10n.quickApp,
-      AstroBoxResourceType.watchface => l10n.watchface,
-      AstroBoxResourceType.firmware => l10n.firmwareTool,
-      AstroBoxResourceType.fontpack => l10n.fontPack,
-      AstroBoxResourceType.iconpack => l10n.iconPack,
-    };
-    return StatusChip(label: label);
-  }
-}
-
-class _PaidTypeChip extends StatelessWidget {
-  const _PaidTypeChip({required this.paidType});
-
-  final AstroBoxPaidType paidType;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
-    final colorScheme = Theme.of(context).colorScheme;
-    final (label, color) = switch (paidType) {
-      AstroBoxPaidType.free => (l10n.free, Colors.green),
-      AstroBoxPaidType.paid => (l10n.paid, colorScheme.tertiary),
-      AstroBoxPaidType.forcePaid => (l10n.forcePaid, colorScheme.error),
-    };
-    return StatusChip(label: label, color: color);
-  }
-}
-
-class _ProductActions extends StatelessWidget {
-  const _ProductActions({
-    required this.item,
-    required this.manifest,
-    required this.currentCodename,
-    required this.isReady,
-    required this.links,
-  });
-
-  final AstroBoxIndexItem item;
-  final AstroBoxManifest manifest;
-  final String? currentCodename;
-  final bool isReady;
-  final List<AstroBoxManifestLink> links;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final mobile = constraints.maxWidth < 520;
-        return Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            SizedBox(
-              width: mobile ? double.infinity : null,
-              child: _DownloadButton(
-                item: item,
-                manifest: manifest,
-                currentCodename: currentCodename,
-                isReady: isReady,
-                expand: mobile,
-              ),
-            ),
-            if (links.isNotEmpty) _ShareLinks(links: links),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _DownloadButton extends ConsumerWidget {
-  const _DownloadButton({
-    required this.item,
-    required this.manifest,
-    required this.currentCodename,
-    required this.isReady,
-    required this.expand,
-  });
-
-  final AstroBoxIndexItem item;
-  final AstroBoxManifest manifest;
-  final String? currentCodename;
-  final bool isReady;
-  final bool expand;
+class _Actions extends ConsumerWidget {
+  const _Actions({required this.detail, required this.currentCodename});
+  final CommunityResourceDetail detail;
+  final String currentCodename;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context)!;
-    final downloads = manifest.downloads.entries.toList();
-    if (downloads.isEmpty) return const SizedBox.shrink();
-
-    final showDefault =
-        currentCodename != null &&
-        manifest.downloads.containsKey(currentCodename);
-    final currentEntry = showDefault
-        ? manifest.downloads.entries.firstWhere(
-            (entry) => entry.key == currentCodename,
-          )
-        : null;
+    final files = detail.files;
+    if (files.isEmpty && detail.links.isEmpty) return const SizedBox.shrink();
+    final preferred = files
+        .where((file) => _matchesDevice(file, currentCodename))
+        .firstOrNull;
     final inDownloadQueue = ref.watch(
       downloadQueueProvider.select(
         (tasks) => tasks.any(
           (task) =>
-              task.item.id == item.id &&
+              task.resource.ref == detail.ref &&
               task.status != ResourceTaskStatus.completed,
         ),
       ),
@@ -411,95 +282,117 @@ class _DownloadButton extends ConsumerWidget {
       installQueueProvider.select(
         (state) => state.tasks.any(
           (task) =>
-              task.item?.id == item.id &&
+              task.resource?.ref == detail.ref &&
               task.status != ResourceTaskStatus.completed,
         ),
       ),
     );
     final inQueue = inDownloadQueue || inInstallQueue;
-    final canInstall = isReady && !inQueue;
-    final colorScheme = Theme.of(context).colorScheme;
-
-    void enqueue(MapEntry<String, AstroBoxManifestDownload> entry) {
+    final canInstall = detail.canDownload && !inQueue;
+    void enqueue(CommunityResourceFile file) {
+      final target = currentCodename.isNotEmpty
+          ? currentCodename
+          : file.supportedDevices.firstOrNull ?? '';
       ref
           .read(downloadQueueProvider.notifier)
-          .enqueue(
-            item: item,
-            manifest: manifest,
-            download: entry.value,
-            codename: entry.key,
-          );
+          .enqueue(resource: detail, file: file, codename: target);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.downloadStarted)));
     }
 
-    return MenuAnchor(
-      alignmentOffset: const Offset(0, 4),
-      menuChildren: downloads.map((entry) {
-        return MenuItemButton(
-          onPressed: canInstall ? () => enqueue(entry) : null,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 180, maxWidth: 280),
-            child: Text(
-              _downloadDeviceName(entry.key, entry.value),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        );
-      }).toList(),
-      builder: (context, controller, child) {
-        final width = expand ? double.infinity : 190.0;
-        final buttonText = inQueue ? l10n.productInQueue : l10n.install;
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: Material(
-            color: canInstall
-                ? colorScheme.primaryContainer
-                : colorScheme.surfaceContainerHighest,
-            child: SizedBox(
-              width: width,
-              height: 48,
-              child: Row(
-                children: [
-                  if (showDefault && currentEntry != null) ...[
-                    Expanded(
-                      child: InkWell(
-                        onTap: canInstall ? () => enqueue(currentEntry) : null,
-                        child: _DownloadButtonContent(
-                          label: buttonText,
-                          color: colorScheme.onPrimaryContainer,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final expand = constraints.maxWidth < 520;
+        final color = Theme.of(context).colorScheme;
+        final label = inQueue ? l10n.productInQueue : l10n.install;
+        final foreground = canInstall
+            ? color.onPrimaryContainer
+            : color.onSurface.withValues(alpha: .38);
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            if (files.isNotEmpty)
+              SizedBox(
+                width: expand ? double.infinity : 190,
+                child: MenuAnchor(
+                  alignmentOffset: const Offset(0, 4),
+                  menuChildren: files
+                      .map(
+                        (file) => MenuItemButton(
+                          onPressed: canInstall ? () => enqueue(file) : null,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 280),
+                            child: Text(
+                              _installMenuLabel(detail, file),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         ),
+                      )
+                      .toList(),
+                  builder: (_, controller, _) => ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Material(
+                      color: canInstall
+                          ? color.primaryContainer
+                          : color.onSurface.withValues(alpha: .08),
+                      child: SizedBox(
+                        height: 48,
+                        child: preferred == null
+                            ? InkWell(
+                                onTap: canInstall
+                                    ? () => _toggleMenu(controller)
+                                    : null,
+                                child: _InstallButtonContent(
+                                  label: label,
+                                  color: foreground,
+                                  trailing: const Icon(Icons.arrow_drop_down),
+                                ),
+                              )
+                            : Row(
+                                children: [
+                                  Expanded(
+                                    child: InkWell(
+                                      onTap: canInstall
+                                          ? () => enqueue(preferred)
+                                          : null,
+                                      child: _InstallButtonContent(
+                                        label: label,
+                                        color: foreground,
+                                      ),
+                                    ),
+                                  ),
+                                  SizedBox(
+                                    height: 28,
+                                    child: VerticalDivider(
+                                      width: 1,
+                                      color: foreground.withValues(alpha: .20),
+                                    ),
+                                  ),
+                                  _InstallMenuHandle(
+                                    enabled: canInstall && files.length > 1,
+                                    color: foreground,
+                                    onTap: () => _toggleMenu(controller),
+                                  ),
+                                ],
+                              ),
                       ),
                     ),
-                    SizedBox(
-                      height: 28,
-                      child: VerticalDivider(
-                        width: 1,
-                        color: colorScheme.onPrimaryContainer.withValues(
-                          alpha: 0.20,
-                        ),
-                      ),
-                    ),
-                    _MenuHandle(
-                      enabled: canInstall && downloads.length > 1,
-                      onTap: () => _toggleMenu(controller),
-                    ),
-                  ] else
-                    Expanded(
-                      child: InkWell(
-                        onTap: canInstall
-                            ? () => _toggleMenu(controller)
-                            : null,
-                        child: _DownloadButtonContent(
-                          label: buttonText,
-                          color: colorScheme.onPrimaryContainer,
-                          trailing: const Icon(Icons.arrow_drop_down),
-                        ),
-                      ),
-                    ),
-                ],
+                  ),
+                ),
               ),
-            ),
-          ),
+            for (final link in detail.links)
+              TextButton.icon(
+                onPressed: () =>
+                    launchUrl(link.url, mode: LaunchMode.externalApplication),
+                icon: const Icon(Icons.open_in_new),
+                label: Text(link.title),
+              ),
+          ],
         );
       },
     );
@@ -514,8 +407,46 @@ class _DownloadButton extends ConsumerWidget {
   }
 }
 
-class _DownloadButtonContent extends StatelessWidget {
-  const _DownloadButtonContent({
+bool _matchesDevice(CommunityResourceFile file, String codename) {
+  if (file.supportedDevices.isEmpty) return true;
+  return file.supportedDevices
+      .map(normalizeXiaomiWearableCodename)
+      .contains(codename);
+}
+
+String _installMenuLabel(
+  CommunityResourceDetail detail,
+  CommunityResourceFile file,
+) {
+  if (detail.ref.source == CommunitySourceId.bandbbs) {
+    return file.fileName;
+  }
+
+  final explicitName = file.displayName?.trim();
+  if (explicitName != null && explicitName.isNotEmpty) {
+    return explicitName;
+  }
+
+  final deviceIds = file.supportedDevices.isNotEmpty
+      ? file.supportedDevices
+      : detail.supportedDevices;
+  if (deviceIds.isEmpty) {
+    return file.label;
+  }
+
+  final label = deviceIds
+      .map(normalizeXiaomiWearableCodename)
+      .where((codename) => codename.isNotEmpty)
+      .map(
+        (codename) =>
+            xiaomiDisplayNameForIdentity(name: codename, codename: codename),
+      )
+      .join(' / ');
+  return label.isEmpty ? file.label : label;
+}
+
+class _InstallButtonContent extends StatelessWidget {
+  const _InstallButtonContent({
     required this.label,
     required this.color,
     this.trailing,
@@ -526,183 +457,205 @@ class _DownloadButtonContent extends StatelessWidget {
   final Widget? trailing;
 
   @override
-  Widget build(BuildContext context) {
-    return SizedBox.expand(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Row(
-          children: [
-            Icon(Icons.download_for_offline, color: color),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: color, fontWeight: FontWeight.w700),
-              ),
+  Widget build(BuildContext context) => SizedBox.expand(
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          Icon(Icons.download_for_offline, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: color, fontWeight: FontWeight.w700),
             ),
-            if (trailing != null) ...[
-              const SizedBox(width: 8),
-              IconTheme(
-                data: IconThemeData(color: color),
-                child: trailing!,
-              ),
-            ],
+          ),
+          if (trailing != null) ...[
+            const SizedBox(width: 8),
+            IconTheme(
+              data: IconThemeData(color: color),
+              child: trailing!,
+            ),
           ],
-        ),
+        ],
       ),
-    );
-  }
+    ),
+  );
 }
 
-class _MenuHandle extends StatelessWidget {
-  const _MenuHandle({required this.enabled, required this.onTap});
+class _InstallMenuHandle extends StatelessWidget {
+  const _InstallMenuHandle({
+    required this.enabled,
+    required this.color,
+    required this.onTap,
+  });
 
   final bool enabled;
+  final Color color;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     return SizedBox(
       width: 48,
       height: double.infinity,
       child: InkWell(
         onTap: enabled ? onTap : null,
-        child: Icon(
-          Icons.arrow_drop_down,
-          color: enabled
-              ? colorScheme.onPrimaryContainer
-              : colorScheme.onSurface.withValues(alpha: 0.38),
-        ),
+        child: Icon(Icons.arrow_drop_down, color: color),
       ),
     );
   }
 }
 
-String _downloadDeviceName(
-  String codename, [
-  AstroBoxManifestDownload? download,
-]) {
-  final explicitName = download?.displayName?.trim();
-  if (explicitName != null && explicitName.isNotEmpty) return explicitName;
-
-  final identity = xiaomiWearableIdentityForCodename(codename);
-  return identity?.displayName ?? codename;
-}
-
-class _DeviceRequirementNote extends StatelessWidget {
-  const _DeviceRequirementNote({
-    required this.currentDeviceName,
-    required this.currentCodename,
-    required this.downloads,
+class _Compatibility extends StatelessWidget {
+  const _Compatibility({
+    required this.detail,
+    required this.codename,
+    required this.deviceName,
   });
-
-  final String? currentDeviceName;
-  final String? currentCodename;
-  final Map<String, AstroBoxManifestDownload> downloads;
-
+  final CommunityResourceDetail detail;
+  final String codename;
+  final String deviceName;
   @override
   Widget build(BuildContext context) {
-    if (currentDeviceName == null || currentCodename == null) {
-      return const SizedBox.shrink();
-    }
-
-    final l10n = AppLocalizations.of(context)!;
-    final colorScheme = Theme.of(context).colorScheme;
-    final compatible = downloads.containsKey(currentCodename);
-    final color = compatible ? Colors.green : colorScheme.error;
-    final icon = compatible ? Icons.check_circle : Icons.cancel;
-    final text = compatible
-        ? '${l10n.compatible} $currentDeviceName'
-        : '${l10n.incompatible} $currentDeviceName ${l10n.incompatibleSuffix}';
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 2),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SectionHeader(title: l10n.productDeviceRequirements),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(icon, size: 20, color: color),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  text,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: color,
-                    fontWeight: FontWeight.w700,
-                  ),
+    final compatible = detail.files.any(
+      (file) => _matchesDevice(file, codename),
+    );
+    final versions = detail.files
+        .expand((file) => file.supportedDevices)
+        .map(normalizeXiaomiWearableCodename)
+        .where((value) => value.isNotEmpty)
+        .toSet();
+    final color = Theme.of(context).colorScheme;
+    final statusColor = compatible ? Colors.green : color.error;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          AppLocalizations.of(context)!.productDeviceRequirements,
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
+        const SizedBox(height: 8),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              compatible ? Icons.check_circle : Icons.cancel,
+              size: 20,
+              color: statusColor,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                compatible
+                    ? '${AppLocalizations.of(context)!.compatible} $deviceName'
+                    : '${AppLocalizations.of(context)!.incompatible} $deviceName ${AppLocalizations.of(context)!.incompatibleSuffix}',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: statusColor,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
+        ),
+        if (versions.isNotEmpty) ...[
           const SizedBox(height: 8),
           Text(
-            l10n.productOtherVersions,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-            ),
+            AppLocalizations.of(context)!.productOtherVersions,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: color.onSurfaceVariant),
           ),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: downloads.entries.map((entry) {
-              final selected = entry.key == currentCodename;
+            children: versions.map((version) {
+              final selected = version == codename;
               return Chip(
-                label: Text(_downloadDeviceName(entry.key, entry.value)),
+                label: Text(
+                  xiaomiDisplayNameForIdentity(
+                    name: version,
+                    codename: version,
+                  ),
+                ),
                 backgroundColor: selected
-                    ? colorScheme.primaryContainer
-                    : colorScheme.surfaceContainerHighest,
+                    ? color.primaryContainer
+                    : color.surfaceContainerHighest,
                 side: BorderSide.none,
                 visualDensity: VisualDensity.compact,
               );
             }).toList(),
           ),
         ],
-      ),
+      ],
     );
   }
 }
 
-class _ShareLinks extends StatelessWidget {
-  const _ShareLinks({required this.links});
-
-  final List<AstroBoxManifestLink> links;
-
+class _Hero extends StatelessWidget {
+  const _Hero({required this.child, this.image});
+  final Widget child;
+  final Uri? image;
   @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: links.map((link) {
-        return ActionChip(
-          avatar: link.icon?.isNotEmpty == true
-              ? Icon(_linkIcon(link.icon!), color: colorScheme.primary)
-              : null,
-          label: Text(link.title),
-          onPressed: () => _open(link.url),
-        );
-      }).toList(),
-    );
-  }
-
-  Future<void> _open(String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri == null) return;
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
-  }
-
-  IconData _linkIcon(String icon) {
-    return switch (icon.toLowerCase()) {
-      'github' || 'github-logo' => Icons.code,
-      'link' => Icons.link,
-      _ => Icons.open_in_new,
-    };
-  }
+  Widget build(BuildContext context) => Stack(
+    children: [
+      if (image != null)
+        Positioned.fill(
+          child: Opacity(
+            opacity: .16,
+            child: NetworkImgLayer(
+              src: image.toString(),
+              width: double.infinity,
+              height: double.infinity,
+            ),
+          ),
+        ),
+      Positioned.fill(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Theme.of(
+              context,
+            ).colorScheme.primaryContainer.withValues(alpha: .22),
+          ),
+        ),
+      ),
+      child,
+    ],
+  );
 }
+
+class _Chip extends StatelessWidget {
+  const _Chip({required this.label, required this.color});
+  final String label;
+  final Color color;
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(12),
+      color: color.withValues(alpha: .12),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(color: color, fontWeight: FontWeight.w600),
+    ),
+  );
+}
+
+String _typeLabel(AppLocalizations l10n, CommunityResourceType type) =>
+    switch (type) {
+      CommunityResourceType.quickApp => l10n.quickApp,
+      CommunityResourceType.watchface => l10n.watchface,
+      CommunityResourceType.firmware => l10n.firmwareTool,
+      CommunityResourceType.fontpack => l10n.fontPack,
+      CommunityResourceType.iconpack => l10n.iconPack,
+    };
+String _paidLabel(AppLocalizations l10n, CommunityPaidType type) =>
+    switch (type) {
+      CommunityPaidType.free => l10n.free,
+      CommunityPaidType.paid => l10n.paid,
+      CommunityPaidType.forcePaid => l10n.forcePaid,
+    };

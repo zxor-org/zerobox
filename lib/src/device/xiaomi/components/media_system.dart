@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-
 import 'package:zerobox/src/core/logging/logging_service.dart';
 import 'package:zerobox/src/device/xiaomi/components/mass_system.dart';
 import 'package:zerobox/src/device/xiaomi/system/xiaomi_system.dart';
@@ -53,8 +52,7 @@ class XiaomiMediaSystem extends XiaomiSystem {
   static final _log = getLogger('XiaomiMediaSystem');
 
   final _songSummaryWaiters = <Completer<pb_media.SongSummary>>[];
-  final _mediaFileSummaryWaiters =
-      <Completer<pb_media.MediaFile_Summary>>[];
+  final _mediaFileSummaryWaiters = <Completer<pb_media.MediaFile_Summary>>[];
   final _mediaFileListWaiters = <Completer<List<MediaFileDescriptor>>>[];
   final _songPageWaiters = <Completer<pb_media.Song_GetResponse>>[];
   final _songlistWaiters = <Completer<pb_media.Songlist_Response>>[];
@@ -68,9 +66,9 @@ class XiaomiMediaSystem extends XiaomiSystem {
     _log.info('[${entity.id}] request song summary');
     final completer = Completer<pb_media.SongSummary>();
     _songSummaryWaiters.add(completer);
-    await component.sendPbPacket(_buildMediaPacket(
-      pb_media_enum.Media_MediaID.GET_SONG_SUMMARY,
-    ));
+    await component.sendPbPacket(
+      _buildMediaPacket(pb_media_enum.Media_MediaID.GET_SONG_SUMMARY),
+    );
     return completer.future.timeout(const Duration(seconds: 10));
   }
 
@@ -78,9 +76,9 @@ class XiaomiMediaSystem extends XiaomiSystem {
     _log.info('[${entity.id}] request media file summary');
     final completer = Completer<pb_media.MediaFile_Summary>();
     _mediaFileSummaryWaiters.add(completer);
-    await component.sendPbPacket(_buildMediaPacket(
-      pb_media_enum.Media_MediaID.GET_MEDIA_FILE_SUMMARY,
-    ));
+    await component.sendPbPacket(
+      _buildMediaPacket(pb_media_enum.Media_MediaID.GET_MEDIA_FILE_SUMMARY),
+    );
     return completer.future.timeout(const Duration(seconds: 10));
   }
 
@@ -88,9 +86,9 @@ class XiaomiMediaSystem extends XiaomiSystem {
     _log.info('[${entity.id}] request media file list');
     final completer = Completer<List<MediaFileDescriptor>>();
     _mediaFileListWaiters.add(completer);
-    await component.sendPbPacket(_buildMediaPacket(
-      pb_media_enum.Media_MediaID.SYNC_MEDIA_FILE_LIST,
-    ));
+    await component.sendPbPacket(
+      _buildMediaPacket(pb_media_enum.Media_MediaID.SYNC_MEDIA_FILE_LIST),
+    );
     return completer.future.timeout(const Duration(seconds: 30));
   }
 
@@ -98,45 +96,60 @@ class XiaomiMediaSystem extends XiaomiSystem {
     _log.info('[${entity.id}] request media file list compat');
     final completer = Completer<List<MediaFileDescriptor>>();
     _mediaFileListWaiters.add(completer);
-    await component.sendPbPacket(_buildMediaPacket(
-      pb_media_enum.Media_MediaID.SYNC_MEDIA_FILE_LIST,
-      mediaFileList: pb_media.MediaFile_List(),
-    ));
+    await component.sendPbPacket(
+      _buildMediaPacket(
+        pb_media_enum.Media_MediaID.SYNC_MEDIA_FILE_LIST,
+        mediaFileList: pb_media.MediaFile_List(),
+      ),
+    );
     return completer.future.timeout(const Duration(seconds: 30));
   }
 
-  Future<void> requestMediaFile(pb_media.MediaFile_Identifier identifier) async {
-    await component.sendPbPacket(_buildMediaPacket(
-      pb_media_enum.Media_MediaID.REQUEST_MEDIA_FILE,
-      mediaFileIdentifier: identifier,
-    ));
+  Future<void> requestMediaFile(
+    pb_media.MediaFile_Identifier identifier,
+  ) async {
+    await component.sendPbPacket(
+      _buildMediaPacket(
+        pb_media_enum.Media_MediaID.REQUEST_MEDIA_FILE,
+        mediaFileIdentifier: identifier,
+      ),
+    );
   }
 
   Future<void> requestMediaFiles(
     List<pb_media.MediaFile_Identifier> identifiers,
   ) async {
-    await component.sendPbPacket(_buildMediaPacket(
-      pb_media_enum.Media_MediaID.REQUEST_MEDIA_FILE_LIST,
-      mediaFileIdentifiers:
-          pb_media.MediaFile_Identifier_List(list: identifiers),
-    ));
+    await component.sendPbPacket(
+      _buildMediaPacket(
+        pb_media_enum.Media_MediaID.REQUEST_MEDIA_FILE_LIST,
+        mediaFileIdentifiers: pb_media.MediaFile_Identifier_List(
+          list: identifiers,
+        ),
+      ),
+    );
   }
 
-  Future<void> confirmMediaFile(pb_media.MediaFile_Identifier identifier) async {
-    await component.sendPbPacket(_buildMediaPacket(
-      pb_media_enum.Media_MediaID.CONFIRM_MEDIA_FILE,
-      mediaFileIdentifier: identifier,
-    ));
+  Future<void> confirmMediaFile(
+    pb_media.MediaFile_Identifier identifier,
+  ) async {
+    await component.sendPbPacket(
+      _buildMediaPacket(
+        pb_media_enum.Media_MediaID.CONFIRM_MEDIA_FILE,
+        mediaFileIdentifier: identifier,
+      ),
+    );
   }
 
   Future<pb_media.Song_GetResponse> requestSongPage(int index) async {
     _log.info('[${entity.id}] request song page $index');
     final completer = Completer<pb_media.Song_GetResponse>();
     _songPageWaiters.add(completer);
-    await component.sendPbPacket(_buildMediaPacket(
-      pb_media_enum.Media_MediaID.GET_SONG,
-      songGetRequest: pb_media.Song_GetRequest(index: index),
-    ));
+    await component.sendPbPacket(
+      _buildMediaPacket(
+        pb_media_enum.Media_MediaID.GET_SONG,
+        songGetRequest: pb_media.Song_GetRequest(index: index),
+      ),
+    );
     return completer.future.timeout(const Duration(seconds: 10));
   }
 
@@ -147,10 +160,9 @@ class XiaomiMediaSystem extends XiaomiSystem {
     _log.info('[${entity.id}] request songlist operation $mediaId');
     final completer = Completer<pb_media.Songlist_Response>();
     _songlistWaiters.add(completer);
-    await component.sendPbPacket(_buildMediaPacket(
-      mediaId,
-      songlistRequest: request,
-    ));
+    await component.sendPbPacket(
+      _buildMediaPacket(mediaId, songlistRequest: request),
+    );
     return completer.future.timeout(const Duration(seconds: 10));
   }
 
@@ -160,10 +172,12 @@ class XiaomiMediaSystem extends XiaomiSystem {
     _log.info('[${entity.id}] request remove song');
     final completer = Completer<pb_media.Song_RemoveResponse>();
     _songRemoveWaiters.add(completer);
-    await component.sendPbPacket(_buildMediaPacket(
-      pb_media_enum.Media_MediaID.REMOVE_SONG,
-      songRemoveRequest: pb_media.Song_RemoveRequest(id: songId),
-    ));
+    await component.sendPbPacket(
+      _buildMediaPacket(
+        pb_media_enum.Media_MediaID.REMOVE_SONG,
+        songRemoveRequest: pb_media.Song_RemoveRequest(id: songId),
+      ),
+    );
     return completer.future.timeout(const Duration(seconds: 10));
   }
 
@@ -172,16 +186,17 @@ class XiaomiMediaSystem extends XiaomiSystem {
     Uint8List fileData, {
     void Function(MediaUploadProgress)? onProgress,
   }) async {
-    _log.info('[${entity.id}] upload song ${song.id}, ${fileData.length} bytes');
-
-    final addRx = _prepareSingleWaiter(
-      _songAddWaiters,
-      'song add request',
+    _log.info(
+      '[${entity.id}] upload song ${song.id}, ${fileData.length} bytes',
     );
-    await component.sendPbPacket(_buildMediaPacket(
-      pb_media_enum.Media_MediaID.ADD_SONG,
-      songAddRequest: pb_media.Song_AddRequest(song: song),
-    ));
+
+    final addRx = _prepareSingleWaiter(_songAddWaiters, 'song add request');
+    await component.sendPbPacket(
+      _buildMediaPacket(
+        pb_media_enum.Media_MediaID.ADD_SONG,
+        songAddRequest: pb_media.Song_AddRequest(song: song),
+      ),
+    );
 
     final addResp = await addRx.timeout(const Duration(seconds: 15));
 
@@ -302,10 +317,7 @@ class XiaomiMediaSystem extends XiaomiSystem {
     }
   }
 
-  Future<T> _prepareSingleWaiter<T>(
-    List<Completer<T>> slot,
-    String context,
-  ) {
+  Future<T> _prepareSingleWaiter<T>(List<Completer<T>> slot, String context) {
     if (slot.isNotEmpty) {
       throw StateError('$context already in progress');
     }
@@ -442,10 +454,7 @@ MediaFileDescriptor _decodeMediaFileDescriptor(Uint8List raw) {
   );
 }
 
-String _inferMediaFileName(
-  List<(int, String)> fields,
-  String? identifierId,
-) {
+String _inferMediaFileName(List<(int, String)> fields, String? identifierId) {
   final id = identifierId ?? '';
   final preferred = fields
       .map((e) => e.$2)
@@ -457,10 +466,7 @@ String _inferMediaFileName(
 
   final any = fields
       .map((e) => e.$2)
-      .firstWhere(
-        (value) => value.trim().isNotEmpty,
-        orElse: () => '',
-      );
+      .firstWhere((value) => value.trim().isNotEmpty, orElse: () => '');
   if (any.isNotEmpty) return any;
 
   if (id.isEmpty) return 'record';
@@ -469,9 +475,7 @@ String _inferMediaFileName(
   return id;
 }
 
-pb_media_enum.MediaFile_Type? _inferMediaFileType(
-  List<(int, int)> fields,
-) {
+pb_media_enum.MediaFile_Type? _inferMediaFileType(List<(int, int)> fields) {
   for (final (_, value) in fields) {
     if (value <= 0x7FFFFFFF) {
       final type = pb_media_enum.MediaFile_Type.valueOf(value);
@@ -504,11 +508,7 @@ int? _inferSize(List<(int, int)> fields, int? timestampMs) {
   return best;
 }
 
-int? _inferDuration(
-  List<(int, int)> fields,
-  int? timestampMs,
-  int? size,
-) {
+int? _inferDuration(List<(int, int)> fields, int? timestampMs, int? size) {
   int? best;
   for (final (_, value) in fields) {
     if (value == timestampMs || value == size) continue;

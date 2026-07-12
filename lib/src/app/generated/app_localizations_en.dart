@@ -90,6 +90,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get firmwareTools => 'Firmware / Tools';
 
   @override
+  String get resourceTypeFontpack => 'Font pack';
+
+  @override
+  String get resourceTypeIconpack => 'Icon pack';
+
+  @override
   String get localResources => 'Local resources';
 
   @override
@@ -287,6 +293,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get devices => 'Devices';
+
+  @override
+  String get categories => 'Categories';
 
   @override
   String get advanced => 'Advanced';
@@ -634,7 +643,46 @@ class AppLocalizationsEn extends AppLocalizations {
       'Sign in to sync purchased resources';
 
   @override
+  String get settingsAccountBandBbsSigningIn => 'Signing in';
+
+  @override
+  String get settingsAccountBandBbsOpenedBrowser =>
+      'Browser opened. Complete BandBBS authorization there';
+
+  @override
+  String get settingsAccountBandBbsSignedIn => 'BandBBS signed in';
+
+  @override
+  String get settingsAccountBandBbsLoginFailed => 'BandBBS sign-in failed';
+
+  @override
+  String settingsAccountBandBbsUser(Object userId) {
+    return 'User ID: $userId';
+  }
+
+  @override
   String get settingsAccountBBSAccount => 'BandBBS account';
+
+  @override
+  String get bandBbsAccountTitle => 'BandBBS account';
+
+  @override
+  String get bandBbsPurchasedResources => 'Purchased resources';
+
+  @override
+  String get bandBbsResourceId => 'Resource ID';
+
+  @override
+  String get bandBbsResourceIdHint => 'Enter BandBBS resource ID';
+
+  @override
+  String get bandBbsQueryResource => 'Query';
+
+  @override
+  String get bandBbsOpenResource => 'View on BandBBS';
+
+  @override
+  String get bandBbsLogout => 'Sign out';
 
   @override
   String get settingsAccountSyncDevices => 'Sync devices';
@@ -832,6 +880,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsTapToSignIn => 'Tap to sign in';
+
+  @override
+  String get settingsConnected => 'Connected';
 
   @override
   String get settingsNotConnected => 'Not connected';
@@ -1079,4 +1130,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get installQueueUnsupportedFile => 'Unsupported file';
+
+  @override
+  String timeTodayAt(Object time) {
+    return 'Today $time';
+  }
+
+  @override
+  String timeYesterdayAt(Object time) {
+    return 'Yesterday $time';
+  }
 }

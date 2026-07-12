@@ -66,6 +66,8 @@ abstract class AstroBoxManifestItem with _$AstroBoxManifestItem {
     required AstroBoxResourceType restype,
     required String name,
     required String description,
+    String? descriptionHtml,
+    String? descriptionBaseUrl,
     @Default([]) List<String> preview,
     required String icon,
     required String cover,
@@ -105,7 +107,8 @@ abstract class AstroBoxManifestDownload with _$AstroBoxManifestDownload {
   const factory AstroBoxManifestDownload({
     required String version,
     @JsonKey(name: 'file_name') required String fileName,
-    @JsonKey(name: 'version_code', fromJson: _versionCodeFromJson) int? versionCode,
+    @JsonKey(name: 'version_code', fromJson: _versionCodeFromJson)
+    int? versionCode,
     String? url,
     String? sha256,
     String? displayName,
@@ -139,10 +142,7 @@ abstract class AstroBoxDevice with _$AstroBoxDevice {
       _$AstroBoxDeviceFromJson(json);
 }
 
-enum AstroBoxDeviceChip {
-  xring,
-  bes,
-}
+enum AstroBoxDeviceChip { xring, bes }
 
 int? _versionCodeFromJson(dynamic value) {
   if (value is int) return value;

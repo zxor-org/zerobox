@@ -98,6 +98,8 @@ _AstroBoxManifestItem _$AstroBoxManifestItemFromJson(
   restype: $enumDecode(_$AstroBoxResourceTypeEnumMap, json['restype']),
   name: json['name'] as String,
   description: json['description'] as String,
+  descriptionHtml: json['descriptionHtml'] as String?,
+  descriptionBaseUrl: json['descriptionBaseUrl'] as String?,
   preview:
       (json['preview'] as List<dynamic>?)?.map((e) => e as String).toList() ??
       const [],
@@ -120,6 +122,8 @@ Map<String, dynamic> _$AstroBoxManifestItemToJson(
   'restype': _$AstroBoxResourceTypeEnumMap[instance.restype]!,
   'name': instance.name,
   'description': instance.description,
+  'descriptionHtml': instance.descriptionHtml,
+  'descriptionBaseUrl': instance.descriptionBaseUrl,
   'preview': instance.preview,
   'icon': instance.icon,
   'cover': instance.cover,

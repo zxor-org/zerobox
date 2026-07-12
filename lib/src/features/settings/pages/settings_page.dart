@@ -13,12 +13,12 @@ import 'package:zerobox/src/core/providers/theme_locale_providers.dart';
 import 'package:zerobox/src/core/services/shared_prefs_service.dart';
 import 'package:zerobox/src/core/utils/layout.dart';
 import 'package:zerobox/src/data/astrobox/astrobox_cdn.dart';
-import 'package:zerobox/src/data/astrobox/astrobox_providers.dart';
+import 'package:zerobox/src/features/resources/application/resource_catalog_providers.dart';
 import 'package:zerobox/src/features/accounts/models/mi_account_models.dart';
+import 'package:zerobox/src/features/accounts/services/bandbbs_auth_service.dart';
 import 'package:zerobox/src/features/accounts/services/mi_account_service.dart';
 import 'package:zerobox/src/features/accounts/services/mi_account_two_factor_resolver.dart';
 import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
-import 'package:zerobox/src/features/resources/controllers/resource_filter_controller.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -64,10 +64,48 @@ class SettingsPage extends ConsumerWidget {
                 description: Text(l10n.settingsMiAccountDesc),
               ),
               SettingsTile.navigation(
-                onPressed: (_) => _showNotImplemented(context),
+                onPressed: (_) {
+                  final account = ref.read(bandBbsAuthProvider);
+                  if (account.isSignedIn) {
+                    context.push('/settings/bandbbs');
+                  } else if (!account.isBusy) {
+                    _startBandBbsLogin(context, ref);
+                  }
+                },
                 leading: const Icon(Icons.badge_outlined),
                 title: Text(l10n.settingsAccountLoginBBS),
-                description: Text(l10n.settingsNotConnected),
+                description: Consumer(
+                  builder: (context, ref, _) {
+                    final account = ref.watch(bandBbsAuthProvider);
+                    if (account.isBusy) {
+                      return Text(l10n.settingsAccountBandBbsSigningIn);
+                    }
+                    if (account.isSignedIn) {
+                      return Text(
+                        account.userId == null
+                            ? l10n.settingsConnected
+                            : l10n.settingsAccountBandBbsUser(account.userId!),
+                      );
+                    }
+                    return Text(l10n.settingsAccountLoginBBSDesc);
+                  },
+                ),
+                value: Consumer(
+                  builder: (context, ref, _) {
+                    final account = ref.watch(bandBbsAuthProvider);
+                    if (account.isBusy) {
+                      return const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      );
+                    }
+                    return Text(
+                      account.isSignedIn
+                          ? l10n.settingsConnected
+                          : l10n.settingsTapToSignIn,
+                    );
+                  },
+                ),
               ),
             ],
           ),
@@ -324,9 +362,7 @@ class SettingsPage extends ConsumerWidget {
     );
     if (selected != null && selected != current) {
       await ref.read(appSettingsProvider.notifier).setCdn(selected);
-      ref.invalidate(filteredAstroBoxIndexProvider);
-      ref.invalidate(astroBoxIndexProvider);
-      ref.invalidate(astroBoxDeviceMapProvider);
+      ref.invalidate(communityCatalogDevicesProvider);
     }
   }
 
@@ -815,11 +851,20 @@ class SettingsPage extends ConsumerWidget {
     }
   }
 
-  void _showNotImplemented(BuildContext context) {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(
-      const SnackBar(content: Text('Not implemented yet')),
-    );
+  Future<void> _startBandBbsLogin(BuildContext context, WidgetRef ref) async {
+    final l10n = AppLocalizations.of(context)!;
+    try {
+      await ref.read(bandBbsAuthProvider.notifier).startLogin();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.settingsAccountBandBbsOpenedBrowser)),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(localizedErrorMessage(l10n, e))));
+    }
   }
 
   void _showLicensePage(BuildContext context) {

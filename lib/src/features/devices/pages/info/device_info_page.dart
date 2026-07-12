@@ -44,7 +44,10 @@ class _DeviceInfoPageState extends ConsumerState<DeviceInfoPage> {
             _InfoRow(label: l10n.fieldName, value: device.name),
             _InfoRow(label: l10n.fieldAddress, value: device.addr),
             _InfoRow(label: l10n.fieldAuthkey, value: device.authkey ?? '-'),
-            _InfoRow(label: l10n.fieldConnectionType, value: device.connectType),
+            _InfoRow(
+              label: l10n.fieldConnectionType,
+              value: device.connectType,
+            ),
             _InfoRow(label: l10n.fieldCodename, value: device.codename ?? '-'),
           ],
         ),

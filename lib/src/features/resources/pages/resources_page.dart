@@ -8,11 +8,15 @@ import 'package:zerobox/src/app/widgets/page_container.dart';
 import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
 import 'package:zerobox/src/core/providers/app_settings_providers.dart';
-import 'package:zerobox/src/data/astrobox/astrobox_providers.dart';
-import 'package:zerobox/src/data/astrobox/models/astrobox_models.dart';
 import 'package:zerobox/src/data/community/community_source.dart';
+import 'package:zerobox/src/data/bandbbs/bandbbs_resource_provider.dart';
 import 'package:zerobox/src/device/core/xiaomi_wearable_catalog.dart';
+import 'package:zerobox/src/features/resources/application/resource_catalog_providers.dart';
 import 'package:zerobox/src/features/resources/controllers/resource_filter_controller.dart';
+import 'package:zerobox/src/features/resources/domain/community_resource.dart';
+import 'package:zerobox/src/features/resources/domain/resource_catalog.dart';
+import 'package:zerobox/src/features/resources/widgets/bandbbs_category_sidebar.dart';
+import 'package:zerobox/src/features/resources/widgets/bandbbs_resource_card.dart';
 
 class ResourcesPage extends ConsumerWidget {
   const ResourcesPage({super.key});
@@ -21,20 +25,15 @@ class ResourcesPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context)!;
     final mode = ref.watch(resourceModeControllerProvider);
-
     return Scaffold(
       appBar: SysAppBar(
         title: Text(l10n.exploreTab),
         actions: [
           if (mode == ResourceMode.library) const _CommunitySourceMenu(),
           IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              ref.invalidate(filteredAstroBoxIndexProvider);
-              ref.invalidate(astroBoxIndexProvider);
-              ref.invalidate(astroBoxDeviceMapProvider);
-            },
             tooltip: l10n.refresh,
+            icon: const Icon(Icons.refresh),
+            onPressed: () => ref.invalidate(communityCatalogDevicesProvider),
           ),
         ],
       ),
@@ -70,11 +69,9 @@ class ResourcesPage extends ConsumerWidget {
                     ),
                   ],
                   selected: {mode},
-                  onSelectionChanged: (selected) {
-                    ref
-                        .read(resourceModeControllerProvider.notifier)
-                        .setMode(selected.first);
-                  },
+                  onSelectionChanged: (value) => ref
+                      .read(resourceModeControllerProvider.notifier)
+                      .setMode(value.first),
                 ),
               ),
             ),
@@ -83,13 +80,13 @@ class ResourcesPage extends ConsumerWidget {
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 200),
               child: switch (mode) {
-                ResourceMode.home => _ResourceHomePlaceholder(
+                ResourceMode.home => const _ResourceHomePlaceholder(
                   key: ValueKey('home'),
                 ),
                 ResourceMode.library => const _ResourceLibraryView(
                   key: ValueKey('library'),
                 ),
-                ResourceMode.creator => _ResourceCreatorPlaceholder(
+                ResourceMode.creator => const _ResourceCreatorPlaceholder(
                   key: ValueKey('creator'),
                 ),
               },
@@ -211,77 +208,196 @@ class _ResourceCreatorPlaceholder extends ConsumerWidget {
   }
 }
 
-class _ResourceLibraryView extends ConsumerWidget {
+class _ResourceLibraryView extends ConsumerStatefulWidget {
   const _ResourceLibraryView({super.key});
+  @override
+  ConsumerState<_ResourceLibraryView> createState() =>
+      _ResourceLibraryViewState();
+}
+
+class _ResourceLibraryViewState extends ConsumerState<_ResourceLibraryView> {
+  static const _pageSize = 30;
+  final _scrollController = ScrollController();
+  final _items = <CommunityResource>[];
+  var _page = 0;
+  var _hasMore = true;
+  var _loading = true;
+  var _loadingMore = false;
+  Object? _error;
+  var _generation = 0;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reset());
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.hasClients &&
+        _scrollController.position.extentAfter < 600) {
+      _load(_generation);
+    }
+  }
+
+  Future<void> _reset() async {
+    final generation = ++_generation;
+    setState(() {
+      _items.clear();
+      _page = 0;
+      _hasMore = true;
+      _loading = true;
+      _loadingMore = false;
+      _error = null;
+    });
+    await _load(generation);
+  }
+
+  Future<void> _load(int generation) async {
+    if (!_hasMore || _loadingMore) return;
+    setState(() => _loadingMore = true);
+    try {
+      final filters = ref.read(resourceFiltersProvider);
+      final result = await ref
+          .read(communityCatalogProvider)
+          .getPage(
+            CommunityResourceQuery(
+              page: _page,
+              pageSize: _pageSize,
+              query: filters.query,
+              sort: filters.sort,
+              type: filters.type,
+              hidePaid: filters.hidePaid,
+              hideForcePaid: filters.hideForcePaid,
+              selectedDevices: filters.selectedDevices,
+            ),
+          );
+      if (!mounted || generation != _generation) return;
+      setState(() {
+        _items.addAll(
+          result.items.where(
+            (item) => !_items.any((current) => current.ref == item.ref),
+          ),
+        );
+        _page += 1;
+        _hasMore = result.hasMore;
+        _loading = false;
+        _loadingMore = false;
+      });
+    } catch (error) {
+      if (!mounted || generation != _generation) return;
+      setState(() {
+        _error = error;
+        _loading = false;
+        _loadingMore = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final filters = ref.watch(resourceFiltersProvider);
-    final indexAsync = ref.watch(filteredAstroBoxIndexProvider);
+    final source = ref.watch(selectedCommunitySourceProvider);
+    ref.listen(resourceFiltersProvider, (_, _) => _reset());
+    ref.listen(selectedCommunitySourceProvider, (_, _) => _reset());
+    final capabilities = ref.watch(communityCatalogProvider).capabilities;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final list = _buildList(context, l10n, filters, source, capabilities);
+        if (source != CommunitySourceId.bandbbs || constraints.maxWidth < 900) {
+          return list;
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(width: 260, child: BandBbsCategorySidebar()),
+            Expanded(child: list),
+          ],
+        );
+      },
+    );
+  }
 
-    Future<void> onRefresh() async {
-      ref.invalidate(filteredAstroBoxIndexProvider);
-      ref.invalidate(astroBoxIndexProvider);
-      ref.invalidate(astroBoxDeviceMapProvider);
-      await ref.read(filteredAstroBoxIndexProvider.future);
-    }
-
+  Widget _buildList(
+    BuildContext context,
+    AppLocalizations l10n,
+    ResourceFilters filters,
+    CommunitySourceId source,
+    CommunityCatalogCapabilities capabilities,
+  ) {
     return RefreshIndicator(
-      onRefresh: onRefresh,
+      onRefresh: _reset,
       child: CustomScrollView(
+        controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           SliverToBoxAdapter(
             child: PageContainer(
-              padding: const EdgeInsets.symmetric(
-                horizontal: StyleConstants.pagePadding,
-                vertical: StyleConstants.pagePadding,
-              ),
+              padding: const EdgeInsets.all(StyleConstants.pagePadding),
               child: Column(
                 children: [
                   SearchBar(
-                    hintText: l10n.search,
+                    enabled: capabilities.search,
+                    hintText: capabilities.search ? l10n.search : l10n.search,
                     leading: const Icon(Icons.search),
                     trailing: [
                       if (filters.query.isNotEmpty)
                         IconButton(
                           icon: const Icon(Icons.clear),
-                          onPressed: () {
-                            ref
-                                .read(resourceFiltersProvider.notifier)
-                                .setQuery('');
-                          },
+                          onPressed: () => ref
+                              .read(resourceFiltersProvider.notifier)
+                              .setQuery(''),
                         ),
                     ],
-                    onChanged: (value) {
-                      ref
-                          .read(resourceFiltersProvider.notifier)
-                          .setQuery(value);
-                    },
+                    onChanged: (value) => ref
+                        .read(resourceFiltersProvider.notifier)
+                        .setQuery(value),
                   ),
                   const SizedBox(height: 12),
-                  _FilterBar(),
+                  const _FilterBar(),
                 ],
               ),
             ),
           ),
-          indexAsync.when(
-            data: (items) => SliverToBoxAdapter(
+          if (_loading)
+            const SliverFillRemaining(
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_error != null)
+            SliverFillRemaining(
+              child: Center(child: Text(localizedErrorMessage(l10n, _error!))),
+            )
+          else ...[
+            SliverToBoxAdapter(
               child: PageContainer(
                 padding: const EdgeInsets.symmetric(
                   horizontal: StyleConstants.pagePadding,
                 ),
-                child: _ResourceGrid(items: items),
+                child: source == CommunitySourceId.bandbbs
+                    ? _BandBbsResourceList(items: _items)
+                    : _ResourceGrid(items: _items),
               ),
             ),
-            loading: () => const SliverFillRemaining(
-              child: Center(child: CircularProgressIndicator()),
-            ),
-            error: (err, _) => SliverFillRemaining(
-              child: Center(child: Text(localizedErrorMessage(l10n, err))),
-            ),
-          ),
+            if (_loadingMore)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              )
+            else if (_items.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(child: Text(l10n.notFound)),
+              ),
+          ],
           const SliverPadding(padding: EdgeInsets.only(bottom: 32)),
         ],
       ),
@@ -291,64 +407,46 @@ class _ResourceLibraryView extends ConsumerWidget {
 
 class _CommunitySourceMenu extends ConsumerWidget {
   const _CommunitySourceMenu();
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final source = ref.watch(communitySourceProvider);
-
+    final source = ref.watch(selectedCommunitySourceProvider);
     return MenuAnchor(
-      menuChildren: CommunitySourceId.values.map((candidate) {
-        final selected = candidate == source;
-        return MenuItemButton(
-          leadingIcon: selected ? const Icon(Icons.check) : null,
-          onPressed: selected
-              ? null
-              : () async {
-                  await ref
-                      .read(appSettingsProvider.notifier)
-                      .setCommunitySource(candidate);
-                  ref.invalidate(filteredAstroBoxIndexProvider);
-                  ref.invalidate(astroBoxIndexProvider);
-                  ref.invalidate(astroBoxDeviceMapProvider);
-                },
-          child: Text(candidate.displayName),
-        );
-      }).toList(),
-      builder: (context, controller, child) {
-        return TextButton(
-          onPressed: () {
-            if (controller.isOpen) {
-              controller.close();
-            } else {
-              controller.open();
-            }
-          },
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(source.displayName),
-              const SizedBox(width: 2),
-              AnimatedRotation(
-                turns: controller.isOpen ? 0.5 : 0,
-                duration: const Duration(milliseconds: 200),
-                child: const Icon(Icons.arrow_drop_down, size: 18),
-              ),
-            ],
-          ),
-        );
-      },
+      menuChildren: CommunitySourceId.values
+          .map(
+            (candidate) => MenuItemButton(
+              trailingIcon: candidate == source
+                  ? Icon(
+                      Icons.check,
+                      color: Theme.of(context).colorScheme.primary,
+                    )
+                  : null,
+              onPressed: candidate == source
+                  ? null
+                  : () => ref
+                        .read(appSettingsProvider.notifier)
+                        .setCommunitySource(candidate),
+              child: Text(candidate.displayName),
+            ),
+          )
+          .toList(),
+      builder: (_, controller, _) => TextButton.icon(
+        onPressed: controller.isOpen ? controller.close : controller.open,
+        icon: const Icon(Icons.arrow_drop_down),
+        label: Text(source.displayName),
+      ),
     );
   }
 }
 
 class _FilterBar extends ConsumerWidget {
+  const _FilterBar();
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context)!;
     final filters = ref.watch(resourceFiltersProvider);
-    final deviceMapAsync = ref.watch(astroBoxDeviceMapProvider);
-
-    final devices = deviceMapAsync.value?.xiaomi.entries.toList() ?? [];
+    final devices =
+        ref.watch(communityCatalogDevicesProvider).value ??
+        const <CommunityResourceDevice>[];
     final deviceOptions = _buildDeviceFilterOptions(devices);
     final selectedDeviceOptions = deviceOptions
         .where((option) => option.ids.any(filters.selectedDevices.contains))
@@ -357,102 +455,103 @@ class _FilterBar extends ConsumerWidget {
     final unknownSelectedDevices = filters.selectedDevices
         .where((id) => !knownDeviceIds.contains(id))
         .toList();
+    final categoryTitles = <String, String>{};
+    if (ref.watch(selectedCommunitySourceProvider) ==
+        CommunitySourceId.bandbbs) {
+      void collect(List<BandBbsCategoryNode> nodes) {
+        for (final node in nodes) {
+          categoryTitles['${BandBbsCategorySidebar.categoryFilterPrefix}${node.id}'] =
+              node.title;
+          collect(node.children);
+        }
+      }
+
+      collect(ref.watch(bandbbsCategoryTreeProvider).value ?? const []);
+    }
+    final hasActiveFilters =
+        filters.type != null ||
+        filters.hidePaid ||
+        filters.hideForcePaid ||
+        filters.selectedDevices.isNotEmpty;
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
         children: [
           _FilterChip(
-            label: l10n.filter,
-            selected:
-                filters.type != null ||
-                filters.hidePaid ||
-                filters.hideForcePaid ||
-                filters.selectedDevices.isNotEmpty,
-            onPressed: () => _showFilterSheet(context),
+            label: Text(l10n.filter),
+            selected: hasActiveFilters,
+            onPressed: () => _showFilters(context),
           ),
           const SizedBox(width: 8),
-          ...selectedDeviceOptions.map((option) {
-            return Padding(
+          ...selectedDeviceOptions.map(
+            (option) => Padding(
               padding: const EdgeInsets.only(right: 8),
               child: FilterChip(
                 label: Text(option.label),
                 selected: true,
-                onSelected: (_) {
-                  ref
-                      .read(resourceFiltersProvider.notifier)
-                      .toggleDeviceGroup(option.ids);
-                },
+                onSelected: (_) => ref
+                    .read(resourceFiltersProvider.notifier)
+                    .toggleDeviceGroup(option.ids),
               ),
-            );
-          }),
-          ...unknownSelectedDevices.map((codename) {
-            return Padding(
+            ),
+          ),
+          ...unknownSelectedDevices.map(
+            (codename) => Padding(
               padding: const EdgeInsets.only(right: 8),
               child: FilterChip(
-                label: Text(codename),
+                label: Text(categoryTitles[codename] ?? codename),
                 selected: true,
-                onSelected: (_) {
-                  ref
-                      .read(resourceFiltersProvider.notifier)
-                      .toggleDevice(codename);
-                },
+                onSelected: (_) => ref
+                    .read(resourceFiltersProvider.notifier)
+                    .toggleDevice(codename),
               ),
-            );
-          }),
+            ),
+          ),
           if (filters.type != null) ...[
             const SizedBox(width: 8),
-            FilterChip(
-              label: Text(_typeLabel(context, filters.type!)),
-              selected: true,
-              onSelected: (_) {
-                ref.read(resourceFiltersProvider.notifier).setType(null);
-              },
+            Padding(
+              padding: EdgeInsets.zero,
+              child: FilterChip(
+                label: Text(_typeLabel(l10n, filters.type!)),
+                selected: true,
+                onSelected: (_) =>
+                    ref.read(resourceFiltersProvider.notifier).setType(null),
+              ),
             ),
           ],
-          if (filters.hidePaid) ...[
-            const SizedBox(width: 8),
-            FilterChip(
-              label: Text(l10n.paid),
-              selected: true,
-              onSelected: (_) {
-                ref.read(resourceFiltersProvider.notifier).setHidePaid(false);
-              },
-            ),
-          ],
-          if (filters.hideForcePaid) ...[
-            const SizedBox(width: 8),
-            FilterChip(
-              label: Text(l10n.forcePaid),
-              selected: true,
-              onSelected: (_) {
-                ref
+          if (filters.hidePaid)
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: FilterChip(
+                label: Text(l10n.paid),
+                selected: true,
+                onSelected: (_) => ref
                     .read(resourceFiltersProvider.notifier)
-                    .setHideForcePaid(false);
-              },
+                    .setHidePaid(false),
+              ),
             ),
-          ],
+          if (filters.hideForcePaid)
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: FilterChip(
+                label: Text(l10n.forcePaid),
+                selected: true,
+                onSelected: (_) => ref
+                    .read(resourceFiltersProvider.notifier)
+                    .setHideForcePaid(false),
+              ),
+            ),
         ],
       ),
     );
   }
 
-  String _typeLabel(BuildContext context, AstroBoxResourceType type) {
-    final l10n = AppLocalizations.of(context)!;
-    return switch (type) {
-      AstroBoxResourceType.quickApp => l10n.quickApps,
-      AstroBoxResourceType.watchface => l10n.watchfaces,
-      AstroBoxResourceType.firmware => l10n.firmwareTools,
-      AstroBoxResourceType.fontpack => l10n.fontPack,
-      AstroBoxResourceType.iconpack => l10n.iconPack,
-    };
-  }
-
-  void _showFilterSheet(BuildContext context) {
+  void _showFilters(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
-      isScrollControlled: true,
       showDragHandle: true,
+      isScrollControlled: true,
       builder: (context) => DraggableScrollableSheet(
         expand: false,
         initialChildSize: 0.6,
@@ -473,14 +572,14 @@ class _FilterChip extends StatelessWidget {
     required this.onPressed,
   });
 
-  final String label;
+  final Widget label;
   final bool selected;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     return ActionChip(
-      label: Text(label),
+      label: label,
       avatar: Icon(
         selected ? Icons.filter_list_off : Icons.filter_list,
         size: 18,
@@ -499,9 +598,14 @@ class _FilterSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context)!;
     final filters = ref.watch(resourceFiltersProvider);
-    final deviceMapAsync = ref.watch(astroBoxDeviceMapProvider);
-    final devices = deviceMapAsync.value?.xiaomi.entries.toList() ?? [];
+    final source = ref.watch(selectedCommunitySourceProvider);
+    final devices =
+        ref.watch(communityCatalogDevicesProvider).value ??
+        const <CommunityResourceDevice>[];
     final deviceOptions = _buildDeviceFilterOptions(devices);
+    final deviceSectionTitle = source == CommunitySourceId.bandbbs
+        ? l10n.categories
+        : l10n.devices;
 
     return ListView(
       controller: scrollController,
@@ -517,63 +621,56 @@ class _FilterSheet extends ConsumerWidget {
           children: [
             FilterChip(
               label: Text(l10n.quickApps),
-              selected: filters.type == AstroBoxResourceType.quickApp,
-              onSelected: (_) {
-                ref
-                    .read(resourceFiltersProvider.notifier)
-                    .setType(
-                      filters.type == AstroBoxResourceType.quickApp
-                          ? null
-                          : AstroBoxResourceType.quickApp,
-                    );
-              },
+              selected: filters.type == CommunityResourceType.quickApp,
+              onSelected: (_) => ref
+                  .read(resourceFiltersProvider.notifier)
+                  .setType(
+                    filters.type == CommunityResourceType.quickApp
+                        ? null
+                        : CommunityResourceType.quickApp,
+                  ),
             ),
             FilterChip(
               label: Text(l10n.watchfaces),
-              selected: filters.type == AstroBoxResourceType.watchface,
-              onSelected: (_) {
-                ref
-                    .read(resourceFiltersProvider.notifier)
-                    .setType(
-                      filters.type == AstroBoxResourceType.watchface
-                          ? null
-                          : AstroBoxResourceType.watchface,
-                    );
-              },
+              selected: filters.type == CommunityResourceType.watchface,
+              onSelected: (_) => ref
+                  .read(resourceFiltersProvider.notifier)
+                  .setType(
+                    filters.type == CommunityResourceType.watchface
+                        ? null
+                        : CommunityResourceType.watchface,
+                  ),
             ),
             FilterChip(
               label: Text(l10n.firmwareTools),
-              selected: filters.type == AstroBoxResourceType.firmware,
-              onSelected: (_) {
-                ref
-                    .read(resourceFiltersProvider.notifier)
-                    .setType(
-                      filters.type == AstroBoxResourceType.firmware
-                          ? null
-                          : AstroBoxResourceType.firmware,
-                    );
-              },
+              selected: filters.type == CommunityResourceType.firmware,
+              onSelected: (_) => ref
+                  .read(resourceFiltersProvider.notifier)
+                  .setType(
+                    filters.type == CommunityResourceType.firmware
+                        ? null
+                        : CommunityResourceType.firmware,
+                  ),
             ),
           ],
         ),
         const SizedBox(height: 16),
-        Text(l10n.devices, style: Theme.of(context).textTheme.titleSmall),
+        Text(deviceSectionTitle, style: Theme.of(context).textTheme.titleSmall),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: deviceOptions.map((option) {
-            final selected = option.ids.any(filters.selectedDevices.contains);
-            return FilterChip(
-              label: Text(option.label),
-              selected: selected,
-              onSelected: (_) {
-                ref
-                    .read(resourceFiltersProvider.notifier)
-                    .toggleDeviceGroup(option.ids);
-              },
-            );
-          }).toList(),
+          children: deviceOptions
+              .map(
+                (option) => FilterChip(
+                  label: Text(option.label),
+                  selected: option.ids.any(filters.selectedDevices.contains),
+                  onSelected: (_) => ref
+                      .read(resourceFiltersProvider.notifier)
+                      .toggleDeviceGroup(option.ids),
+                ),
+              )
+              .toList(),
         ),
         const SizedBox(height: 16),
         Text(l10n.paid, style: Theme.of(context).textTheme.titleSmall),
@@ -585,20 +682,15 @@ class _FilterSheet extends ConsumerWidget {
             FilterChip(
               label: Text('${l10n.hide}${l10n.paid}'),
               selected: filters.hidePaid,
-              onSelected: (_) {
-                ref
-                    .read(resourceFiltersProvider.notifier)
-                    .setHidePaid(!filters.hidePaid);
-              },
+              onSelected: (value) =>
+                  ref.read(resourceFiltersProvider.notifier).setHidePaid(value),
             ),
             FilterChip(
               label: Text('${l10n.hide}${l10n.forcePaid}'),
               selected: filters.hideForcePaid,
-              onSelected: (_) {
-                ref
-                    .read(resourceFiltersProvider.notifier)
-                    .setHideForcePaid(!filters.hideForcePaid);
-              },
+              onSelected: (value) => ref
+                  .read(resourceFiltersProvider.notifier)
+                  .setHideForcePaid(value),
             ),
           ],
         ),
@@ -615,12 +707,11 @@ class _DeviceFilterOption {
 }
 
 List<_DeviceFilterOption> _buildDeviceFilterOptions(
-  Iterable<MapEntry<String, AstroBoxDevice>> entries,
+  Iterable<CommunityResourceDevice> devices,
 ) {
   final grouped = <String, Set<String>>{};
-  for (final entry in entries) {
-    final device = entry.value;
-    final rawId = device.id.trim().isNotEmpty ? device.id.trim() : entry.key;
+  for (final device in devices) {
+    final rawId = device.codename.trim();
     final identity = normalizeXiaomiWearableIdentity(rawId);
     final id = identity?.codename ?? rawId;
     if (id.isEmpty) continue;
@@ -631,20 +722,44 @@ List<_DeviceFilterOption> _buildDeviceFilterOptions(
     grouped.putIfAbsent(label, () => <String>{}).add(id);
   }
 
-  final options =
-      grouped.entries
-          .map(
-            (entry) => _DeviceFilterOption(label: entry.key, ids: entry.value),
-          )
-          .toList()
-        ..sort((a, b) => a.label.compareTo(b.label));
-  return options;
+  return grouped.entries
+      .map((entry) => _DeviceFilterOption(label: entry.key, ids: entry.value))
+      .toList()
+    ..sort((a, b) => a.label.compareTo(b.label));
+}
+
+String _typeLabel(AppLocalizations l10n, CommunityResourceType type) =>
+    switch (type) {
+      CommunityResourceType.quickApp => l10n.quickApps,
+      CommunityResourceType.watchface => l10n.watchfaces,
+      CommunityResourceType.firmware => l10n.firmwareTools,
+      CommunityResourceType.fontpack => l10n.fontPack,
+      CommunityResourceType.iconpack => l10n.iconPack,
+    };
+
+class _BandBbsResourceList extends StatelessWidget {
+  const _BandBbsResourceList({required this.items});
+  final List<CommunityResource> items;
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      children: [
+        for (var i = 0; i < items.length; i++) ...[
+          if (i > 0) const SizedBox(height: 10),
+          BandBbsResourceCard(item: items[i]),
+        ],
+      ],
+    );
+  }
 }
 
 class _ResourceGrid extends StatelessWidget {
   const _ResourceGrid({required this.items});
-
-  final List<AstroBoxIndexItem> items;
+  final List<CommunityResource> items;
 
   @override
   Widget build(BuildContext context) {
@@ -687,34 +802,27 @@ class _ResourceGrid extends StatelessWidget {
   }
 }
 
-class _ResourceCard extends ConsumerWidget {
+class _ResourceCard extends StatelessWidget {
   const _ResourceCard({required this.item, required this.coverHeight});
-
-  final AstroBoxIndexItem item;
+  final CommunityResource item;
   final double coverHeight;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-    final repo = ref.watch(astroBoxRepositoryProvider);
-    final coverUrl = repo.resolveImageUrl(item, item.cover);
-
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme;
+    final image = item.coverUrl ?? item.iconUrl;
     return Card(
       margin: EdgeInsets.zero,
-      elevation: 0,
-      color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(StyleConstants.cardRadius),
-      ),
       clipBehavior: Clip.antiAlias,
+      color: color.surfaceContainerHighest.withValues(alpha: .5),
       child: InkWell(
-        onTap: () => context.push('/resources/detail/${item.id}', extra: item),
+        onTap: () =>
+            context.push('/resources/detail/${item.ref.id}', extra: item),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             NetworkImgLayer(
-              src: coverUrl,
+              src: image?.toString() ?? '',
               width: double.infinity,
               height: coverHeight,
             ),
@@ -727,24 +835,40 @@ class _ResourceCard extends ConsumerWidget {
                     item.name,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: textTheme.titleSmall?.copyWith(
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w600,
                       height: 1.25,
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  Row(
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
                     children: [
-                      _ResourceTypeBadge(type: item.type),
-                      const SizedBox(width: 6),
-                      if (item.paidType != AstroBoxPaidType.free)
-                        _PaidBadge(paidType: item.paidType),
-                      const Spacer(),
-                      Icon(
-                        Icons.chevron_right,
-                        size: 18,
-                        color: colorScheme.outline,
+                      _ResourceLabel(
+                        label: _typeLabel(
+                          AppLocalizations.of(context)!,
+                          item.type,
+                        ),
+                        color: color.primary,
                       ),
+                      if (item.paidType != CommunityPaidType.free)
+                        _ResourceLabel(
+                          label: _paidLabel(
+                            AppLocalizations.of(context)!,
+                            item.paidType,
+                          ),
+                          color: color.tertiary,
+                        ),
+                      if (item.ref.source == CommunitySourceId.bandbbs)
+                        ...item.tags
+                            .take(1)
+                            .map(
+                              (tag) => _ResourceLabel(
+                                label: tag,
+                                color: color.onSurfaceVariant,
+                              ),
+                            ),
                     ],
                   ),
                 ],
@@ -757,45 +881,8 @@ class _ResourceCard extends ConsumerWidget {
   }
 }
 
-class _ResourceTypeBadge extends StatelessWidget {
-  const _ResourceTypeBadge({required this.type});
-
-  final AstroBoxResourceType type;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
-    final colorScheme = Theme.of(context).colorScheme;
-    final label = switch (type) {
-      AstroBoxResourceType.quickApp => l10n.quickApp,
-      AstroBoxResourceType.watchface => l10n.watchface,
-      AstroBoxResourceType.firmware => l10n.firmwareTool,
-      AstroBoxResourceType.fontpack => l10n.fontPack,
-      AstroBoxResourceType.iconpack => l10n.iconPack,
-    };
-    return _Badge(label: label, color: colorScheme.primary);
-  }
-}
-
-class _PaidBadge extends StatelessWidget {
-  const _PaidBadge({required this.paidType});
-
-  final AstroBoxPaidType paidType;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
-    final label = switch (paidType) {
-      AstroBoxPaidType.free => l10n.free,
-      AstroBoxPaidType.paid => l10n.paid,
-      AstroBoxPaidType.forcePaid => l10n.forcePaid,
-    };
-    return _Badge(label: label, color: Colors.orange);
-  }
-}
-
-class _Badge extends StatelessWidget {
-  const _Badge({required this.label, required this.color});
+class _ResourceLabel extends StatelessWidget {
+  const _ResourceLabel({required this.label, required this.color});
 
   final String label;
   final Color color;
@@ -810,6 +897,8 @@ class _Badge extends StatelessWidget {
       ),
       child: Text(
         label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(
           color: color,
           fontSize: 11,
@@ -819,3 +908,10 @@ class _Badge extends StatelessWidget {
     );
   }
 }
+
+String _paidLabel(AppLocalizations l10n, CommunityPaidType type) =>
+    switch (type) {
+      CommunityPaidType.free => l10n.free,
+      CommunityPaidType.paid => l10n.paid,
+      CommunityPaidType.forcePaid => l10n.forcePaid,
+    };

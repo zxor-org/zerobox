@@ -111,7 +111,9 @@ class CardButtonGroup extends StatelessWidget {
     final divider = Divider(
       height: 1,
       indent: 56,
-      color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.5),
+      color: Theme.of(
+        context,
+      ).colorScheme.outlineVariant.withValues(alpha: 0.5),
     );
     for (var i = 1; i < children.length; i++) {
       result.add(divider);

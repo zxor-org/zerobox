@@ -2,7 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zerobox/src/app/layout/app_scaffold.dart';
 import 'package:zerobox/src/app/widgets/dialog_helper.dart';
-import 'package:zerobox/src/data/astrobox/models/astrobox_models.dart';
+import 'package:zerobox/src/features/resources/application/resource_catalog_providers.dart';
+import 'package:zerobox/src/features/resources/domain/community_resource.dart';
 import 'package:zerobox/src/features/devices/pages/apps/device_apps_page.dart';
 import 'package:zerobox/src/features/devices/pages/devices_page.dart';
 import 'package:zerobox/src/features/devices/pages/info/device_info_page.dart';
@@ -19,6 +20,7 @@ import 'package:zerobox/src/features/resources/pages/resources_page.dart';
 import 'package:zerobox/src/features/settings/pages/acknowledgements_page.dart';
 import 'package:zerobox/src/features/settings/pages/about_software_page.dart';
 import 'package:zerobox/src/features/settings/pages/settings_page.dart';
+import 'package:zerobox/src/features/settings/pages/bandbbs_account_page.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
@@ -56,21 +58,21 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'detail/:id',
                     builder: (context, state) {
-                      final item = state.extra as AstroBoxIndexItem?;
-                      if (item != null) {
-                        return ResourceDetailPage(item: item);
+                      final resource = state.extra as CommunityResource?;
+                      if (resource != null) {
+                        return ResourceDetailPage(resource: resource);
                       }
                       return ResourceDetailPage(
-                        item: AstroBoxIndexItem(
-                          id: state.pathParameters['id']!,
+                        resource: CommunityResource(
+                          ref: ResourceRef(
+                            source: ref.read(selectedCommunitySourceProvider),
+                            id: state.pathParameters['id']!,
+                          ),
                           name: 'Unknown',
-                          type: AstroBoxResourceType.quickApp,
-                          repoOwner: '',
-                          repoName: '',
-                          repoCommitHash: '',
-                          icon: '',
-                          cover: '',
-                          paidType: AstroBoxPaidType.free,
+                          type: CommunityResourceType.quickApp,
+                          paidType: CommunityPaidType.free,
+                          authors: const [],
+                          supportedDevices: const {},
                         ),
                       );
                     },
@@ -143,6 +145,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'about',
                     builder: (context, state) => const AboutSoftwarePage(),
+                  ),
+                  GoRoute(
+                    path: 'bandbbs',
+                    builder: (context, state) => const BandBbsAccountPage(),
                   ),
                   GoRoute(
                     path: 'team',

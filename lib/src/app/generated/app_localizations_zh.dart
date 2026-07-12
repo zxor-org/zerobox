@@ -90,6 +90,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get firmwareTools => '固件 / 工具';
 
   @override
+  String get resourceTypeFontpack => '字体包';
+
+  @override
+  String get resourceTypeIconpack => '图标包';
+
+  @override
   String get localResources => '本地资源';
 
   @override
@@ -281,6 +287,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get devices => '设备';
+
+  @override
+  String get categories => '分区';
 
   @override
   String get advanced => '高级';
@@ -620,7 +629,45 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsAccountLoginBBSDesc => '登录以同步已购资源';
 
   @override
+  String get settingsAccountBandBbsSigningIn => '正在登录';
+
+  @override
+  String get settingsAccountBandBbsOpenedBrowser => '已打开浏览器，请完成 BandBBS 授权';
+
+  @override
+  String get settingsAccountBandBbsSignedIn => 'BandBBS 登录成功';
+
+  @override
+  String get settingsAccountBandBbsLoginFailed => 'BandBBS 登录失败';
+
+  @override
+  String settingsAccountBandBbsUser(Object userId) {
+    return '用户 ID：$userId';
+  }
+
+  @override
   String get settingsAccountBBSAccount => 'BandBBS 账号';
+
+  @override
+  String get bandBbsAccountTitle => 'BandBBS 账号';
+
+  @override
+  String get bandBbsPurchasedResources => '已购资源';
+
+  @override
+  String get bandBbsResourceId => '资源 ID';
+
+  @override
+  String get bandBbsResourceIdHint => '输入米坛资源 ID';
+
+  @override
+  String get bandBbsQueryResource => '查询';
+
+  @override
+  String get bandBbsOpenResource => '在米坛查看';
+
+  @override
+  String get bandBbsLogout => '退出登录';
 
   @override
   String get settingsAccountSyncDevices => '同步设备';
@@ -800,6 +847,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsTapToSignIn => '点击登录';
+
+  @override
+  String get settingsConnected => '已连接';
 
   @override
   String get settingsNotConnected => '未连接';
@@ -1031,4 +1081,14 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get installQueueUnsupportedFile => '不支持的文件';
+
+  @override
+  String timeTodayAt(Object time) {
+    return '今天 $time';
+  }
+
+  @override
+  String timeYesterdayAt(Object time) {
+    return '昨天 $time';
+  }
 }

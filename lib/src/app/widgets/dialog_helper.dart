@@ -85,7 +85,9 @@ class ZeroBoxDialog {
         builder: (_) => Center(
           child: Card(
             elevation: 8,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             child: Padding(
               padding: const EdgeInsets.all(24),
               child: Column(
@@ -93,7 +95,10 @@ class ZeroBoxDialog {
                 children: [
                   const CircularProgressIndicator(),
                   const SizedBox(height: 16),
-                  Text(msg ?? 'Loading...', style: const TextStyle(fontSize: 16)),
+                  Text(
+                    msg ?? 'Loading...',
+                    style: const TextStyle(fontSize: 16),
+                  ),
                 ],
               ),
             ),
@@ -142,7 +147,8 @@ class ZeroBoxDialogObserver extends NavigatorObserver {
 
   BuildContext? get currentContext => _currentContext;
   BuildContext? get scaffoldContext => _scaffoldContext ?? _currentContext;
-  BuildContext? get rootContext => _rootContext ?? _scaffoldContext ?? _currentContext;
+  BuildContext? get rootContext =>
+      _rootContext ?? _scaffoldContext ?? _currentContext;
   bool get hasDialog => _dialogRoutes.isNotEmpty;
   BuildContext? get dialogContext =>
       _dialogRoutes.isNotEmpty ? _dialogRoutes.last.navigator?.context : null;

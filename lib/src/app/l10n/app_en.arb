@@ -27,6 +27,8 @@
   "watchfaces": "Watchfaces",
   "quickApps": "Quick apps",
   "firmwareTools": "Firmware / Tools",
+  "resourceTypeFontpack": "Font pack",
+  "resourceTypeIconpack": "Icon pack",
   "localResources": "Local resources",
   "zeroBox": "ZeroBox",
   "bandbbs": "BandBBS",
@@ -94,6 +96,7 @@
   "appearance": "Appearance",
   "resources": "Resources",
   "devices": "Devices",
+  "categories": "Categories",
   "advanced": "Advanced",
   "aboutZeroBox": "About ZeroBox",
   "openSourceLicenses": "Open source licenses",
@@ -205,7 +208,24 @@
   "settingsAbout": "About",
   "settingsAccountLoginBBS": "Login to BandBBS",
   "settingsAccountLoginBBSDesc": "Sign in to sync purchased resources",
+  "settingsAccountBandBbsSigningIn": "Signing in",
+  "settingsAccountBandBbsOpenedBrowser": "Browser opened. Complete BandBBS authorization there",
+  "settingsAccountBandBbsSignedIn": "BandBBS signed in",
+  "settingsAccountBandBbsLoginFailed": "BandBBS sign-in failed",
+  "settingsAccountBandBbsUser": "User ID: {userId}",
+  "@settingsAccountBandBbsUser": {
+    "placeholders": {
+      "userId": {}
+    }
+  },
   "settingsAccountBBSAccount": "BandBBS account",
+  "bandBbsAccountTitle": "BandBBS account",
+  "bandBbsPurchasedResources": "Purchased resources",
+  "bandBbsResourceId": "Resource ID",
+  "bandBbsResourceIdHint": "Enter BandBBS resource ID",
+  "bandBbsQueryResource": "Query",
+  "bandBbsOpenResource": "View on BandBBS",
+  "bandBbsLogout": "Sign out",
   "settingsAccountSyncDevices": "Sync devices",
   "settingsAccountSyncDevicesDesc": "Log in to Mi Account to sync paired devices",
   "settingsMiAccount": "Mi Account",
@@ -272,6 +292,7 @@
   "settingsAboutLicencesDesc": "Licenses for Flutter, dependencies and open source components",
   "settingsGuest": "Guest",
   "settingsTapToSignIn": "Tap to sign in",
+  "settingsConnected": "Connected",
   "settingsNotConnected": "Not connected",
   "settingsNotSet": "Not set",
   "settingsOn": "On",
@@ -366,5 +387,17 @@
     }
   },
   "installQueueReadFailed": "Read failed",
-  "installQueueUnsupportedFile": "Unsupported file"
+  "installQueueUnsupportedFile": "Unsupported file",
+  "timeTodayAt": "Today {time}",
+  "@timeTodayAt": {
+    "placeholders": {
+      "time": {}
+    }
+  },
+  "timeYesterdayAt": "Yesterday {time}",
+  "@timeYesterdayAt": {
+    "placeholders": {
+      "time": {}
+    }
+  }
 }

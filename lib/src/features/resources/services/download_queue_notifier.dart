@@ -1,9 +1,7 @@
-import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:zerobox/src/core/network/dio_provider.dart';
-import 'package:zerobox/src/data/astrobox/astrobox_providers.dart';
-import 'package:zerobox/src/data/astrobox/models/astrobox_models.dart';
+import 'package:zerobox/src/features/resources/application/resource_catalog_providers.dart';
+import 'package:zerobox/src/features/resources/domain/community_resource.dart';
 import 'package:zerobox/src/features/resources/services/install_queue_notifier.dart';
 import 'package:zerobox/src/features/resources/services/resource_install_service.dart';
 
@@ -13,9 +11,8 @@ export 'package:zerobox/src/features/resources/services/resource_install_service
 class ResourceTask {
   const ResourceTask({
     required this.id,
-    required this.item,
-    required this.manifest,
-    required this.download,
+    required this.resource,
+    required this.file,
     required this.codename,
     this.status = ResourceTaskStatus.pending,
     this.progress = 0,
@@ -23,113 +20,83 @@ class ResourceTask {
   });
 
   final String id;
-  final AstroBoxIndexItem item;
-  final AstroBoxManifest manifest;
-  final AstroBoxManifestDownload download;
+  final CommunityResourceDetail resource;
+  final CommunityResourceFile file;
   final String codename;
   final ResourceTaskStatus status;
   final double progress;
   final String? error;
 
-  String get title => item.name;
-  String get subtitle =>
-      '${manifest.item.author.firstOrNull?.name ?? item.repoOwner} · $codename';
+  String get title => resource.name;
+  String get subtitle => '${resource.authorName} · $codename';
 
   ResourceTask copyWith({
     ResourceTaskStatus? status,
     double? progress,
     String? error,
-  }) {
-    return ResourceTask(
-      id: id,
-      item: item,
-      manifest: manifest,
-      download: download,
-      codename: codename,
-      status: status ?? this.status,
-      progress: progress ?? this.progress,
-      error: error ?? this.error,
-    );
-  }
+  }) => ResourceTask(
+    id: id,
+    resource: resource,
+    file: file,
+    codename: codename,
+    status: status ?? this.status,
+    progress: progress ?? this.progress,
+    error: error ?? this.error,
+  );
 }
 
 class DownloadQueueNotifier extends Notifier<List<ResourceTask>> {
-  @override
-  List<ResourceTask> build() => [];
-
   CancelToken? _cancelToken;
 
-  ResourceTask? get runningTask => state.cast<ResourceTask?>().firstWhere(
-    (t) =>
-        t?.status == ResourceTaskStatus.downloading ||
-        t?.status == ResourceTaskStatus.installing,
-    orElse: () => null,
-  );
+  @override
+  List<ResourceTask> build() => const [];
 
-  List<ResourceTask> get pendingTasks =>
-      state.where((t) => t.status == ResourceTaskStatus.pending).toList();
-
-  List<ResourceTask> get activeOrPendingTasks =>
-      state.where((t) => t.status != ResourceTaskStatus.completed).toList();
-
-  bool get isBusy => runningTask != null;
+  ResourceTask? get runningTask => state
+      .where(
+        (task) =>
+            task.status == ResourceTaskStatus.downloading ||
+            task.status == ResourceTaskStatus.installing,
+      )
+      .firstOrNull;
 
   void enqueue({
-    required AstroBoxIndexItem item,
-    required AstroBoxManifest manifest,
-    required AstroBoxManifestDownload download,
+    required CommunityResourceDetail resource,
+    required CommunityResourceFile file,
     required String codename,
   }) {
-    final taskId = '${item.id}_$codename';
+    final id = '${resource.ref.key}:${file.id}:$codename';
     if (state.any(
-      (t) => t.id == taskId && t.status != ResourceTaskStatus.completed,
+      (task) => task.id == id && task.status != ResourceTaskStatus.completed,
     )) {
       return;
     }
-
-    final task = ResourceTask(
-      id: taskId,
-      item: item,
-      manifest: manifest,
-      download: download,
-      codename: codename,
-    );
-    state = [...state, task];
-    _tryStartNext();
+    state = [
+      ...state,
+      ResourceTask(id: id, resource: resource, file: file, codename: codename),
+    ];
+    _startNext();
   }
 
-  void remove(String taskId) {
-    final task = state.firstWhere(
-      (t) => t.id == taskId,
-      orElse: () => _dummyTask,
-    );
-    if (task == _dummyTask) return;
-
-    if (task.status == ResourceTaskStatus.downloading ||
-        task.status == ResourceTaskStatus.installing) {
-      _cancelCurrent();
-    }
-
-    state = state.where((t) => t.id != taskId).toList();
-    _tryStartNext();
+  void remove(String id) {
+    final task = state.where((task) => task.id == id).firstOrNull;
+    if (task == null) return;
+    if (task == runningTask) _cancelToken?.cancel('Removed from queue');
+    state = state.where((entry) => entry.id != id).toList();
+    _startNext();
   }
 
-  void clearCompleted() {
-    state = state
-        .where((t) => t.status != ResourceTaskStatus.completed)
-        .toList();
-  }
+  void clearTerminal() => state = state
+      .where(
+        (task) =>
+            task.status != ResourceTaskStatus.completed &&
+            task.status != ResourceTaskStatus.failed,
+      )
+      .toList();
 
-  void clear() {
-    _cancelToken?.cancel('queue cleared');
-    _cancelToken = null;
-    state = [];
-  }
-
-  void retry(String taskId) {
+  void retry(String id) {
     state = [
       for (final task in state)
-        if (task.id == taskId)
+        if (task.id == id)
           task.copyWith(
             status: ResourceTaskStatus.pending,
             progress: 0,
@@ -138,127 +105,68 @@ class DownloadQueueNotifier extends Notifier<List<ResourceTask>> {
         else
           task,
     ];
-    _tryStartNext();
+    _startNext();
   }
 
-  void _tryStartNext() {
-    if (isBusy) return;
-
-    final next = state.firstWhere(
-      (t) => t.status == ResourceTaskStatus.pending,
-      orElse: () => _dummyTask,
-    );
-    if (next == _dummyTask) return;
-
-    _runTask(next);
+  void _startNext() {
+    if (runningTask != null) return;
+    final next = state
+        .where((task) => task.status == ResourceTaskStatus.pending)
+        .firstOrNull;
+    if (next != null) _run(next);
   }
 
-  Future<void> _runTask(ResourceTask task) async {
+  Future<void> _run(ResourceTask task) async {
     _cancelToken = CancelToken();
-
-    state = [
-      for (final t in state)
-        if (t.id == task.id)
-          t.copyWith(status: ResourceTaskStatus.downloading, progress: 0)
-        else
-          t,
-    ];
-
-    final service = ResourceInstallService(
-      dio: ref.read(appDioProvider),
-      cancelToken: _cancelToken,
-    );
-    final repo = ref.read(astroBoxRepositoryProvider);
-
-    final downloaded = await service.downloadResource(
-      item: task.item,
-      download: task.download,
-      repo: repo,
-      onUpdate: (status, progress, error) {
-        _updateTask(task.id, status, progress, error);
-      },
-    );
-    if (downloaded != null) {
-      ref
-          .read(installQueueProvider.notifier)
-          .enqueueResource(
-            item: task.item,
-            manifest: task.manifest,
-            download: task.download,
-            codename: task.codename,
-            filePath: downloaded.path,
-            bytes: downloaded.bytes,
-          );
-      state = state.where((t) => t.id != task.id).toList();
+    _update(task.id, ResourceTaskStatus.downloading, 0, null);
+    try {
+      final catalog = ref.read(
+        communityCatalogProviderForSource(task.resource.ref.source),
+      );
+      final downloaded = await ResourceInstallService().downloadResource(
+        resource: task.resource,
+        file: task.file,
+        catalog: catalog,
+        targetDevice: task.codename,
+        onUpdate: (status, progress, error) =>
+            _update(task.id, status, progress, error),
+      );
+      if (downloaded != null) {
+        // A removed task may finish after its source request has completed.
+        // Do not let that stale result create an install task.
+        if (!state.any((entry) => entry.id == task.id)) return;
+        ref
+            .read(installQueueProvider.notifier)
+            .enqueueResource(
+              resource: task.resource,
+              file: task.file,
+              codename: task.codename,
+              filePath: downloaded.path,
+              bytes: downloaded.bytes,
+            );
+        state = state.where((entry) => entry.id != task.id).toList();
+      }
+    } finally {
+      _cancelToken = null;
+      _startNext();
     }
-
-    _cancelToken = null;
-    _tryStartNext();
   }
 
-  void _updateTask(
-    String taskId,
+  void _update(
+    String id,
     ResourceTaskStatus status,
     double progress,
     String? error,
   ) {
-    final current = state.cast<ResourceTask?>().firstWhere(
-      (task) => task?.id == taskId,
-      orElse: () => null,
-    );
-    if (current == null) return;
-    final currentIsTerminal =
-        current.status == ResourceTaskStatus.failed ||
-        current.status == ResourceTaskStatus.completed;
-    final nextIsTerminal =
-        status == ResourceTaskStatus.failed ||
-        status == ResourceTaskStatus.completed;
-    if (currentIsTerminal && !nextIsTerminal) {
-      return;
-    }
-
     state = [
-      for (final t in state)
-        if (t.id == taskId)
-          t.copyWith(status: status, progress: progress, error: error)
+      for (final task in state)
+        if (task.id == id)
+          task.copyWith(status: status, progress: progress, error: error)
         else
-          t,
+          task,
     ];
   }
-
-  void _cancelCurrent() {
-    _cancelToken?.cancel('removed from queue');
-    _cancelToken = null;
-  }
 }
-
-const _dummyTask = ResourceTask(
-  id: '',
-  item: AstroBoxIndexItem(
-    id: '',
-    name: '',
-    type: AstroBoxResourceType.quickApp,
-    repoOwner: '',
-    repoName: '',
-    repoCommitHash: '',
-    icon: '',
-    cover: '',
-    paidType: AstroBoxPaidType.free,
-  ),
-  manifest: AstroBoxManifest(
-    item: AstroBoxManifestItem(
-      id: '',
-      restype: AstroBoxResourceType.quickApp,
-      name: '',
-      description: '',
-      icon: '',
-      cover: '',
-      author: [],
-    ),
-  ),
-  download: AstroBoxManifestDownload(version: '', fileName: ''),
-  codename: '',
-);
 
 final downloadQueueProvider =
     NotifierProvider<DownloadQueueNotifier, List<ResourceTask>>(

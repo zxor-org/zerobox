@@ -13,4 +13,3 @@ abstract final class StyleConstants {
   static const Radius imgRadius = Radius.circular(12);
   static const double aspectRatio = 16 / 10;
 }
-

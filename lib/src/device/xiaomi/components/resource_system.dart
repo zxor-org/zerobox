@@ -42,7 +42,10 @@ class XiaomiResourceSystem extends XiaomiPbSystem {
 
     if (packet.whichPayload() == pb.WearPacket_Payload.thirdpartyApp &&
         packet.id ==
-            pb_thirdparty.ThirdpartyApp_ThirdpartyAppID.GET_INSTALLED_LIST.value) {
+            pb_thirdparty
+                .ThirdpartyApp_ThirdpartyAppID
+                .GET_INSTALLED_LIST
+                .value) {
       final list = packet.thirdpartyApp.appItemList.list;
       _fulfillAll(_quickAppWaiters, list);
       return;

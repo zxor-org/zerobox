@@ -1,7 +1,4 @@
-enum DeviceKind {
-  xiaomi,
-  zepp,
-}
+enum DeviceKind { xiaomi, zepp }
 
 String deviceKindLabel(DeviceKind kind) {
   return switch (kind) {
