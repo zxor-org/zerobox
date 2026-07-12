@@ -286,6 +286,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get resources => '资源';
 
   @override
+  String get communitySourceAstroBoxRepo => 'AstroBox Repo';
+
+  @override
+  String get communitySourceBandBbs => '米坛社区';
+
+  @override
+  String get communitySourceHuamiAppStore => '华米应用商店';
+
+  @override
   String get devices => '设备';
 
   @override
@@ -528,10 +537,52 @@ class AppLocalizationsZh extends AppLocalizations {
   String get close => '关闭';
 
   @override
+  String get desktopTrayShow => '显示窗口';
+
+  @override
+  String get desktopTrayExit => '退出 ZeroBox';
+
+  @override
+  String get desktopCloseTitle => '退出确认';
+
+  @override
+  String get desktopCloseMessage => '您想要退出 ZeroBox 吗？';
+
+  @override
+  String get desktopCloseRemember => '下次不再询问';
+
+  @override
+  String get desktopCloseToTray => '最小化到托盘';
+
+  @override
+  String get desktopCloseExit => '退出 ZeroBox';
+
+  @override
+  String get settingsDesktopCloseBehavior => '关闭按钮行为';
+
+  @override
+  String get settingsDesktopCloseBehaviorDesc => '选择关闭主窗口时执行的操作';
+
+  @override
+  String get desktopCloseBehaviorAsk => '每次询问';
+
+  @override
+  String get desktopCloseBehaviorExit => '退出';
+
+  @override
+  String get desktopCloseBehaviorTray => '最小化到托盘';
+
+  @override
   String get multiDevice => '多设备';
 
   @override
   String get quickApp => '快应用';
+
+  @override
+  String get miniprogram => '小程序';
+
+  @override
+  String get miniprograms => '小程序';
 
   @override
   String get watchface => '表盘';
@@ -762,6 +813,16 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsHuamiAccountRequired => '请先在设置中登录华米账号';
+
+  @override
+  String get unsupportedDeviceResourceTitle => '尚未支持的设备/资源类型';
+
+  @override
+  String get unsupportedDeviceResourceMessage =>
+      'ZeroBox 暂不支持此设备或资源类型，请勿尝试安装该分区中的资源，以免出现不可预期的问题。';
+
+  @override
+  String get understood => '我知道了';
 
   @override
   String get settingsGeneralLanguage => '语言';

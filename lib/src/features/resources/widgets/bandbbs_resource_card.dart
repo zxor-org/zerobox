@@ -287,7 +287,7 @@ String _typeLabel(
 }) => switch (type) {
   CommunityResourceType.quickApp =>
     source == CommunitySourceId.huamiAppStore
-        ? '\u5c0f\u7a0b\u5e8f'
+        ? l10n.miniprogram
         : l10n.quickApp,
   CommunityResourceType.watchface => l10n.watchface,
   CommunityResourceType.firmware => l10n.firmwareTool,

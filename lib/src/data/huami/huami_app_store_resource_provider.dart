@@ -259,7 +259,7 @@ class HuamiAppStoreCatalog implements CommunityResourceCatalog {
       coverUrl: _uri(row['image']),
       summary: row['brief_description']?.toString().trim() ?? '',
       updatedAt: _dateFromUnix(row['updated_at']),
-      tags: ['Zepp AppStore', deviceSource.toString()],
+      tags: const [],
       version: version,
     );
   }

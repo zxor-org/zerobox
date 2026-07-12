@@ -245,13 +245,13 @@ abstract class AppLocalizations {
   /// No description provided for @watchfaces.
   ///
   /// In en, this message translates to:
-  /// **'Watchfaces'**
+  /// **'Watchface'**
   String get watchfaces;
 
   /// No description provided for @quickApps.
   ///
   /// In en, this message translates to:
-  /// **'Quick apps'**
+  /// **'Quickapps'**
   String get quickApps;
 
   /// No description provided for @firmwareTools.
@@ -637,6 +637,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Resources'**
   String get resources;
+
+  /// No description provided for @communitySourceAstroBoxRepo.
+  ///
+  /// In en, this message translates to:
+  /// **'AstroBox Repo'**
+  String get communitySourceAstroBoxRepo;
+
+  /// No description provided for @communitySourceBandBbs.
+  ///
+  /// In en, this message translates to:
+  /// **'BandBBS Community'**
+  String get communitySourceBandBbs;
+
+  /// No description provided for @communitySourceHuamiAppStore.
+  ///
+  /// In en, this message translates to:
+  /// **'Amazfit App Store'**
+  String get communitySourceHuamiAppStore;
 
   /// No description provided for @devices.
   ///
@@ -1118,6 +1136,78 @@ abstract class AppLocalizations {
   /// **'Close'**
   String get close;
 
+  /// No description provided for @desktopTrayShow.
+  ///
+  /// In en, this message translates to:
+  /// **'Show window'**
+  String get desktopTrayShow;
+
+  /// No description provided for @desktopTrayExit.
+  ///
+  /// In en, this message translates to:
+  /// **'Exit ZeroBox'**
+  String get desktopTrayExit;
+
+  /// No description provided for @desktopCloseTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Exit confirmation'**
+  String get desktopCloseTitle;
+
+  /// No description provided for @desktopCloseMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Would you like to exit ZeroBox?'**
+  String get desktopCloseMessage;
+
+  /// No description provided for @desktopCloseRemember.
+  ///
+  /// In en, this message translates to:
+  /// **'Do not ask again'**
+  String get desktopCloseRemember;
+
+  /// No description provided for @desktopCloseToTray.
+  ///
+  /// In en, this message translates to:
+  /// **'Minimize to tray'**
+  String get desktopCloseToTray;
+
+  /// No description provided for @desktopCloseExit.
+  ///
+  /// In en, this message translates to:
+  /// **'Exit ZeroBox'**
+  String get desktopCloseExit;
+
+  /// No description provided for @settingsDesktopCloseBehavior.
+  ///
+  /// In en, this message translates to:
+  /// **'Close button behavior'**
+  String get settingsDesktopCloseBehavior;
+
+  /// No description provided for @settingsDesktopCloseBehaviorDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose what happens when the main window is closed'**
+  String get settingsDesktopCloseBehaviorDesc;
+
+  /// No description provided for @desktopCloseBehaviorAsk.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask every time'**
+  String get desktopCloseBehaviorAsk;
+
+  /// No description provided for @desktopCloseBehaviorExit.
+  ///
+  /// In en, this message translates to:
+  /// **'Exit'**
+  String get desktopCloseBehaviorExit;
+
+  /// No description provided for @desktopCloseBehaviorTray.
+  ///
+  /// In en, this message translates to:
+  /// **'Minimize to tray'**
+  String get desktopCloseBehaviorTray;
+
   /// No description provided for @multiDevice.
   ///
   /// In en, this message translates to:
@@ -1127,8 +1217,20 @@ abstract class AppLocalizations {
   /// No description provided for @quickApp.
   ///
   /// In en, this message translates to:
-  /// **'Quick App'**
+  /// **'Quickapp'**
   String get quickApp;
+
+  /// No description provided for @miniprogram.
+  ///
+  /// In en, this message translates to:
+  /// **'Miniprogram'**
+  String get miniprogram;
+
+  /// No description provided for @miniprograms.
+  ///
+  /// In en, this message translates to:
+  /// **'Miniprograms'**
+  String get miniprograms;
 
   /// No description provided for @watchface.
   ///
@@ -1505,7 +1607,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsHuamiAccount.
   ///
   /// In en, this message translates to:
-  /// **'Huami account'**
+  /// **'Amazfit account'**
   String get settingsHuamiAccount;
 
   /// No description provided for @settingsHuamiAccountDesc.
@@ -1523,7 +1625,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsHuamiAccountSignedIn.
   ///
   /// In en, this message translates to:
-  /// **'Huami account signed in'**
+  /// **'Amazfit account signed in'**
   String get settingsHuamiAccountSignedIn;
 
   /// No description provided for @settingsHuamiAccountUser.
@@ -1535,7 +1637,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsHuamiAccountLoginTitle.
   ///
   /// In en, this message translates to:
-  /// **'Huami account login'**
+  /// **'Amazfit account login'**
   String get settingsHuamiAccountLoginTitle;
 
   /// No description provided for @settingsHuamiAccountUsername.
@@ -1565,14 +1667,32 @@ abstract class AppLocalizations {
   /// No description provided for @settingsHuamiAccountMissingCredentials.
   ///
   /// In en, this message translates to:
-  /// **'Enter your Huami account and password'**
+  /// **'Enter your Amazfit account and password'**
   String get settingsHuamiAccountMissingCredentials;
 
   /// No description provided for @settingsHuamiAccountRequired.
   ///
   /// In en, this message translates to:
-  /// **'Sign in to your Huami account in Settings first'**
+  /// **'Sign in to your Amazfit account in Settings first'**
   String get settingsHuamiAccountRequired;
+
+  /// No description provided for @unsupportedDeviceResourceTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Unsupported device/resource type'**
+  String get unsupportedDeviceResourceTitle;
+
+  /// No description provided for @unsupportedDeviceResourceMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'ZeroBox does not currently support this device or resource type. Do not attempt to install resources from this category, as unexpected issues may occur.'**
+  String get unsupportedDeviceResourceMessage;
+
+  /// No description provided for @understood.
+  ///
+  /// In en, this message translates to:
+  /// **'I understand'**
+  String get understood;
 
   /// No description provided for @settingsGeneralLanguage.
   ///

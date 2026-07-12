@@ -81,10 +81,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get all => 'All';
 
   @override
-  String get watchfaces => 'Watchfaces';
+  String get watchfaces => 'Watchface';
 
   @override
-  String get quickApps => 'Quick apps';
+  String get quickApps => 'Quickapps';
 
   @override
   String get firmwareTools => 'Firmware / Tools';
@@ -290,6 +290,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get resources => 'Resources';
+
+  @override
+  String get communitySourceAstroBoxRepo => 'AstroBox Repo';
+
+  @override
+  String get communitySourceBandBbs => 'BandBBS Community';
+
+  @override
+  String get communitySourceHuamiAppStore => 'Amazfit App Store';
 
   @override
   String get devices => 'Devices';
@@ -541,10 +550,53 @@ class AppLocalizationsEn extends AppLocalizations {
   String get close => 'Close';
 
   @override
+  String get desktopTrayShow => 'Show window';
+
+  @override
+  String get desktopTrayExit => 'Exit ZeroBox';
+
+  @override
+  String get desktopCloseTitle => 'Exit confirmation';
+
+  @override
+  String get desktopCloseMessage => 'Would you like to exit ZeroBox?';
+
+  @override
+  String get desktopCloseRemember => 'Do not ask again';
+
+  @override
+  String get desktopCloseToTray => 'Minimize to tray';
+
+  @override
+  String get desktopCloseExit => 'Exit ZeroBox';
+
+  @override
+  String get settingsDesktopCloseBehavior => 'Close button behavior';
+
+  @override
+  String get settingsDesktopCloseBehaviorDesc =>
+      'Choose what happens when the main window is closed';
+
+  @override
+  String get desktopCloseBehaviorAsk => 'Ask every time';
+
+  @override
+  String get desktopCloseBehaviorExit => 'Exit';
+
+  @override
+  String get desktopCloseBehaviorTray => 'Minimize to tray';
+
+  @override
   String get multiDevice => 'Multi-device';
 
   @override
-  String get quickApp => 'Quick App';
+  String get quickApp => 'Quickapp';
+
+  @override
+  String get miniprogram => 'Miniprogram';
+
+  @override
+  String get miniprograms => 'Miniprograms';
 
   @override
   String get watchface => 'Watchface';
@@ -749,7 +801,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get settingsHuamiAccount => 'Huami account';
+  String get settingsHuamiAccount => 'Amazfit account';
 
   @override
   String get settingsHuamiAccountDesc =>
@@ -759,7 +811,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsHuamiAccountSigningIn => 'Signing in';
 
   @override
-  String get settingsHuamiAccountSignedIn => 'Huami account signed in';
+  String get settingsHuamiAccountSignedIn => 'Amazfit account signed in';
 
   @override
   String settingsHuamiAccountUser(Object username) {
@@ -767,7 +819,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get settingsHuamiAccountLoginTitle => 'Huami account login';
+  String get settingsHuamiAccountLoginTitle => 'Amazfit account login';
 
   @override
   String get settingsHuamiAccountUsername => 'Account';
@@ -783,11 +835,22 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsHuamiAccountMissingCredentials =>
-      'Enter your Huami account and password';
+      'Enter your Amazfit account and password';
 
   @override
   String get settingsHuamiAccountRequired =>
-      'Sign in to your Huami account in Settings first';
+      'Sign in to your Amazfit account in Settings first';
+
+  @override
+  String get unsupportedDeviceResourceTitle =>
+      'Unsupported device/resource type';
+
+  @override
+  String get unsupportedDeviceResourceMessage =>
+      'ZeroBox does not currently support this device or resource type. Do not attempt to install resources from this category, as unexpected issues may occur.';
+
+  @override
+  String get understood => 'I understand';
 
   @override
   String get settingsGeneralLanguage => 'Language';

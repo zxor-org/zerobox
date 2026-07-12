@@ -705,16 +705,16 @@ String _typeLabel(
   AppLocalizations l10n,
   CommunityResourceType type, {
   CommunitySourceId? source,
-}) =>
-    switch (type) {
-      CommunityResourceType.quickApp => source == CommunitySourceId.huamiAppStore
-          ? '\u5c0f\u7a0b\u5e8f'
-          : l10n.quickApp,
-      CommunityResourceType.watchface => l10n.watchface,
-      CommunityResourceType.firmware => l10n.firmwareTool,
-      CommunityResourceType.fontpack => l10n.fontPack,
-      CommunityResourceType.iconpack => l10n.iconPack,
-    };
+}) => switch (type) {
+  CommunityResourceType.quickApp =>
+    source == CommunitySourceId.huamiAppStore
+        ? l10n.miniprogram
+        : l10n.quickApp,
+  CommunityResourceType.watchface => l10n.watchface,
+  CommunityResourceType.firmware => l10n.firmwareTool,
+  CommunityResourceType.fontpack => l10n.fontPack,
+  CommunityResourceType.iconpack => l10n.iconPack,
+};
 String _paidLabel(AppLocalizations l10n, CommunityPaidType type) =>
     switch (type) {
       CommunityPaidType.free => l10n.free,

@@ -65,6 +65,8 @@ dependencies:
   app_links: ^7.2.0
   path_provider: ^2.1.6
   desktop_drop: ^0.7.1
+  window_manager: ^0.5.2
+  tray_manager: ^0.5.3
 
 dev_dependencies:
   flutter_test:

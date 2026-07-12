@@ -18,6 +18,7 @@ import 'package:zerobox/src/features/resources/domain/community_resource.dart';
 import 'package:zerobox/src/features/resources/domain/resource_catalog.dart';
 import 'package:zerobox/src/features/resources/widgets/bandbbs_category_sidebar.dart';
 import 'package:zerobox/src/features/resources/widgets/bandbbs_resource_card.dart';
+import 'package:zerobox/src/features/resources/widgets/unsupported_resource_warning.dart';
 
 class ResourcesPage extends ConsumerWidget {
   const ResourcesPage({super.key});
@@ -529,18 +530,27 @@ class _CommunitySourceMenu extends ConsumerWidget {
                         );
                         return;
                       }
+                      if (candidate == CommunitySourceId.huamiAppStore) {
+                        await showUnsupportedResourceWarning(context, l10n);
+                        if (!context.mounted) return;
+                      }
                       await ref
                           .read(appSettingsProvider.notifier)
                           .setCommunitySource(candidate);
+                      if (candidate != CommunitySourceId.astroboxRepo) {
+                        ref
+                            .read(resourceFiltersProvider.notifier)
+                            .setHideForcePaid(false);
+                      }
                     },
-              child: Text(candidate.displayName),
+              child: Text(_communitySourceLabel(l10n, candidate)),
             ),
           )
           .toList(),
       builder: (_, controller, _) => TextButton.icon(
         onPressed: controller.isOpen ? controller.close : controller.open,
         icon: const Icon(Icons.arrow_drop_down),
-        label: Text(source.displayName),
+        label: Text(_communitySourceLabel(l10n, source)),
       ),
     );
   }
@@ -579,7 +589,7 @@ class _FilterBar extends ConsumerWidget {
     final hasActiveFilters =
         filters.type != null ||
         filters.hidePaid ||
-        filters.hideForcePaid ||
+        (source == CommunitySourceId.astroboxRepo && filters.hideForcePaid) ||
         filters.selectedDevices.isNotEmpty;
 
     return SingleChildScrollView(
@@ -644,7 +654,7 @@ class _FilterBar extends ConsumerWidget {
                     .setHidePaid(false),
               ),
             ),
-          if (filters.hideForcePaid)
+          if (source == CommunitySourceId.astroboxRepo && filters.hideForcePaid)
             Padding(
               padding: const EdgeInsets.only(left: 8),
               child: FilterChip(
@@ -784,9 +794,20 @@ class _FilterSheet extends ConsumerWidget {
                 (option) => FilterChip(
                   label: Text(option.label),
                   selected: option.ids.any(filters.selectedDevices.contains),
-                  onSelected: (_) => ref
-                      .read(resourceFiltersProvider.notifier)
-                      .toggleDeviceGroup(option.ids),
+                  onSelected: (_) async {
+                    final selected = option.ids.any(
+                      filters.selectedDevices.contains,
+                    );
+                    if (!selected &&
+                        source == CommunitySourceId.bandbbs &&
+                        needsUnsupportedResourceWarning(option.label)) {
+                      await showUnsupportedResourceWarning(context, l10n);
+                      if (!context.mounted) return;
+                    }
+                    ref
+                        .read(resourceFiltersProvider.notifier)
+                        .toggleDeviceGroup(option.ids);
+                  },
                 ),
               )
               .toList(),
@@ -808,13 +829,14 @@ class _FilterSheet extends ConsumerWidget {
               onSelected: (value) =>
                   ref.read(resourceFiltersProvider.notifier).setHidePaid(value),
             ),
-            FilterChip(
-              label: Text('${l10n.hide}${l10n.forcePaid}'),
-              selected: filters.hideForcePaid,
-              onSelected: (value) => ref
-                  .read(resourceFiltersProvider.notifier)
-                  .setHideForcePaid(value),
-            ),
+            if (source == CommunitySourceId.astroboxRepo)
+              FilterChip(
+                label: Text('${l10n.hide}${l10n.forcePaid}'),
+                selected: filters.hideForcePaid,
+                onSelected: (value) => ref
+                    .read(resourceFiltersProvider.notifier)
+                    .setHideForcePaid(value),
+              ),
           ],
         ),
       ],
@@ -954,13 +976,20 @@ String _typeLabel(
 }) => switch (type) {
   CommunityResourceType.quickApp =>
     source == CommunitySourceId.huamiAppStore
-        ? '\u5c0f\u7a0b\u5e8f'
+        ? l10n.miniprograms
         : l10n.quickApps,
   CommunityResourceType.watchface => l10n.watchfaces,
   CommunityResourceType.firmware => l10n.firmwareTools,
   CommunityResourceType.fontpack => l10n.fontPack,
   CommunityResourceType.iconpack => l10n.iconPack,
 };
+
+String _communitySourceLabel(AppLocalizations l10n, CommunitySourceId source) =>
+    switch (source) {
+      CommunitySourceId.astroboxRepo => l10n.communitySourceAstroBoxRepo,
+      CommunitySourceId.bandbbs => l10n.communitySourceBandBbs,
+      CommunitySourceId.huamiAppStore => l10n.communitySourceHuamiAppStore,
+    };
 
 class _ResourceGrid extends StatelessWidget {
   const _ResourceGrid({required this.items});

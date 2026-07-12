@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:window_manager/window_manager.dart';
 
 class SysAppBar extends StatelessWidget implements PreferredSizeWidget {
   const SysAppBar({
@@ -21,10 +23,37 @@ class SysAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppBar(
+    final desktop =
+        !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.linux ||
+            defaultTargetPlatform == TargetPlatform.macOS);
+    final customClose =
+        desktop && defaultTargetPlatform != TargetPlatform.macOS;
+    final macOS = desktop && defaultTargetPlatform == TargetPlatform.macOS;
+    final resolvedLeading = macOS
+        ? Row(
+            children: [
+              const SizedBox(width: 72),
+              SizedBox(
+                width: 48,
+                child:
+                    leading ??
+                    (Navigator.canPop(context) ? const BackButton() : null),
+              ),
+            ],
+          )
+        : leading;
+    final appBar = AppBar(
       title: title,
-      leading: leading,
-      actions: actions,
+      leading: resolvedLeading,
+      leadingWidth: macOS ? 120 : null,
+      automaticallyImplyLeading: !macOS,
+      actions: [
+        ...?actions,
+        if (customClose) CloseButton(onPressed: () => windowManager.close()),
+        if (desktop) const SizedBox(width: 4),
+      ],
       bottom: bottom,
       backgroundColor: backgroundColor,
       elevation: elevation,
@@ -38,6 +67,12 @@ class SysAppBar extends StatelessWidget implements PreferredSizeWidget {
         systemNavigationBarColor: Colors.transparent,
         systemNavigationBarDividerColor: Colors.transparent,
       ),
+    );
+    if (!desktop) return appBar;
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onPanStart: (_) => windowManager.startDragging(),
+      child: appBar,
     );
   }
 

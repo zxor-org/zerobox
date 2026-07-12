@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zerobox/src/app/layout/app_scaffold.dart';
@@ -23,8 +24,11 @@ import 'package:zerobox/src/features/settings/pages/about_software_page.dart';
 import 'package:zerobox/src/features/settings/pages/settings_page.dart';
 import 'package:zerobox/src/features/settings/pages/bandbbs_account_page.dart';
 
+final rootNavigatorKey = GlobalKey<NavigatorState>();
+
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
+    navigatorKey: rootNavigatorKey,
     initialLocation: '/resources',
     observers: [ZeroBoxDialog.observer],
     redirect: (context, state) {

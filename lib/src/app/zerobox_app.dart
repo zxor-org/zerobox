@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:zerobox/src/app/router/app_router.dart';
+import 'package:zerobox/src/app/window/desktop_window_host.dart';
 import 'package:zerobox/src/app/theme/app_theme.dart';
 import 'package:zerobox/src/app/theme/system_accent_color.dart';
 import 'package:zerobox/src/app/generated/app_localizations.dart';
@@ -53,8 +54,11 @@ class ZeroBoxApp extends ConsumerWidget {
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: router,
-          builder: (context, child) =>
-              DeviceDeepLinkHandler(child: child ?? const SizedBox.shrink()),
+          builder: (context, child) => DesktopWindowHost(
+            child: DeviceDeepLinkHandler(
+              child: child ?? const SizedBox.shrink(),
+            ),
+          ),
         );
       },
     );

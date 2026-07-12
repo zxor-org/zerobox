@@ -2,11 +2,11 @@ import 'package:card_settings_ui/card_settings_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:zerobox/src/app/generated/app_localizations.dart';
 import 'package:zerobox/src/app/utils/error_localization.dart';
-import 'package:zerobox/src/app/widgets/network_img_layer.dart';
 import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
 import 'package:zerobox/src/core/providers/app_settings_providers.dart';
@@ -22,12 +22,17 @@ import 'package:zerobox/src/features/accounts/services/mi_account_service.dart';
 import 'package:zerobox/src/features/accounts/services/mi_account_two_factor_resolver.dart';
 import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
 
+final _desktopExitBehaviorProvider = Provider<int?>((ref) {
+  return SharedPrefsService.instance.getInt('desktop.exit_behavior');
+});
+
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
 
   static const _keyMiAccountRemember = 'mi_account.remember_credentials';
   static const _keyMiAccountUsername = 'mi_account.username';
   static const _keyMiAccountPassword = 'mi_account.password';
+  static const _keyMiAccountUserId = 'mi_account.user_id';
   static const _keyHuamiAccountRemember = 'huami_account.remember_credentials';
   static const _keyHuamiAccountPassword = 'huami_account.password';
   static const _colorSchemes = <Color>[
@@ -46,6 +51,11 @@ class SettingsPage extends ConsumerWidget {
         !kIsWeb && defaultTargetPlatform == TargetPlatform.linux;
     final showWideNavigationPosition =
         MediaQuery.sizeOf(context).width >= LayoutBreakpoint.medium;
+    final showDesktopWindowSettings =
+        !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.linux ||
+            defaultTargetPlatform == TargetPlatform.macOS);
     final themeSettings = ref.watch(themeSettingsProvider);
 
     return Scaffold(
@@ -63,13 +73,13 @@ class SettingsPage extends ConsumerWidget {
             tiles: [
               SettingsTile.navigation(
                 onPressed: (_) => _showMiAccountLogin(context, ref),
-                leading: const Icon(Icons.account_circle_outlined),
+                leading: const _MiLogo(),
                 title: Text(l10n.settingsMiAccount),
                 description: Text(l10n.settingsMiAccountDesc),
               ),
               SettingsTile.navigation(
                 onPressed: (_) => _showHuamiAccountLogin(context, ref),
-                leading: const Icon(Icons.functions),
+                leading: const _AccountLeading(child: Icon(Icons.functions)),
                 title: Text(l10n.settingsHuamiAccount),
                 description: Consumer(
                   builder: (context, ref, _) {
@@ -80,9 +90,7 @@ class SettingsPage extends ConsumerWidget {
                     if (account.isSignedIn) {
                       return Text(
                         account.username?.isNotEmpty == true
-                            ? l10n.settingsHuamiAccountUser(
-                                account.username!,
-                              )
+                            ? account.username!
                             : l10n.settingsConnected,
                       );
                     }
@@ -115,31 +123,11 @@ class SettingsPage extends ConsumerWidget {
                     _startBandBbsLogin(context, ref);
                   }
                 },
-                leading: Consumer(
-                  builder: (context, ref, _) {
-                    final account = ref.watch(bandBbsAuthProvider);
-                    final avatarUrl = account.avatarUrl;
-                    if (account.isSignedIn && avatarUrl != null) {
-                      return NetworkImgLayer(
-                        src: avatarUrl,
-                        width: 28,
-                        height: 28,
-                        type: 'avatar',
-                      );
-                    }
-                    return const Icon(Icons.badge_outlined);
-                  },
+                leading: _AccountBrandLogo(
+                  asset: 'assets/images/brands/bandbbs.svg',
+                  semanticsLabel: 'BandBBS',
                 ),
-                title: Consumer(
-                  builder: (context, ref, _) {
-                    final account = ref.watch(bandBbsAuthProvider);
-                    final username = account.username;
-                    if (account.isSignedIn && username != null) {
-                      return Text(username);
-                    }
-                    return Text(l10n.settingsAccountLoginBBS);
-                  },
-                ),
+                title: Text(l10n.settingsAccountBandBbsAccount),
                 description: Consumer(
                   builder: (context, ref, _) {
                     final account = ref.watch(bandBbsAuthProvider);
@@ -147,19 +135,14 @@ class SettingsPage extends ConsumerWidget {
                       return Text(l10n.settingsAccountBandBbsSigningIn);
                     }
                     if (account.isSignedIn) {
-                      if (account.username != null) {
-                        final userId = account.userId;
-                        return Text(
-                          userId == null
-                              ? l10n.settingsAccountBandBbsAccount
-                              : '${l10n.settingsAccountBandBbsAccount} · $userId',
-                        );
+                      final username = account.username?.trim() ?? '';
+                      final userId = account.userId?.trim() ?? '';
+                      if (username.isNotEmpty && userId.isNotEmpty) {
+                        return Text('$username · $userId');
                       }
-                      return Text(
-                        account.userId == null
-                            ? l10n.settingsConnected
-                            : l10n.settingsAccountBandBbsUser(account.userId!),
-                      );
+                      if (username.isNotEmpty) return Text(username);
+                      if (userId.isNotEmpty) return Text(userId);
+                      return Text(l10n.settingsConnected);
                     }
                     return Text(l10n.settingsAccountLoginBBSDesc);
                   },
@@ -257,6 +240,20 @@ class SettingsPage extends ConsumerWidget {
                           .wideNavigationRailPosition;
                       return Text(_wideNavigationPositionLabel(l10n, position));
                     },
+                  ),
+                ),
+              if (showDesktopWindowSettings)
+                SettingsTile.navigation(
+                  onPressed: (context) =>
+                      _showDesktopExitBehaviorMenu(context, ref),
+                  leading: const Icon(Icons.close_fullscreen_outlined),
+                  title: Text(l10n.settingsDesktopCloseBehavior),
+                  description: Text(l10n.settingsDesktopCloseBehaviorDesc),
+                  value: Text(
+                    _desktopExitBehaviorLabel(
+                      l10n,
+                      ref.watch(_desktopExitBehaviorProvider),
+                    ),
                   ),
                 ),
               SettingsTile.switchTile(
@@ -446,12 +443,12 @@ class SettingsPage extends ConsumerWidget {
     final l10n = AppLocalizations.of(context)!;
     final prefs = SharedPrefsService.instance;
     var rememberCredentials = prefs.getBool(_keyMiAccountRemember) ?? false;
-    final usernameController = TextEditingController(
-      text: rememberCredentials ? prefs.getString(_keyMiAccountUsername) : null,
-    );
-    final passwordController = TextEditingController(
-      text: rememberCredentials ? prefs.getString(_keyMiAccountPassword) : null,
-    );
+    var username = rememberCredentials
+        ? prefs.getString(_keyMiAccountUsername) ?? ''
+        : '';
+    var password = rememberCredentials
+        ? prefs.getString(_keyMiAccountPassword) ?? ''
+        : '';
     var running = false;
     var obscurePassword = true;
     String? error;
@@ -462,9 +459,8 @@ class SettingsPage extends ConsumerWidget {
         return StatefulBuilder(
           builder: (context, setState) {
             Future<void> submit() async {
-              final username = usernameController.text.trim();
-              final password = passwordController.text;
-              if (username.isEmpty || password.isEmpty) {
+              final normalizedUsername = username.trim();
+              if (normalizedUsername.isEmpty || password.isEmpty) {
                 setState(() {
                   error = l10n.settingsMiAccountMissingCredentials;
                 });
@@ -477,7 +473,7 @@ class SettingsPage extends ConsumerWidget {
               final accountService = ref.read(miAccountServiceProvider);
               try {
                 final token = await accountService.login(
-                  username: username,
+                  username: normalizedUsername,
                   password: password,
                 );
                 final devices = await accountService.fetchBoundDevices(
@@ -488,8 +484,9 @@ class SettingsPage extends ConsumerWidget {
                     .importMiCloudDevices(devices);
                 await _persistMiAccountCredentials(
                   remember: rememberCredentials,
-                  username: username,
+                  username: normalizedUsername,
                   password: password,
+                  userId: token.userId,
                 );
                 if (dialogContext.mounted) {
                   Navigator.of(dialogContext).pop();
@@ -525,8 +522,9 @@ class SettingsPage extends ConsumerWidget {
                       .importMiCloudDevices(devices);
                   await _persistMiAccountCredentials(
                     remember: rememberCredentials,
-                    username: username,
+                    username: normalizedUsername,
                     password: password,
+                    userId: token.userId,
                   );
                   if (dialogContext.mounted) {
                     Navigator.of(dialogContext).pop();
@@ -561,8 +559,9 @@ class SettingsPage extends ConsumerWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    TextField(
-                      controller: usernameController,
+                    TextFormField(
+                      initialValue: username,
+                      onChanged: (value) => username = value,
                       enabled: !running,
                       keyboardType: TextInputType.emailAddress,
                       decoration: InputDecoration(
@@ -571,8 +570,9 @@ class SettingsPage extends ConsumerWidget {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    TextField(
-                      controller: passwordController,
+                    TextFormField(
+                      initialValue: password,
+                      onChanged: (value) => password = value,
                       enabled: !running,
                       obscureText: obscurePassword,
                       decoration: InputDecoration(
@@ -593,7 +593,7 @@ class SettingsPage extends ConsumerWidget {
                           ),
                         ),
                       ),
-                      onSubmitted: (_) {
+                      onFieldSubmitted: (_) {
                         if (!running) submit();
                       },
                     ),
@@ -647,17 +647,18 @@ class SettingsPage extends ConsumerWidget {
         );
       },
     );
-
-    usernameController.dispose();
-    passwordController.dispose();
   }
 
   Future<void> _persistMiAccountCredentials({
     required bool remember,
     required String username,
     required String password,
+    required String userId,
   }) async {
     final prefs = SharedPrefsService.instance;
+    if (userId.isNotEmpty) {
+      await prefs.setString(_keyMiAccountUserId, userId);
+    }
     await prefs.setBool(_keyMiAccountRemember, remember);
     if (!remember) {
       await prefs.remove(_keyMiAccountUsername);
@@ -676,14 +677,11 @@ class SettingsPage extends ConsumerWidget {
     final l10n = AppLocalizations.of(context)!;
     final prefs = SharedPrefsService.instance;
     final existing = ref.read(huamiAuthProvider);
-    var rememberCredentials =
-        prefs.getBool(_keyHuamiAccountRemember) ?? false;
-    final usernameController = TextEditingController(
-      text: existing.username,
-    );
-    final passwordController = TextEditingController(
-      text: rememberCredentials ? prefs.getString(_keyHuamiAccountPassword) : null,
-    );
+    var rememberCredentials = prefs.getBool(_keyHuamiAccountRemember) ?? false;
+    var username = existing.username ?? '';
+    var password = rememberCredentials
+        ? prefs.getString(_keyHuamiAccountPassword) ?? ''
+        : '';
     var running = false;
     var obscurePassword = true;
     String? error;
@@ -694,9 +692,8 @@ class SettingsPage extends ConsumerWidget {
         return StatefulBuilder(
           builder: (context, setState) {
             Future<void> submit() async {
-              final username = usernameController.text.trim();
-              final password = passwordController.text;
-              if (username.isEmpty || password.isEmpty) {
+              final normalizedUsername = username.trim();
+              if (normalizedUsername.isEmpty || password.isEmpty) {
                 setState(() {
                   error = l10n.settingsHuamiAccountMissingCredentials;
                 });
@@ -709,7 +706,7 @@ class SettingsPage extends ConsumerWidget {
               try {
                 await ref
                     .read(huamiAuthProvider.notifier)
-                    .login(username: username, password: password);
+                    .login(username: normalizedUsername, password: password);
                 await _persistHuamiAccountCredentials(
                   remember: rememberCredentials,
                   password: password,
@@ -719,9 +716,7 @@ class SettingsPage extends ConsumerWidget {
                 }
                 if (rootContext.mounted) {
                   ScaffoldMessenger.of(rootContext).showSnackBar(
-                    SnackBar(
-                      content: Text(l10n.settingsHuamiAccountSignedIn),
-                    ),
+                    SnackBar(content: Text(l10n.settingsHuamiAccountSignedIn)),
                   );
                 }
               } catch (e) {
@@ -754,8 +749,9 @@ class SettingsPage extends ConsumerWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    TextField(
-                      controller: usernameController,
+                    TextFormField(
+                      initialValue: username,
+                      onChanged: (value) => username = value,
                       enabled: !running,
                       keyboardType: TextInputType.emailAddress,
                       decoration: InputDecoration(
@@ -764,8 +760,9 @@ class SettingsPage extends ConsumerWidget {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    TextField(
-                      controller: passwordController,
+                    TextFormField(
+                      initialValue: password,
+                      onChanged: (value) => password = value,
                       enabled: !running,
                       obscureText: obscurePassword,
                       decoration: InputDecoration(
@@ -786,7 +783,7 @@ class SettingsPage extends ConsumerWidget {
                           ),
                         ),
                       ),
-                      onSubmitted: (_) {
+                      onFieldSubmitted: (_) {
                         if (!running) submit();
                       },
                     ),
@@ -845,9 +842,6 @@ class SettingsPage extends ConsumerWidget {
         );
       },
     );
-
-    usernameController.dispose();
-    passwordController.dispose();
   }
 
   Future<void> _persistHuamiAccountCredentials({
@@ -1137,6 +1131,51 @@ class SettingsPage extends ConsumerWidget {
     }
   }
 
+  Future<void> _showDesktopExitBehaviorMenu(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final l10n = AppLocalizations.of(context)!;
+    final current = ref.read(_desktopExitBehaviorProvider);
+    final tileContext = context;
+    final renderBox = tileContext.findRenderObject() as RenderBox?;
+    final overlay =
+        Navigator.of(tileContext).overlay?.context.findRenderObject()
+            as RenderBox?;
+    if (renderBox == null || overlay == null) return;
+    final tileTopLeft = renderBox.localToGlobal(Offset.zero, ancestor: overlay);
+    final tileBottomRight = renderBox.localToGlobal(
+      renderBox.size.bottomRight(Offset.zero),
+      ancestor: overlay,
+    );
+    final anchor = Rect.fromLTWH(
+      tileBottomRight.dx - 48,
+      tileTopLeft.dy,
+      48,
+      renderBox.size.height,
+    );
+    final selected = await showMenu<int>(
+      context: tileContext,
+      position: RelativeRect.fromRect(anchor, Offset.zero & overlay.size),
+      initialValue: current ?? -1,
+      items: [
+        PopupMenuItem(value: -1, child: Text(l10n.desktopCloseBehaviorAsk)),
+        PopupMenuItem(value: 0, child: Text(l10n.desktopCloseBehaviorExit)),
+        PopupMenuItem(value: 1, child: Text(l10n.desktopCloseBehaviorTray)),
+      ],
+    );
+    if (selected == null || !context.mounted) return;
+    if (selected == -1) {
+      await SharedPrefsService.instance.remove('desktop.exit_behavior');
+    } else {
+      await SharedPrefsService.instance.setInt(
+        'desktop.exit_behavior',
+        selected,
+      );
+    }
+    ref.invalidate(_desktopExitBehaviorProvider);
+  }
+
   void _showLicensePage(BuildContext context) {
     showLicensePage(context: context);
   }
@@ -1146,6 +1185,73 @@ class SettingsPage extends ConsumerWidget {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
+  }
+}
+
+String _desktopExitBehaviorLabel(AppLocalizations l10n, int? behavior) =>
+    switch (behavior) {
+      0 => l10n.desktopCloseBehaviorExit,
+      1 => l10n.desktopCloseBehaviorTray,
+      _ => l10n.desktopCloseBehaviorAsk,
+    };
+
+class _AccountLeading extends StatelessWidget {
+  const _AccountLeading({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(dimension: 32, child: Center(child: child));
+  }
+}
+
+class _MiLogo extends StatelessWidget {
+  const _MiLogo();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: 32,
+      child: Center(
+        child: SvgPicture.asset(
+          'assets/images/brands/xiaomi.svg',
+          width: 24,
+          height: 24,
+          colorFilter: ColorFilter.mode(
+            Theme.of(context).colorScheme.onSurface,
+            BlendMode.srcIn,
+          ),
+          semanticsLabel: 'Xiaomi',
+        ),
+      ),
+    );
+  }
+}
+
+class _AccountBrandLogo extends StatelessWidget {
+  const _AccountBrandLogo({required this.asset, required this.semanticsLabel});
+
+  final String asset;
+  final String semanticsLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: 32,
+      child: Center(
+        child: SvgPicture.asset(
+          asset,
+          width: 27,
+          height: 27,
+          colorFilter: ColorFilter.mode(
+            Theme.of(context).colorScheme.onSurface,
+            BlendMode.srcIn,
+          ),
+          semanticsLabel: semanticsLabel,
+        ),
+      ),
+    );
   }
 }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zerobox/src/app/zerobox_app.dart';
+import 'package:zerobox/src/app/window/desktop_window_bootstrap.dart';
 import 'package:zerobox/src/core/logging/logging_service.dart';
 import 'package:zerobox/src/core/services/license_registry_service.dart';
 import 'package:zerobox/src/core/services/shared_prefs_service.dart';
@@ -11,6 +12,7 @@ void main(List<String> args) async {
   initLogging();
   await SharedPrefsService.instance.init();
   await LicenseRegistryService.registerThirdPartyLicenses();
+  await initializeDesktopWindow();
   runApp(
     ProviderScope(
       overrides: [initialDeepLinksProvider.overrideWithValue(args)],

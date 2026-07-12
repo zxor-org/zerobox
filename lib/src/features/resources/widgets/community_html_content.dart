@@ -147,10 +147,14 @@ class CommunityHtmlContent extends StatelessWidget {
         continue;
       }
       if (node is! dom.Element) continue;
-      if (_standaloneMediaImage(node) != null) {
+      final mediaImage = _standaloneMediaImage(node);
+      if (mediaImage != null) {
         // Images embedded in a sentence stay inline (emotes); images that
-        // stand alone (or after a line break) become gallery items.
-        if (inlineBuffer.isEmpty || inlineEndsWithBreak()) {
+        // are not explicitly marked as emotes become gallery items even when
+        // the source HTML places them directly after text.
+        if (inlineBuffer.isEmpty ||
+            inlineEndsWithBreak() ||
+            !_isInlineEmote(mediaImage)) {
           flushInline();
           mediaBuffer.add(node);
         } else {
@@ -188,6 +192,19 @@ class CommunityHtmlContent extends StatelessWidget {
           .firstOrNull;
     }
     return null;
+  }
+
+  bool _isInlineEmote(dom.Element image) {
+    final classes = image.classes.map((value) => value.toLowerCase()).toSet();
+    return image.attributes.containsKey('data-smilie') ||
+        image.attributes.containsKey('data-emoticon') ||
+        classes.any(
+          (value) =>
+              value.contains('smilie') ||
+              value.contains('smiley') ||
+              value.contains('emote') ||
+              value.contains('emoji'),
+        );
   }
 
   bool _isInlineNode(dom.Element element) {

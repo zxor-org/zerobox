@@ -4,6 +4,7 @@ import 'package:zerobox/src/app/generated/app_localizations.dart';
 import 'package:zerobox/src/data/bandbbs/bandbbs_resource_provider.dart';
 import 'package:zerobox/src/features/resources/application/resource_catalog_providers.dart';
 import 'package:zerobox/src/features/resources/controllers/resource_filter_controller.dart';
+import 'package:zerobox/src/features/resources/widgets/unsupported_resource_warning.dart';
 
 /// Responsive category sidebar for the BandBBS source, modeled after the
 /// bandbbs.cn category tree: expandable groups with aggregate resource
@@ -73,11 +74,17 @@ class _BandBbsCategorySidebarState
                   onToggle: (id) => setState(() {
                     if (!_expanded.add(id)) _expanded.remove(id);
                   }),
-                  onSelect: (id) => ref
-                      .read(resourceFiltersProvider.notifier)
-                      .selectDevice(
-                        '${BandBbsCategorySidebar.categoryFilterPrefix}$id',
-                      ),
+                  onSelect: (node) async {
+                    if (needsUnsupportedResourceWarning(node.title)) {
+                      await showUnsupportedResourceWarning(context, l10n);
+                      if (!context.mounted) return;
+                    }
+                    ref
+                        .read(resourceFiltersProvider.notifier)
+                        .selectDevice(
+                          '${BandBbsCategorySidebar.categoryFilterPrefix}${node.id}',
+                        );
+                  },
                 ),
             ],
           );
@@ -102,7 +109,7 @@ class _CategoryNodeTile extends StatelessWidget {
   final Set<int> expanded;
   final Set<String> selected;
   final ValueChanged<int> onToggle;
-  final ValueChanged<int> onSelect;
+  final ValueChanged<BandBbsCategoryNode> onSelect;
 
   @override
   Widget build(BuildContext context) {
@@ -120,7 +127,7 @@ class _CategoryNodeTile extends StatelessWidget {
           ),
           expanded: hasChildren ? isExpanded : null,
           onTap: () {
-            onSelect(node.id);
+            onSelect(node);
             if (hasChildren && !isExpanded) onToggle(node.id);
           },
           onExpandTap: hasChildren ? () => onToggle(node.id) : null,
