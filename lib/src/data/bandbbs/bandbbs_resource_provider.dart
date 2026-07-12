@@ -14,10 +14,14 @@ import 'package:zerobox/src/features/resources/domain/community_resource.dart';
 import 'package:zerobox/src/features/resources/domain/resource_catalog.dart';
 
 class BandBbsCatalog implements CommunityResourceCatalog {
-  BandBbsCatalog({required Dio dio, required BandBbsAuthNotifier auth})
-    : _api = BandBbsApiClient(dio: dio, auth: auth);
+  BandBbsCatalog({
+    required Dio dio,
+    required BandBbsAuthNotifier auth,
+    this.showAllCategories = false,
+  }) : _api = BandBbsApiClient(dio: dio, auth: auth);
 
   final BandBbsApiClient _api;
+  final bool showAllCategories;
   Future<List<_BandBbsCategory>>? _categoryRequest;
   static const _categoryFilterPrefix = 'bandbbs-category:';
 
@@ -30,7 +34,7 @@ class BandBbsCatalog implements CommunityResourceCatalog {
   @override
   CommunityCatalogCapabilities get capabilities =>
       const CommunityCatalogCapabilities(
-        search: false,
+        search: true,
         deviceFilter: true,
         typeFilter: true,
         serverSort: true,
@@ -39,7 +43,19 @@ class BandBbsCatalog implements CommunityResourceCatalog {
   @override
   Future<CommunityResourcePage> getPage(CommunityResourceQuery query) async {
     final categoryIds = await _categoryIdsFor(query.selectedDevices);
-    final payloads = categoryIds.isEmpty
+    final keyword = query.query.trim();
+    final payloads = keyword.isNotEmpty
+        ? [
+            await _api.searchResources(
+              keywords: keyword,
+              page: query.page + 1,
+              order: query.sort == CommunitySortRule.time
+                  ? 'date'
+                  : 'relevance',
+              categoryIds: categoryIds.isEmpty ? null : categoryIds,
+            ),
+          ]
+        : categoryIds.isEmpty
         ? [
             await _api.getResources(
               page: query.page + 1,
@@ -69,7 +85,7 @@ class BandBbsCatalog implements CommunityResourceCatalog {
       final lastPage = _intValue(pagination['last_page']) ?? currentPage;
       hasMore = hasMore || currentPage < lastPage;
       total += _intValue(pagination['total']) ?? 0;
-      final values = payload['resources'];
+      final values = payload['resources'] ?? payload['results'];
       if (values is! List) continue;
       for (final value in values.whereType<Map>()) {
         final resource = _summaryFromResource(value.cast<String, dynamic>());
@@ -109,7 +125,9 @@ class BandBbsCatalog implements CommunityResourceCatalog {
     }
 
     for (final category in categories) {
-      if (_isBlockedCategory(category.title)) markBlocked(category);
+      if (!showAllCategories && _isBlockedCategory(category.title)) {
+        markBlocked(category);
+      }
     }
     return categories
         .where(
@@ -250,7 +268,7 @@ class BandBbsCatalog implements CommunityResourceCatalog {
       stack.add(holder);
     }
     int aggregate(_NodeHolder holder) {
-      if (_isBlockedCategory(holder.category.title)) {
+      if (!showAllCategories && _isBlockedCategory(holder.category.title)) {
         holder.children = const [];
         holder.aggregate = 0;
         return 0;
@@ -440,9 +458,7 @@ class BandBbsCatalog implements CommunityResourceCatalog {
         item.supportedDevices.intersection(selectedDeviceIds).isEmpty) {
       return false;
     }
-    final needle = query.query.trim().toLowerCase();
-    // BandBBS does not expose the XenForo search endpoint. Do not fake it by crawling pages.
-    return needle.isEmpty;
+    return true;
   }
 
   CommunityResourceType? _typeFromResource(Map<String, dynamic> resource) {

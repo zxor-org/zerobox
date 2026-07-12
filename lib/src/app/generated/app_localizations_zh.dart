@@ -646,10 +646,10 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get settingsAccountBBSAccount => 'BandBBS 账号';
+  String get settingsAccountBBSAccount => '米坛账号';
 
   @override
-  String get bandBbsAccountTitle => 'BandBBS 账号';
+  String get bandBbsAccountTitle => '米坛账号';
 
   @override
   String get bandBbsPurchasedResources => '已购资源';
@@ -668,6 +668,21 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get bandBbsLogout => '退出登录';
+
+  @override
+  String get bandBbsLoggedOut => '已退出登录';
+
+  @override
+  String get bandBbsLoadPreviews => '加载资源帖预览图';
+
+  @override
+  String get bandBbsLoadPreviewsDesc => '在资源列表中自动加载帖子附件预览图';
+
+  @override
+  String get bandBbsShowAllCategories => '显示所有资源分区';
+
+  @override
+  String get bandBbsShowAllCategoriesDesc => '包含默认隐藏的未适配设备分区';
 
   @override
   String get settingsAccountSyncDevices => '同步设备';
@@ -917,6 +932,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsThemeMode => '主题模式';
 
   @override
+  String get settingsThemeModeDesc => '更改应用主题外观';
+
+  @override
   String get settingsDynamicColor => '动态取色';
 
   @override
@@ -1129,4 +1147,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String timeYesterdayAt(Object time) {
     return '昨天 $time';
   }
+
+  @override
+  String get settingsAccountBandBbsAccount => '米坛账号';
+
+  @override
+  String get bandBbsResourceQueryTitle => '安装已购付费资源';
 }

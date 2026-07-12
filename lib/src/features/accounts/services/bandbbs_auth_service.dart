@@ -78,12 +78,16 @@ class BandBbsAuthState {
   const BandBbsAuthState({
     required this.token,
     required this.userId,
+    required this.username,
+    required this.avatarUrl,
     required this.isBusy,
     required this.lastError,
   });
 
   final BandBbsToken? token;
   final String? userId;
+  final String? username;
+  final String? avatarUrl;
   final bool isBusy;
   final String? lastError;
 
@@ -94,6 +98,10 @@ class BandBbsAuthState {
     bool clearToken = false,
     String? userId,
     bool clearUserId = false,
+    String? username,
+    bool clearUsername = false,
+    String? avatarUrl,
+    bool clearAvatarUrl = false,
     bool? isBusy,
     String? lastError,
     bool clearLastError = false,
@@ -101,6 +109,8 @@ class BandBbsAuthState {
     return BandBbsAuthState(
       token: clearToken ? null : token ?? this.token,
       userId: clearUserId ? null : userId ?? this.userId,
+      username: clearUsername ? null : username ?? this.username,
+      avatarUrl: clearAvatarUrl ? null : avatarUrl ?? this.avatarUrl,
       isBusy: isBusy ?? this.isBusy,
       lastError: clearLastError ? null : lastError ?? this.lastError,
     );
@@ -109,6 +119,8 @@ class BandBbsAuthState {
   static const empty = BandBbsAuthState(
     token: null,
     userId: null,
+    username: null,
+    avatarUrl: null,
     isBusy: false,
     lastError: null,
   );
@@ -117,6 +129,8 @@ class BandBbsAuthState {
 class BandBbsAuthNotifier extends Notifier<BandBbsAuthState> {
   static const _keyToken = 'bandbbs.oauth.token';
   static const _keyUserId = 'bandbbs.oauth.user_id';
+  static const _keyUsername = 'bandbbs.oauth.username';
+  static const _keyAvatarUrl = 'bandbbs.oauth.avatar_url';
 
   final Logger _log = getLogger('BandBbsAuthService');
 
@@ -145,10 +159,17 @@ class BandBbsAuthNotifier extends Notifier<BandBbsAuthState> {
         token = null;
       }
     }
-    return BandBbsAuthState.empty.copyWith(
+    final initial = BandBbsAuthState.empty.copyWith(
       token: token,
       userId: prefs.getString(_keyUserId),
+      username: prefs.getString(_keyUsername),
+      avatarUrl: prefs.getString(_keyAvatarUrl),
     );
+    final restoredToken = token;
+    if (restoredToken != null && initial.username == null) {
+      Future.microtask(() => _fetchTokenInfo(restoredToken));
+    }
+    return initial;
   }
 
   Future<void> startLogin() async {
@@ -254,6 +275,8 @@ class BandBbsAuthNotifier extends Notifier<BandBbsAuthState> {
     final prefs = SharedPrefsService.instance;
     await prefs.remove(_keyToken);
     await prefs.remove(_keyUserId);
+    await prefs.remove(_keyUsername);
+    await prefs.remove(_keyAvatarUrl);
     state = BandBbsAuthState.empty;
   }
 
@@ -274,6 +297,7 @@ class BandBbsAuthNotifier extends Notifier<BandBbsAuthState> {
   }
 
   Future<void> _fetchTokenInfo(BandBbsToken token) async {
+    final prefs = SharedPrefsService.instance;
     try {
       final response = await _send<Object?>(
         () async => Dio().get<Object?>(
@@ -282,11 +306,37 @@ class BandBbsAuthNotifier extends Notifier<BandBbsAuthState> {
         ),
       );
       final userId = _objectMap(response.data)['user_id']?.toString();
-      if (userId == null || userId.isEmpty) return;
-      await SharedPrefsService.instance.setString(_keyUserId, userId);
-      state = state.copyWith(userId: userId);
+      if (userId != null && userId.isNotEmpty) {
+        await prefs.setString(_keyUserId, userId);
+        state = state.copyWith(userId: userId);
+      }
     } catch (_) {
       // User info is only for display. Token exchange success is enough here.
+    }
+    try {
+      final response = await _send<Object?>(
+        () async => Dio().get<Object?>(
+          'https://www.bandbbs.cn/api/me',
+          options: Options(
+            headers: {'Authorization': 'Bearer ${token.accessToken}'},
+          ),
+        ),
+      );
+      final me = _objectMap(_objectMap(response.data)['me']);
+      final username = me['username']?.toString() ?? '';
+      final avatarUrl = _objectMap(me['avatar_urls'])['m']?.toString() ?? '';
+      if (username.isNotEmpty) {
+        await prefs.setString(_keyUsername, username);
+      }
+      if (avatarUrl.isNotEmpty) {
+        await prefs.setString(_keyAvatarUrl, avatarUrl);
+      }
+      state = state.copyWith(
+        username: username.isNotEmpty ? username : null,
+        avatarUrl: avatarUrl.isNotEmpty ? avatarUrl : null,
+      );
+    } catch (_) {
+      // Avatar and nickname are only for display.
     }
   }
 

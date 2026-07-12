@@ -29,6 +29,11 @@ final communityCatalogProviderForSource =
         CommunitySourceId.bandbbs => BandBbsCatalog(
           dio: dio,
           auth: ref.read(bandBbsAuthProvider.notifier),
+          showAllCategories: ref.watch(
+            appSettingsProvider.select(
+              (settings) => settings.bandbbsShowAllCategories,
+            ),
+          ),
         ),
         CommunitySourceId.huamiAppStore => HuamiAppStoreCatalog(
           dio: dio,

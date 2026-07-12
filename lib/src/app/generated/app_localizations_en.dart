@@ -685,6 +685,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String get bandBbsLogout => 'Sign out';
 
   @override
+  String get bandBbsLoggedOut => 'Signed out';
+
+  @override
+  String get bandBbsLoadPreviews => 'Load post previews';
+
+  @override
+  String get bandBbsLoadPreviewsDesc =>
+      'Automatically load attachment previews in the resource list';
+
+  @override
+  String get bandBbsShowAllCategories => 'Show all categories';
+
+  @override
+  String get bandBbsShowAllCategoriesDesc =>
+      'Include categories for unsupported devices hidden by default';
+
+  @override
   String get settingsAccountSyncDevices => 'Sync devices';
 
   @override
@@ -953,6 +970,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsThemeMode => 'Theme mode';
 
   @override
+  String get settingsThemeModeDesc => 'Change app theme appearance';
+
+  @override
   String get settingsDynamicColor => 'Dynamic color';
 
   @override
@@ -1181,4 +1201,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String timeYesterdayAt(Object time) {
     return 'Yesterday $time';
   }
+
+  @override
+  String get settingsAccountBandBbsAccount => 'BandBBS Account';
+
+  @override
+  String get bandBbsResourceQueryTitle => 'Install purchased resources';
 }

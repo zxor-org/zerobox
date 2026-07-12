@@ -5,6 +5,7 @@ import 'package:zerobox/src/app/generated/app_localizations.dart';
 import 'package:zerobox/src/app/widgets/horizontal_scroller.dart';
 import 'package:zerobox/src/app/widgets/network_img_layer.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
+import 'package:zerobox/src/core/providers/app_settings_providers.dart';
 import 'package:zerobox/src/data/community/community_source.dart';
 import 'package:zerobox/src/features/resources/application/resource_catalog_providers.dart';
 import 'package:zerobox/src/features/resources/domain/community_resource.dart';
@@ -186,9 +187,15 @@ class _LazyPreviews extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final loadPreviews = ref.watch(
+      appSettingsProvider.select((settings) => settings.bandbbsLoadPreviews),
+    );
+    if (!loadPreviews) return const SizedBox.shrink();
     final detail = ref.watch(communityResourceDetailProvider(item.ref));
     final images = detail.value?.previewImages ?? const [];
     if (images.isEmpty) return const SizedBox.shrink();
+    final cacheHeight = (_height * MediaQuery.devicePixelRatioOf(context))
+        .round();
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: HorizontalScroller(
@@ -201,12 +208,14 @@ class _LazyPreviews extends ConsumerWidget {
                 width: _height * _aspectOf(image),
                 height: _height,
                 fit: BoxFit.contain,
+                memCacheHeight: cacheHeight,
               )
             else
               NetworkImgAutoWidth(
                 src: (image.thumbnailUrl ?? image.url).toString(),
                 height: _height,
                 maxWidth: 375,
+                memCacheHeight: cacheHeight,
               ),
         ],
       ),
@@ -275,16 +284,16 @@ String _typeLabel(
   AppLocalizations l10n,
   CommunityResourceType type, {
   CommunitySourceId? source,
-}) =>
-    switch (type) {
-      CommunityResourceType.quickApp => source == CommunitySourceId.huamiAppStore
-          ? '\u5c0f\u7a0b\u5e8f'
-          : l10n.quickApp,
-      CommunityResourceType.watchface => l10n.watchface,
-      CommunityResourceType.firmware => l10n.firmwareTool,
-      CommunityResourceType.fontpack => l10n.fontPack,
-      CommunityResourceType.iconpack => l10n.iconPack,
-    };
+}) => switch (type) {
+  CommunityResourceType.quickApp =>
+    source == CommunitySourceId.huamiAppStore
+        ? '\u5c0f\u7a0b\u5e8f'
+        : l10n.quickApp,
+  CommunityResourceType.watchface => l10n.watchface,
+  CommunityResourceType.firmware => l10n.firmwareTool,
+  CommunityResourceType.fontpack => l10n.fontPack,
+  CommunityResourceType.iconpack => l10n.iconPack,
+};
 
 String _paidLabel(AppLocalizations l10n, CommunityPaidType type) =>
     switch (type) {

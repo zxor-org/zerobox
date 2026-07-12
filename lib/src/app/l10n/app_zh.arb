@@ -218,14 +218,19 @@
       "userId": {}
     }
   },
-  "settingsAccountBBSAccount": "BandBBS 账号",
-  "bandBbsAccountTitle": "BandBBS 账号",
+  "settingsAccountBBSAccount": "米坛账号",
+  "bandBbsAccountTitle": "米坛账号",
   "bandBbsPurchasedResources": "已购资源",
   "bandBbsResourceId": "资源 ID",
   "bandBbsResourceIdHint": "输入米坛资源 ID",
   "bandBbsQueryResource": "查询",
   "bandBbsOpenResource": "在米坛查看",
   "bandBbsLogout": "退出登录",
+  "bandBbsLoggedOut": "已退出登录",
+  "bandBbsLoadPreviews": "加载资源帖预览图",
+  "bandBbsLoadPreviewsDesc": "在资源列表中自动加载帖子附件预览图",
+  "bandBbsShowAllCategories": "显示所有资源分区",
+  "bandBbsShowAllCategoriesDesc": "包含默认隐藏的未适配设备分区",
   "settingsAccountSyncDevices": "同步设备",
   "settingsAccountSyncDevicesDesc": "登录小米账号同步配对设备",
   "settingsMiAccount": "小米账号",
@@ -319,6 +324,7 @@
   "settingsDark": "深色",
   "settingsOledDark": "OLED 深色",
   "settingsThemeMode": "主题模式",
+  "settingsThemeModeDesc": "更改应用主题外观",
   "settingsDynamicColor": "动态取色",
   "settingsDynamicColorDesc": "使用系统主题色调整应用配色",
   "settingsColorScheme": "配色方案",
@@ -416,5 +422,7 @@
     "placeholders": {
       "time": {}
     }
-  }
+  },
+  "settingsAccountBandBbsAccount": "米坛账号",
+  "bandBbsResourceQueryTitle": "安装已购付费资源"
 }

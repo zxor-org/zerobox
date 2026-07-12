@@ -81,16 +81,14 @@ void cookies_callback(GObject* object, GAsyncResult* result,
   g_main_loop_quit(data->loop);
 }
 
-std::string cookie_header_for_current_uri(WebKitWebView* webview) {
-  const gchar* uri = webkit_web_view_get_uri(webview);
-  if (uri == nullptr || uri[0] == '\0') return "";
-
+std::string cookie_header_for_xiaomi(WebKitWebView* webview) {
   WebKitCookieManager* cookie_manager = webkit_web_context_get_cookie_manager(
       webkit_web_view_get_context(webview));
   CookieData data;
   data.loop = g_main_loop_new(nullptr, FALSE);
-  webkit_cookie_manager_get_cookies(cookie_manager, uri, nullptr,
-                                    cookies_callback, &data);
+  webkit_cookie_manager_get_cookies(
+      cookie_manager, "https://account.xiaomi.com/", nullptr, cookies_callback,
+      &data);
   g_main_loop_run(data.loop);
   g_main_loop_unref(data.loop);
   if (data.error != nullptr) {
@@ -117,9 +115,7 @@ std::string cookie_header_for_current_uri(WebKitWebView* webview) {
 }
 
 bool has_session_cookie(const std::string& header) {
-  return header.find("passToken=") != std::string::npos ||
-         header.find("cUserId=") != std::string::npos ||
-         header.find("userId=") != std::string::npos;
+  return header.find("passToken=") != std::string::npos;
 }
 
 std::string normalize_js_string(const char* raw) {
@@ -144,7 +140,7 @@ void complete_if_ready(bool ok_signal) {
   (void)ok_signal;
   if (g_session.completed || g_session.webview == nullptr) return;
   auto* webview = WEBKIT_WEB_VIEW(g_session.webview);
-  const std::string header = cookie_header_for_current_uri(webview);
+  const std::string header = cookie_header_for_xiaomi(webview);
   if (!has_session_cookie(header)) return;
   respond_success(header);
 }
@@ -252,7 +248,9 @@ GtkWidget* build_container(const char* url) {
   gtk_box_pack_end(GTK_BOX(header), close_button, FALSE, FALSE, 0);
   gtk_box_pack_start(GTK_BOX(frame), header, FALSE, FALSE, 0);
 
-  GtkWidget* webview = webkit_web_view_new();
+  WebKitWebContext* context = webkit_web_context_new_ephemeral();
+  GtkWidget* webview = webkit_web_view_new_with_context(context);
+  g_object_unref(context);
   g_session.webview = webview;
   WebKitSettings* settings =
       webkit_web_view_get_settings(WEBKIT_WEB_VIEW(webview));

@@ -13,6 +13,8 @@ class AppSettings {
     required this.disableAutoClean,
     required this.autoReconnect,
     required this.wideNavigationRailPosition,
+    required this.bandbbsLoadPreviews,
+    required this.bandbbsShowAllCategories,
   });
 
   final AstroBoxCdn cdn;
@@ -21,6 +23,8 @@ class AppSettings {
   final bool disableAutoClean;
   final bool autoReconnect;
   final WideNavigationRailPosition wideNavigationRailPosition;
+  final bool bandbbsLoadPreviews;
+  final bool bandbbsShowAllCategories;
 
   AppSettings copyWith({
     AstroBoxCdn? cdn,
@@ -29,6 +33,8 @@ class AppSettings {
     bool? disableAutoClean,
     bool? autoReconnect,
     WideNavigationRailPosition? wideNavigationRailPosition,
+    bool? bandbbsLoadPreviews,
+    bool? bandbbsShowAllCategories,
   }) {
     return AppSettings(
       cdn: cdn ?? this.cdn,
@@ -38,6 +44,9 @@ class AppSettings {
       autoReconnect: autoReconnect ?? this.autoReconnect,
       wideNavigationRailPosition:
           wideNavigationRailPosition ?? this.wideNavigationRailPosition,
+      bandbbsLoadPreviews: bandbbsLoadPreviews ?? this.bandbbsLoadPreviews,
+      bandbbsShowAllCategories:
+          bandbbsShowAllCategories ?? this.bandbbsShowAllCategories,
     );
   }
 
@@ -48,6 +57,9 @@ class AppSettings {
   static const String _keyAutoReconnect = 'auto_reconnect';
   static const String _keyWideNavigationRailPosition =
       'wide_navigation_rail_position';
+  static const String _keyBandBbsLoadPreviews = 'bandbbs_load_previews';
+  static const String _keyBandBbsShowAllCategories =
+      'bandbbs_show_all_categories';
 
   static AppSettings load() {
     final prefs = SharedPrefsService.instance;
@@ -67,6 +79,9 @@ class AppSettings {
         railPositionRaw,
         WideNavigationRailPosition.bottom,
       ),
+      bandbbsLoadPreviews: prefs.getBool(_keyBandBbsLoadPreviews) ?? false,
+      bandbbsShowAllCategories:
+          prefs.getBool(_keyBandBbsShowAllCategories) ?? false,
     );
   }
 
@@ -80,6 +95,11 @@ class AppSettings {
     await prefs.setString(
       _keyWideNavigationRailPosition,
       wideNavigationRailPosition.name,
+    );
+    await prefs.setBool(_keyBandBbsLoadPreviews, bandbbsLoadPreviews);
+    await prefs.setBool(
+      _keyBandBbsShowAllCategories,
+      bandbbsShowAllCategories,
     );
   }
 
@@ -129,6 +149,16 @@ class AppSettingsNotifier extends Notifier<AppSettings> {
     WideNavigationRailPosition value,
   ) async {
     state = state.copyWith(wideNavigationRailPosition: value);
+    await state.save();
+  }
+
+  Future<void> setBandBbsLoadPreviews(bool value) async {
+    state = state.copyWith(bandbbsLoadPreviews: value);
+    await state.save();
+  }
+
+  Future<void> setBandBbsShowAllCategories(bool value) async {
+    state = state.copyWith(bandbbsShowAllCategories: value);
     await state.save();
   }
 }

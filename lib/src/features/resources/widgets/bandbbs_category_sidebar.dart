@@ -5,7 +5,7 @@ import 'package:zerobox/src/data/bandbbs/bandbbs_resource_provider.dart';
 import 'package:zerobox/src/features/resources/application/resource_catalog_providers.dart';
 import 'package:zerobox/src/features/resources/controllers/resource_filter_controller.dart';
 
-/// Wide-screen category sidebar for the BandBBS source, modeled after the
+/// Responsive category sidebar for the BandBBS source, modeled after the
 /// bandbbs.cn category tree: expandable groups with aggregate resource
 /// counts, single-selection filtering.
 class BandBbsCategorySidebar extends ConsumerStatefulWidget {

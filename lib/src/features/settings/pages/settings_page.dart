@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:zerobox/src/app/generated/app_localizations.dart';
 import 'package:zerobox/src/app/utils/error_localization.dart';
+import 'package:zerobox/src/app/widgets/network_img_layer.dart';
 import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
 import 'package:zerobox/src/core/providers/app_settings_providers.dart';
@@ -114,8 +115,31 @@ class SettingsPage extends ConsumerWidget {
                     _startBandBbsLogin(context, ref);
                   }
                 },
-                leading: const Icon(Icons.badge_outlined),
-                title: Text(l10n.settingsAccountLoginBBS),
+                leading: Consumer(
+                  builder: (context, ref, _) {
+                    final account = ref.watch(bandBbsAuthProvider);
+                    final avatarUrl = account.avatarUrl;
+                    if (account.isSignedIn && avatarUrl != null) {
+                      return NetworkImgLayer(
+                        src: avatarUrl,
+                        width: 28,
+                        height: 28,
+                        type: 'avatar',
+                      );
+                    }
+                    return const Icon(Icons.badge_outlined);
+                  },
+                ),
+                title: Consumer(
+                  builder: (context, ref, _) {
+                    final account = ref.watch(bandBbsAuthProvider);
+                    final username = account.username;
+                    if (account.isSignedIn && username != null) {
+                      return Text(username);
+                    }
+                    return Text(l10n.settingsAccountLoginBBS);
+                  },
+                ),
                 description: Consumer(
                   builder: (context, ref, _) {
                     final account = ref.watch(bandBbsAuthProvider);
@@ -123,6 +147,14 @@ class SettingsPage extends ConsumerWidget {
                       return Text(l10n.settingsAccountBandBbsSigningIn);
                     }
                     if (account.isSignedIn) {
+                      if (account.username != null) {
+                        final userId = account.userId;
+                        return Text(
+                          userId == null
+                              ? l10n.settingsAccountBandBbsAccount
+                              : '${l10n.settingsAccountBandBbsAccount} · $userId',
+                        );
+                      }
                       return Text(
                         account.userId == null
                             ? l10n.settingsConnected
@@ -171,6 +203,7 @@ class SettingsPage extends ConsumerWidget {
                 onPressed: (context) => _showThemeModeSelector(context, ref),
                 leading: const Icon(Icons.dark_mode_outlined),
                 title: Text(l10n.settingsThemeMode),
+                description: Text(l10n.settingsThemeModeDesc),
                 value: Text(_themeModeLabel(l10n, themeSettings.themeMode)),
               ),
               if (!kIsWeb)

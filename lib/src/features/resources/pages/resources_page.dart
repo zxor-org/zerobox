@@ -219,6 +219,10 @@ class _ResourceLibraryView extends ConsumerStatefulWidget {
 class _ResourceLibraryViewState extends ConsumerState<_ResourceLibraryView> {
   static const _pageSize = 30;
   final _scrollController = ScrollController();
+  final _searchController = TextEditingController();
+  final _searchFocus = FocusNode();
+  var _searchText = '';
+  bool? _sidebarExpanded;
   final _items = <CommunityResource>[];
   var _page = 0;
   var _hasMore = true;
@@ -231,13 +235,24 @@ class _ResourceLibraryViewState extends ConsumerState<_ResourceLibraryView> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    _searchFocus.addListener(() {
+      if (!_searchFocus.hasFocus) _commitSearch();
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) => _reset());
   }
 
   @override
   void dispose() {
+    _searchFocus.dispose();
+    _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _commitSearch() {
+    final value = _searchController.text;
+    if (value == ref.read(resourceFiltersProvider).query) return;
+    ref.read(resourceFiltersProvider.notifier).setQuery(value);
   }
 
   void _onScroll() {
@@ -308,17 +323,52 @@ class _ResourceLibraryViewState extends ConsumerState<_ResourceLibraryView> {
     final source = ref.watch(selectedCommunitySourceProvider);
     ref.listen(resourceFiltersProvider, (_, _) => _reset());
     ref.listen(selectedCommunitySourceProvider, (_, _) => _reset());
+    ref.listen(
+      appSettingsProvider.select(
+        (settings) => settings.bandbbsShowAllCategories,
+      ),
+      (_, _) => _reset(),
+    );
     final capabilities = ref.watch(communityCatalogProvider).capabilities;
+    if (_searchController.text != filters.query) {
+      _searchController.text = filters.query;
+      _searchText = filters.query;
+    }
     return LayoutBuilder(
       builder: (context, constraints) {
-        final list = _buildList(context, l10n, filters, source, capabilities);
-        if (source != CommunitySourceId.bandbbs || constraints.maxWidth < 900) {
+        final isBandBbs = source == CommunitySourceId.bandbbs;
+        final expanded =
+            isBandBbs && (_sidebarExpanded ?? constraints.maxWidth >= 900);
+        final list = _buildList(
+          context,
+          l10n,
+          filters,
+          source,
+          capabilities,
+          sidebarExpanded: expanded,
+          onToggleSidebar: isBandBbs
+              ? () => setState(() => _sidebarExpanded = !expanded)
+              : null,
+        );
+        if (!isBandBbs) {
           return list;
         }
         return Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const SizedBox(width: 260, child: BandBbsCategorySidebar()),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeInOut,
+              width: expanded ? 260 : 0,
+              clipBehavior: Clip.hardEdge,
+              decoration: const BoxDecoration(),
+              child: const OverflowBox(
+                alignment: Alignment.topLeft,
+                minWidth: 260,
+                maxWidth: 260,
+                child: BandBbsCategorySidebar(),
+              ),
+            ),
             Expanded(child: list),
           ],
         );
@@ -331,8 +381,10 @@ class _ResourceLibraryViewState extends ConsumerState<_ResourceLibraryView> {
     AppLocalizations l10n,
     ResourceFilters filters,
     CommunitySourceId source,
-    CommunityCatalogCapabilities capabilities,
-  ) {
+    CommunityCatalogCapabilities capabilities, {
+    bool sidebarExpanded = false,
+    VoidCallback? onToggleSidebar,
+  }) {
     return RefreshIndicator(
       onRefresh: _reset,
       child: CustomScrollView(
@@ -344,22 +396,47 @@ class _ResourceLibraryViewState extends ConsumerState<_ResourceLibraryView> {
               padding: const EdgeInsets.all(StyleConstants.pagePadding),
               child: Column(
                 children: [
-                  SearchBar(
-                    enabled: capabilities.search,
-                    hintText: capabilities.search ? l10n.search : l10n.search,
-                    leading: const Icon(Icons.search),
-                    trailing: [
-                      if (filters.query.isNotEmpty)
+                  Row(
+                    children: [
+                      if (onToggleSidebar != null) ...[
                         IconButton(
-                          icon: const Icon(Icons.clear),
-                          onPressed: () => ref
-                              .read(resourceFiltersProvider.notifier)
-                              .setQuery(''),
+                          icon: Icon(
+                            sidebarExpanded ? Icons.menu_open : Icons.menu,
+                          ),
+                          tooltip: l10n.categories,
+                          onPressed: onToggleSidebar,
                         ),
+                        const SizedBox(width: 4),
+                      ],
+                      Expanded(
+                        child: SearchBar(
+                          enabled: capabilities.search,
+                          elevation: const WidgetStatePropertyAll(0),
+                          controller: _searchController,
+                          focusNode: _searchFocus,
+                          hintText: capabilities.search
+                              ? l10n.search
+                              : l10n.search,
+                          leading: const Icon(Icons.search),
+                          trailing: [
+                            if (_searchText.isNotEmpty)
+                              IconButton(
+                                icon: const Icon(Icons.clear),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() => _searchText = '');
+                                  ref
+                                      .read(resourceFiltersProvider.notifier)
+                                      .setQuery('');
+                                },
+                              ),
+                          ],
+                          onChanged: (value) =>
+                              setState(() => _searchText = value),
+                          onSubmitted: (_) => _commitSearch(),
+                        ),
+                      ),
                     ],
-                    onChanged: (value) => ref
-                        .read(resourceFiltersProvider.notifier)
-                        .setQuery(value),
                   ),
                   const SizedBox(height: 12),
                   const _FilterBar(),
@@ -376,17 +453,34 @@ class _ResourceLibraryViewState extends ConsumerState<_ResourceLibraryView> {
               child: Center(child: Text(localizedErrorMessage(l10n, _error!))),
             )
           else ...[
-            SliverToBoxAdapter(
-              child: PageContainer(
+            if (source == CommunitySourceId.bandbbs ||
+                source == CommunitySourceId.huamiAppStore)
+              SliverPadding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: StyleConstants.pagePadding,
                 ),
-                child: source == CommunitySourceId.bandbbs ||
-                        source == CommunitySourceId.huamiAppStore
-                    ? _BandBbsResourceList(items: _items)
-                    : _ResourceGrid(items: _items),
+                sliver: SliverList.builder(
+                  itemCount: _items.length,
+                  itemBuilder: (context, index) => Padding(
+                    padding: EdgeInsets.only(
+                      bottom: index == _items.length - 1 ? 0 : 10,
+                    ),
+                    child: BandBbsResourceCard(
+                      key: ValueKey(_items[index].ref.key),
+                      item: _items[index],
+                    ),
+                  ),
+                ),
+              )
+            else
+              SliverToBoxAdapter(
+                child: PageContainer(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: StyleConstants.pagePadding,
+                  ),
+                  child: _ResourceGrid(items: _items),
+                ),
               ),
-            ),
             if (_loadingMore)
               const SliverToBoxAdapter(
                 child: Padding(
@@ -532,13 +626,7 @@ class _FilterBar extends ConsumerWidget {
             Padding(
               padding: EdgeInsets.zero,
               child: FilterChip(
-                label: Text(
-                  _typeLabel(
-                    l10n,
-                    filters.type!,
-                    source: source,
-                  ),
-                ),
+                label: Text(_typeLabel(l10n, filters.type!, source: source)),
                 selected: true,
                 onSelected: (_) =>
                     ref.read(resourceFiltersProvider.notifier).setType(null),
@@ -786,7 +874,9 @@ class _HuamiDeviceSourceInputState
               border: const OutlineInputBorder(),
               suffixIcon: widget.filters.selectedDevices.any(_isNumeric)
                   ? IconButton(
-                      tooltip: MaterialLocalizations.of(context).deleteButtonTooltip,
+                      tooltip: MaterialLocalizations.of(
+                        context,
+                      ).deleteButtonTooltip,
                       icon: const Icon(Icons.clear),
                       onPressed: () {
                         _controller.clear();
@@ -861,36 +951,16 @@ String _typeLabel(
   AppLocalizations l10n,
   CommunityResourceType type, {
   CommunitySourceId? source,
-}) =>
-    switch (type) {
-      CommunityResourceType.quickApp => source == CommunitySourceId.huamiAppStore
-          ? '\u5c0f\u7a0b\u5e8f'
-          : l10n.quickApps,
-      CommunityResourceType.watchface => l10n.watchfaces,
-      CommunityResourceType.firmware => l10n.firmwareTools,
-      CommunityResourceType.fontpack => l10n.fontPack,
-      CommunityResourceType.iconpack => l10n.iconPack,
-    };
-
-class _BandBbsResourceList extends StatelessWidget {
-  const _BandBbsResourceList({required this.items});
-  final List<CommunityResource> items;
-
-  @override
-  Widget build(BuildContext context) {
-    if (items.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    return Column(
-      children: [
-        for (var i = 0; i < items.length; i++) ...[
-          if (i > 0) const SizedBox(height: 10),
-          BandBbsResourceCard(item: items[i]),
-        ],
-      ],
-    );
-  }
-}
+}) => switch (type) {
+  CommunityResourceType.quickApp =>
+    source == CommunitySourceId.huamiAppStore
+        ? '\u5c0f\u7a0b\u5e8f'
+        : l10n.quickApps,
+  CommunityResourceType.watchface => l10n.watchfaces,
+  CommunityResourceType.firmware => l10n.firmwareTools,
+  CommunityResourceType.fontpack => l10n.fontPack,
+  CommunityResourceType.iconpack => l10n.iconPack,
+};
 
 class _ResourceGrid extends StatelessWidget {
   const _ResourceGrid({required this.items});

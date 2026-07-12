@@ -15,6 +15,8 @@ class NetworkImgLayer extends StatelessWidget {
     this.color,
     this.colorBlendMode,
     this.fit = BoxFit.cover,
+    this.memCacheWidth,
+    this.memCacheHeight,
   });
 
   final String? src;
@@ -27,6 +29,8 @@ class NetworkImgLayer extends StatelessWidget {
   final Color? color;
   final BlendMode? colorBlendMode;
   final BoxFit fit;
+  final int? memCacheWidth;
+  final int? memCacheHeight;
 
   static Widget heroFlightShuttleBuilder(
     BuildContext flightContext,
@@ -72,6 +76,8 @@ class NetworkImgLayer extends StatelessWidget {
               filterQuality: filterQuality,
               color: color,
               colorBlendMode: colorBlendMode,
+              memCacheWidth: memCacheWidth,
+              memCacheHeight: memCacheHeight,
               errorWidget: (context, url, error) => _placeholder(context),
               placeholder: (context, url) => _placeholder(context),
             ),
@@ -111,12 +117,16 @@ class NetworkImgAutoWidth extends StatelessWidget {
     required this.height,
     this.maxWidth = 560,
     this.fit = BoxFit.contain,
+    this.memCacheWidth,
+    this.memCacheHeight,
   });
 
   final String src;
   final double height;
   final double maxWidth;
   final BoxFit fit;
+  final int? memCacheWidth;
+  final int? memCacheHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -132,6 +142,8 @@ class NetworkImgAutoWidth extends StatelessWidget {
           fadeOutDuration: const Duration(milliseconds: 120),
           fadeInDuration: const Duration(milliseconds: 120),
           filterQuality: FilterQuality.high,
+          memCacheWidth: memCacheWidth,
+          memCacheHeight: memCacheHeight,
           placeholder: (context, url) => _placeholder(context),
           errorWidget: (context, url, error) => _placeholder(context),
         ),

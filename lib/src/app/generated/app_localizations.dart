@@ -1394,6 +1394,36 @@ abstract class AppLocalizations {
   /// **'Sign out'**
   String get bandBbsLogout;
 
+  /// No description provided for @bandBbsLoggedOut.
+  ///
+  /// In en, this message translates to:
+  /// **'Signed out'**
+  String get bandBbsLoggedOut;
+
+  /// No description provided for @bandBbsLoadPreviews.
+  ///
+  /// In en, this message translates to:
+  /// **'Load post previews'**
+  String get bandBbsLoadPreviews;
+
+  /// No description provided for @bandBbsLoadPreviewsDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatically load attachment previews in the resource list'**
+  String get bandBbsLoadPreviewsDesc;
+
+  /// No description provided for @bandBbsShowAllCategories.
+  ///
+  /// In en, this message translates to:
+  /// **'Show all categories'**
+  String get bandBbsShowAllCategories;
+
+  /// No description provided for @bandBbsShowAllCategoriesDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Include categories for unsupported devices hidden by default'**
+  String get bandBbsShowAllCategoriesDesc;
+
   /// No description provided for @settingsAccountSyncDevices.
   ///
   /// In en, this message translates to:
@@ -1880,6 +1910,12 @@ abstract class AppLocalizations {
   /// **'Theme mode'**
   String get settingsThemeMode;
 
+  /// No description provided for @settingsThemeModeDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Change app theme appearance'**
+  String get settingsThemeModeDesc;
+
   /// No description provided for @settingsDynamicColor.
   ///
   /// In en, this message translates to:
@@ -2281,6 +2317,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Yesterday {time}'**
   String timeYesterdayAt(Object time);
+
+  /// No description provided for @settingsAccountBandBbsAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'BandBBS Account'**
+  String get settingsAccountBandBbsAccount;
+
+  /// No description provided for @bandBbsResourceQueryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Install purchased resources'**
+  String get bandBbsResourceQueryTitle;
 }
 
 class _AppLocalizationsDelegate

@@ -226,6 +226,11 @@
   "bandBbsQueryResource": "Query",
   "bandBbsOpenResource": "View on BandBBS",
   "bandBbsLogout": "Sign out",
+  "bandBbsLoggedOut": "Signed out",
+  "bandBbsLoadPreviews": "Load post previews",
+  "bandBbsLoadPreviewsDesc": "Automatically load attachment previews in the resource list",
+  "bandBbsShowAllCategories": "Show all categories",
+  "bandBbsShowAllCategoriesDesc": "Include categories for unsupported devices hidden by default",
   "settingsAccountSyncDevices": "Sync devices",
   "settingsAccountSyncDevicesDesc": "Log in to Mi Account to sync paired devices",
   "settingsMiAccount": "Mi Account",
@@ -319,6 +324,7 @@
   "settingsDark": "Dark",
   "settingsOledDark": "OLED dark",
   "settingsThemeMode": "Theme mode",
+  "settingsThemeModeDesc": "Change app theme appearance",
   "settingsDynamicColor": "Dynamic color",
   "settingsDynamicColorDesc": "Use system accent colors for the app theme",
   "settingsColorScheme": "Color scheme",
@@ -416,5 +422,7 @@
     "placeholders": {
       "time": {}
     }
-  }
+  },
+  "settingsAccountBandBbsAccount": "BandBBS Account",
+  "bandBbsResourceQueryTitle": "Install purchased resources"
 }

@@ -1,12 +1,16 @@
+import 'package:card_settings_ui/card_settings_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:zerobox/src/app/generated/app_localizations.dart';
 import 'package:zerobox/src/app/utils/error_localization.dart';
+import 'package:zerobox/src/app/widgets/dialog_helper.dart';
 import 'package:zerobox/src/app/widgets/network_img_layer.dart';
 import 'package:zerobox/src/app/widgets/page_container.dart';
 import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
+import 'package:zerobox/src/core/providers/app_settings_providers.dart';
 import 'package:zerobox/src/data/community/community_source.dart';
 import 'package:zerobox/src/features/accounts/services/bandbbs_auth_service.dart';
 import 'package:zerobox/src/features/resources/application/resource_catalog_providers.dart';
@@ -72,18 +76,38 @@ class _BandBbsAccountPageState extends ConsumerState<BandBbsAccountPage> {
             children: [
               Card(
                 child: ListTile(
-                  leading: CircleAvatar(
-                    child: Text((account.userId ?? 'B').characters.first),
+                  leading: account.avatarUrl != null
+                      ? NetworkImgLayer(
+                          src: account.avatarUrl!,
+                          width: 40,
+                          height: 40,
+                          type: 'avatar',
+                        )
+                      : CircleAvatar(
+                          child: Text(
+                            (account.username ?? account.userId ?? 'B')
+                                .characters
+                                .first,
+                          ),
+                        ),
+                  title: Text(
+                    account.username ?? l10n.settingsAccountBBSAccount,
                   ),
-                  title: Text(l10n.settingsAccountBBSAccount),
                   subtitle: Text(
                     account.userId == null
                         ? l10n.settingsConnected
-                        : l10n.settingsAccountBandBbsUser(account.userId!),
+                        : '${l10n.settingsAccountBandBbsAccount} · ${account.userId}',
                   ),
                   trailing: TextButton(
-                    onPressed: () =>
-                        ref.read(bandBbsAuthProvider.notifier).signOut(),
+                    onPressed: () async {
+                      await ref.read(bandBbsAuthProvider.notifier).signOut();
+                      if (!context.mounted) return;
+                      ZeroBoxDialog.showToast(
+                        message: l10n.bandBbsLoggedOut,
+                        context: context,
+                      );
+                      context.pop();
+                    },
                     child: Text(l10n.bandBbsLogout),
                   ),
                 ),
@@ -92,35 +116,78 @@ class _BandBbsAccountPageState extends ConsumerState<BandBbsAccountPage> {
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _id,
-                          keyboardType: TextInputType.number,
-                          onSubmitted: (_) => _query(),
-                          decoration: InputDecoration(
-                            labelText: l10n.bandBbsResourceId,
-                            hintText: l10n.bandBbsResourceIdHint,
-                          ),
-                        ),
+                      Text(
+                        l10n.bandBbsResourceQueryTitle,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
                       ),
-                      const SizedBox(width: 12),
-                      FilledButton.icon(
-                        onPressed: _loading ? null : _query,
-                        icon: _loading
-                            ? const SizedBox.square(
-                                dimension: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.search),
-                        label: Text(l10n.bandBbsQueryResource),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _id,
+                              keyboardType: TextInputType.number,
+                              onSubmitted: (_) => _query(),
+                              decoration: InputDecoration(
+                                labelText: l10n.bandBbsResourceId,
+                                hintText: l10n.bandBbsResourceIdHint,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          FilledButton.icon(
+                            onPressed: _loading ? null : _query,
+                            icon: _loading
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.search),
+                            label: Text(l10n.bandBbsQueryResource),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
+              ),
+              const SizedBox(height: 16),
+              SettingsSection(
+                title: Text(l10n.settingsGeneral),
+                tiles: [
+                  SettingsTile.switchTile(
+                    onToggle: (value) async {
+                      await ref
+                          .read(appSettingsProvider.notifier)
+                          .setBandBbsLoadPreviews(value ?? false);
+                    },
+                    initialValue: ref
+                        .watch(appSettingsProvider)
+                        .bandbbsLoadPreviews,
+                    leading: const Icon(Icons.image_outlined),
+                    title: Text(l10n.bandBbsLoadPreviews),
+                    description: Text(l10n.bandBbsLoadPreviewsDesc),
+                  ),
+                  SettingsTile.switchTile(
+                    onToggle: (value) async {
+                      await ref
+                          .read(appSettingsProvider.notifier)
+                          .setBandBbsShowAllCategories(value ?? false);
+                    },
+                    initialValue: ref
+                        .watch(appSettingsProvider)
+                        .bandbbsShowAllCategories,
+                    leading: const Icon(Icons.category_outlined),
+                    title: Text(l10n.bandBbsShowAllCategories),
+                    description: Text(l10n.bandBbsShowAllCategoriesDesc),
+                  ),
+                ],
               ),
               if (_error != null)
                 Padding(

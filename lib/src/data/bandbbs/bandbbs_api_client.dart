@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:dio/dio.dart';
 import 'package:zerobox/src/core/logging/logging_service.dart';
 import 'package:zerobox/src/features/accounts/services/bandbbs_auth_service.dart';
@@ -41,6 +39,29 @@ class BandBbsApiClient {
     final response = await _send<Object?>(
       () async => dio.get<Object?>(
         '$_baseUrl/api/resources/',
+        queryParameters: queryParameters,
+        options: await _authOptions(),
+      ),
+    );
+    return _objectMap(response.data);
+  }
+
+  Future<Map<String, dynamic>> searchResources({
+    required String keywords,
+    required int page,
+    String? order,
+    List<int>? categoryIds,
+  }) async {
+    final queryParameters = {
+      'keywords': keywords,
+      'page': page,
+      if (order?.isNotEmpty == true) 'search_order': order,
+      if (categoryIds != null && categoryIds.isNotEmpty)
+        'categories[]': categoryIds,
+    };
+    final response = await _send<Object?>(
+      () async => dio.get<Object?>(
+        '$_baseUrl/api/resource-search/',
         queryParameters: queryParameters,
         options: await _authOptions(),
       ),
@@ -151,9 +172,7 @@ class BandBbsApiClient {
 
   Future<Response<T>> _send<T>(Future<Response<T>> Function() request) async {
     try {
-      final response = await request();
-      _logResponse(response);
-      return response;
+      return await request();
     } on DioException catch (e, st) {
       _logDioException(e, st);
       rethrow;
@@ -163,48 +182,14 @@ class BandBbsApiClient {
     }
   }
 
-  void _logResponse(Response<Object?> response) {
-    final request = response.requestOptions;
-    _log.info(
-      'BandBBS request\n'
-      'method=${request.method}\n'
-      'url=${request.uri}\n'
-      'headers=${_formatBody(request.headers)}\n'
-      'query=${_formatBody(request.queryParameters)}\n'
-      'body=${_formatBody(request.data)}\n'
-      'BandBBS response\n'
-      'status=${response.statusCode}\n'
-      'headers=${_formatBody(response.headers.map)}\n'
-      'body=${_formatBody(response.data)}',
-    );
-  }
-
   void _logDioException(DioException error, StackTrace stackTrace) {
     final request = error.requestOptions;
-    final response = error.response;
     _log.severe(
-      'BandBBS request failed\n'
-      'method=${request.method}\n'
-      'url=${request.uri}\n'
-      'headers=${_formatBody(request.headers)}\n'
-      'query=${_formatBody(request.queryParameters)}\n'
-      'body=${_formatBody(request.data)}\n'
-      'response_status=${response?.statusCode}\n'
-      'response_headers=${_formatBody(response?.headers.map)}\n'
-      'response_body=${_formatBody(response?.data)}',
+      'BandBBS ${request.method} ${request.uri} failed '
+      'status=${error.response?.statusCode}',
       error,
       stackTrace,
     );
-  }
-
-  String _formatBody(Object? value) {
-    if (value == null) return 'null';
-    if (value is List<int>) return '<bytes length=${value.length}>';
-    try {
-      return const JsonEncoder.withIndent('  ').convert(value);
-    } catch (_) {
-      return value.toString();
-    }
   }
 }
 
