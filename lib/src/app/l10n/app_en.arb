@@ -448,5 +448,7 @@
   "settingsAboutLogs": "Logs",
   "settingsAboutLogsDescription": "Runtime logs from the last 7 days. On Android, they can be viewed and copied in the Files app.",
   "settingsAboutLogsOpen": "Open logs folder",
-  "settingsAboutLogsOpenFailed": "Unable to open the logs folder"
+  "settingsAboutLogsOpenFailed": "Unable to open the logs folder",
+  "settingsAboutLogsWarningTitle": "Sensitive information warning",
+  "settingsAboutLogsWarningMessage": "Logs may contain BandBBS, Xiaomi, or Amazfit login credentials and other sensitive information. Do not share them with anyone other than official ZeroBox maintainers!"
 }

@@ -22,6 +22,7 @@ class ZeroBoxDaemonServer {
   StreamSubscription<CommandEvent>? _eventSubscription;
   StreamSubscription<CommandEvent>? _taskEventSubscription;
   String? _windowsToken;
+  RandomAccessFile? _windowsLock;
   final DateTime startedAt = DateTime.now();
   Socket? _activeOperationClient;
 
@@ -32,17 +33,34 @@ class ZeroBoxDaemonServer {
       await Process.run('chmod', ['700', runtimeDirectory.path]);
     }
     if (Platform.isWindows) {
+      final lockFile = await File(
+        daemonWindowsLockPath,
+      ).open(mode: FileMode.append);
+      try {
+        await lockFile.lock(FileLock.exclusive);
+        _windowsLock = lockFile;
+      } catch (_) {
+        await lockFile.close();
+        throw StateError('ZeroBox daemon is already starting or running');
+      }
       _server = await ServerSocket.bind(
         InternetAddress.loopbackIPv4,
-        daemonWindowsPort,
+        0,
         shared: false,
       );
       _windowsToken = base64Url.encode(
         List<int>.generate(32, (_) => Random.secure().nextInt(256)),
       );
-      await File(
-        daemonWindowsTokenPath,
-      ).writeAsString(_windowsToken!, flush: true);
+      await publishWindowsDaemonEndpoint(
+        WindowsDaemonEndpoint(
+          port: _server!.port,
+          token: _windowsToken!,
+          pid: pid,
+          protocolVersion: zeroBoxProtocolVersion,
+        ),
+      );
+      final legacyToken = File(daemonWindowsTokenPath);
+      if (await legacyToken.exists()) await legacyToken.delete();
     } else {
       final socketFile = File(daemonSocketPath);
       if (await socketFile.exists()) {
@@ -186,7 +204,7 @@ class ZeroBoxDaemonServer {
     'uptimeSeconds': DateTime.now().difference(startedAt).inSeconds,
     'platform': Platform.operatingSystem,
     'endpoint': Platform.isWindows
-        ? '127.0.0.1:$daemonWindowsPort'
+        ? '127.0.0.1:${_server?.port ?? 0}'
         : daemonSocketPath,
     'capabilities': zeroBoxDaemonCapabilities,
     'tasks': {
@@ -235,8 +253,18 @@ class ZeroBoxDaemonServer {
       final socketFile = File(daemonSocketPath);
       if (await socketFile.exists()) await socketFile.delete();
     } else {
-      final tokenFile = File(daemonWindowsTokenPath);
-      if (await tokenFile.exists()) await tokenFile.delete();
+      final endpointFile = File(daemonWindowsEndpointPath);
+      if (await endpointFile.exists()) {
+        try {
+          final endpoints = await readWindowsDaemonEndpoints();
+          if (endpoints.any((endpoint) => endpoint.token == _windowsToken)) {
+            await endpointFile.delete();
+          }
+        } catch (_) {}
+      }
+      await _windowsLock?.unlock();
+      await _windowsLock?.close();
+      _windowsLock = null;
     }
   }
 }

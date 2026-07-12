@@ -96,11 +96,17 @@ class MainActivity : FlutterActivity() {
         ).setMethodCallHandler { call, result ->
             if (call.method == "open") {
                 try {
-                    val intent = android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-                        putExtra(
-                            "android.provider.extra.INITIAL_URI",
-                            android.net.Uri.parse("content://${applicationContext.packageName}.logs/root/logs"),
+                    val authority = "${applicationContext.packageName}.logs"
+                    val logsUri = android.provider.DocumentsContract.buildDocumentUri(
+                        authority,
+                        "logs",
+                    )
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(
+                            logsUri,
+                            android.provider.DocumentsContract.Document.MIME_TYPE_DIR,
                         )
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
                     startActivity(intent)
                     result.success(true)

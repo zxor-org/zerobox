@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:path_provider/path_provider.dart';
 import 'package:zerobox/src/commands/command_protocol.dart';
+import 'package:zerobox/src/core/logging/logging_service.dart';
 import 'package:zerobox/src/core/models/bt_models.dart';
 import 'package:zerobox/src/core/services/shared_prefs_service.dart';
 import 'package:zerobox/src/daemon/daemon_client.dart';
@@ -15,6 +16,8 @@ import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
 import 'package:zerobox/src/protocols/common/device_protocol.dart';
 
 class RemoteDeviceManager extends DeviceManager {
+  static final _log = getLogger('RemoteDeviceManager');
+
   ZeroBoxDaemonClient? _client;
   StreamSubscription<CommandEvent>? _eventSubscription;
   Future<ZeroBoxDaemonClient>? _connecting;
@@ -181,13 +184,24 @@ class RemoteDeviceManager extends DeviceManager {
   Future<void> startBluetoothScan({
     ConnectType connectType = ConnectType.ble,
   }) async {
-    state = state.copyWith(scanning: true, scannedDevices: const []);
-    await _execute(
-      ZeroBoxCommand(
-        method: 'device.scan.start',
-        params: {'connectType': connectType.name},
-      ),
+    state = state.copyWith(
+      scanning: true,
+      scannedDevices: const [],
+      clearError: true,
     );
+    try {
+      await _execute(
+        ZeroBoxCommand(
+          method: 'device.scan.start',
+          params: {'connectType': connectType.name},
+        ),
+      );
+    } catch (error, stackTrace) {
+      _log.severe('start remote scan failed', error, stackTrace);
+      if (!_disposed) {
+        state = state.copyWith(scanning: false, error: error.toString());
+      }
+    }
   }
 
   @override
@@ -206,20 +220,33 @@ class RemoteDeviceManager extends DeviceManager {
     state = state.copyWith(
       connecting: true,
       protocolState: ProtocolState.connecting,
+      clearError: true,
     );
-    await importSharedDevice(
-      MiWearState(
-        name: name,
-        addr: addr,
-        connectType: connectType,
-        authkey: authKey,
-        disconnected: true,
-      ),
-    );
-    await _execute(
-      ZeroBoxCommand(method: 'device.connect', params: {'device': addr}),
-    );
-    await _refreshSnapshot();
+    try {
+      await importSharedDevice(
+        MiWearState(
+          name: name,
+          addr: addr,
+          connectType: connectType,
+          authkey: authKey,
+          disconnected: true,
+        ),
+      );
+      await _execute(
+        ZeroBoxCommand(method: 'device.connect', params: {'device': addr}),
+      );
+      await _refreshSnapshot();
+    } catch (error, stackTrace) {
+      _log.severe('remote connect to $addr failed', error, stackTrace);
+      if (!_disposed) {
+        state = state.copyWith(
+          connecting: false,
+          connectStatus: 3,
+          protocolState: ProtocolState.error,
+          error: error.toString(),
+        );
+      }
+    }
   }
 
   @override

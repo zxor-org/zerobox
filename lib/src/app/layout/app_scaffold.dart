@@ -21,7 +21,7 @@ class AppScaffold extends ConsumerWidget {
       appSettingsProvider.select((state) => state.wideNavigationRailPosition),
     );
 
-    if (width >= LayoutBreakpoint.medium) {
+    if (useWideLayout(width)) {
       return _buildSideMenu(context, l10n, badgeCount, railPosition);
     }
     return _buildBottomMenu(context, l10n, badgeCount);

@@ -51,9 +51,7 @@ class ZeroBoxDialog {
             SnackBar(
               content: Text(message),
               behavior: SnackBarBehavior.floating,
-              width: MediaQuery.sizeOf(ctx).width >= LayoutBreakpoint.medium
-                  ? 600
-                  : null,
+              width: useWideLayout(MediaQuery.sizeOf(ctx).width) ? 600 : null,
               duration: duration,
               action: showActionButton
                   ? SnackBarAction(

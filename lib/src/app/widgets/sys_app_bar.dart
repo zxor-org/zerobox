@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:zerobox/src/core/utils/layout.dart';
 
 class SysAppBar extends StatelessWidget implements PreferredSizeWidget {
   const SysAppBar({
@@ -31,10 +32,12 @@ class SysAppBar extends StatelessWidget implements PreferredSizeWidget {
     final customClose =
         desktop && defaultTargetPlatform != TargetPlatform.macOS;
     final macOS = desktop && defaultTargetPlatform == TargetPlatform.macOS;
-    final resolvedLeading = macOS
+    final avoidMacOSWindowControls =
+        macOS && !useWideLayout(MediaQuery.sizeOf(context).width);
+    final resolvedLeading = avoidMacOSWindowControls
         ? Row(
             children: [
-              const SizedBox(width: 72),
+              const SizedBox(width: 36),
               SizedBox(
                 width: 48,
                 child:
@@ -47,8 +50,8 @@ class SysAppBar extends StatelessWidget implements PreferredSizeWidget {
     final appBar = AppBar(
       title: title,
       leading: resolvedLeading,
-      leadingWidth: macOS ? 120 : null,
-      automaticallyImplyLeading: !macOS,
+      leadingWidth: avoidMacOSWindowControls ? 84 : null,
+      automaticallyImplyLeading: !avoidMacOSWindowControls,
       actions: [
         ...?actions,
         if (customClose) CloseButton(onPressed: () => windowManager.close()),

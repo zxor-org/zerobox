@@ -109,5 +109,6 @@ not depend on desktop IPC.
 - Unix sockets live under `$XDG_RUNTIME_DIR/zerobox` on Linux and the user
   Application Support directory on macOS, with a compatibility fallback for
   the former `/tmp` endpoint during upgrades.
-- Windows uses loopback IPC authenticated by a random per-run token stored in
-  the user's local application-data directory.
+- Windows publishes a random loopback port and per-run authentication token in
+  the user's local application-data directory. Clients verify the daemon and
+  protocol version with an authenticated handshake before issuing commands.

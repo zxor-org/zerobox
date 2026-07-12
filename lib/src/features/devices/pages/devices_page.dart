@@ -12,6 +12,7 @@ import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
 import 'package:zerobox/src/core/models/bt_models.dart';
 import 'package:zerobox/src/core/models/device.dart';
+import 'package:zerobox/src/core/utils/layout.dart';
 import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
 import 'package:zerobox/src/features/resources/services/install_queue_notifier.dart';
 import 'package:zerobox/src/protocols/common/device_protocol.dart' as proto;
@@ -99,7 +100,7 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
           children: [
             LayoutBuilder(
               builder: (context, constraints) {
-                final isWide = constraints.maxWidth >= 840;
+                final isWide = useWideLayout(constraints.maxWidth);
                 final infoPanel = _DeviceInfoPanel(
                   device: device,
                   isReady: isReady,

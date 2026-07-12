@@ -2473,6 +2473,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Unable to open the logs folder'**
   String get settingsAboutLogsOpenFailed;
+
+  /// No description provided for @settingsAboutLogsWarningTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Sensitive information warning'**
+  String get settingsAboutLogsWarningTitle;
+
+  /// No description provided for @settingsAboutLogsWarningMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Logs may contain BandBBS, Xiaomi, or Amazfit login credentials and other sensitive information. Do not share them with anyone other than official ZeroBox maintainers!'**
+  String get settingsAboutLogsWarningMessage;
 }
 
 class _AppLocalizationsDelegate

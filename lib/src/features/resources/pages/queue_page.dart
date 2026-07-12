@@ -8,6 +8,7 @@ import 'package:zerobox/src/app/widgets/page_container.dart';
 import 'package:zerobox/src/app/widgets/smooth_linear_progress_indicator.dart';
 import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
+import 'package:zerobox/src/core/utils/layout.dart';
 import 'package:zerobox/src/daemon/daemon_task_models.dart';
 import 'package:zerobox/src/daemon/daemon_task_monitor.dart';
 import 'package:zerobox/src/daemon/daemon_task_monitor_impl.dart';
@@ -25,7 +26,7 @@ class QueuePage extends ConsumerWidget {
       appBar: SysAppBar(title: Text(l10n.settingsQueue)),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          final isWide = constraints.maxWidth >= 840;
+          final isWide = useWideLayout(constraints.maxWidth);
           final downloadList = const _DownloadQueuePanel();
           final installList = const _InstallQueuePanel();
 

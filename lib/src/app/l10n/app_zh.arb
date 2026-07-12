@@ -448,5 +448,7 @@
   "settingsAboutLogs": "日志",
   "settingsAboutLogsDescription": "保留最近 7 天的运行日志，Android 可在系统“文件”应用中查看和复制",
   "settingsAboutLogsOpen": "打开日志文件夹",
-  "settingsAboutLogsOpenFailed": "无法打开日志文件夹"
+  "settingsAboutLogsOpenFailed": "无法打开日志文件夹",
+  "settingsAboutLogsWarningTitle": "敏感信息警告",
+  "settingsAboutLogsWarningMessage": "日志可能包含米坛/小米/华米登录凭证等敏感信息，请勿随意分享给除 ZeroBox 官方维护者以外的其他人！"
 }

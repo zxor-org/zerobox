@@ -28,17 +28,52 @@ class ZeroBoxDaemonClient implements ZeroBoxCommandBus {
   static Future<ZeroBoxDaemonClient> connect({
     Duration timeout = const Duration(seconds: 1),
   }) async {
-    final token = Platform.isWindows
-        ? await File(daemonWindowsTokenPath).readAsString()
-        : null;
-    final socket = Platform.isWindows
-        ? await Socket.connect(
-            InternetAddress.loopbackIPv4,
-            daemonWindowsPort,
-            timeout: timeout,
-          )
-        : await _connectUnix(timeout);
-    return ZeroBoxDaemonClient._(socket, token);
+    if (!Platform.isWindows) {
+      return ZeroBoxDaemonClient._(await _connectUnix(timeout), null);
+    }
+
+    final endpoints = await readWindowsDaemonEndpoints();
+    if (endpoints.isEmpty) {
+      throw StateError('ZeroBox daemon endpoint is unavailable');
+    }
+    Object? lastError;
+    for (final endpoint in endpoints) {
+      ZeroBoxDaemonClient? client;
+      try {
+        final socket = await Socket.connect(
+          InternetAddress.loopbackIPv4,
+          endpoint.port,
+          timeout: timeout,
+        );
+        client = ZeroBoxDaemonClient._(socket, endpoint.token);
+        await client._verifyWindowsDaemon();
+        return client;
+      } catch (error) {
+        lastError = error;
+        await client?.close();
+      }
+    }
+    throw StateError('Unable to authenticate ZeroBox daemon: $lastError');
+  }
+
+  Future<void> _verifyWindowsDaemon() async {
+    final result = await execute(
+      const ZeroBoxCommand(method: 'daemon.info'),
+      timeout: const Duration(seconds: 2),
+    );
+    if (!result.ok) {
+      throw StateError(
+        '${result.error?.code ?? 'handshake_failed'}: '
+        '${result.error?.message ?? 'Daemon handshake failed'}',
+      );
+    }
+    final info = result.value;
+    if (info is! Map ||
+        info['running'] != true ||
+        info['platform'] != 'windows' ||
+        info['protocolVersion'] != zeroBoxProtocolVersion) {
+      throw StateError('The endpoint is not a compatible ZeroBox daemon');
+    }
   }
 
   static Future<Socket> _connectUnix(Duration timeout) async {
@@ -49,6 +84,10 @@ class ZeroBoxDaemonClient implements ZeroBoxCommandBus {
         timeout: timeout,
       );
     } catch (_) {
+      // Only probe the former endpoint when it actually exists. Otherwise the
+      // fallback hides the useful error for the current endpoint, which made
+      // macOS sandbox failures appear to originate from Data/tmp.
+      if (!File(legacyDaemonSocketPath).existsSync()) rethrow;
       return Socket.connect(
         InternetAddress(legacyDaemonSocketPath, type: InternetAddressType.unix),
         0,
@@ -90,21 +129,28 @@ class ZeroBoxDaemonClient implements ZeroBoxCommandBus {
   }
 
   void _handleLine(String line) {
-    final value = jsonDecode(line) as Map<String, dynamic>;
-    if (value['type'] == 'event') {
-      final event = value['event']?.toString() ?? 'unknown';
-      final data = Map<String, Object?>.from(value)
-        ..remove('type')
-        ..remove('event');
-      _events.add(CommandEvent(event, data: data));
-      return;
+    try {
+      final value = jsonDecode(line) as Map<String, dynamic>;
+      if (value['type'] == 'event') {
+        final event = value['event']?.toString() ?? 'unknown';
+        final data = Map<String, Object?>.from(value)
+          ..remove('type')
+          ..remove('event');
+        _events.add(CommandEvent(event, data: data));
+        return;
+      }
+      final id = value['id']?.toString() ?? '';
+      final pending = _pending.remove(id);
+      pending?.timer.cancel();
+      pending?.completer.complete(
+        CommandResult.fromJson(value.cast<String, Object?>()),
+      );
+    } catch (_) {
+      // Treat malformed input as a failed handshake/connection instead of
+      // leaking a parser exception when a stale endpoint targets another app.
+      _handleDone();
+      unawaited(_socket.close());
     }
-    final id = value['id']?.toString() ?? '';
-    final pending = _pending.remove(id);
-    pending?.timer.cancel();
-    pending?.completer.complete(
-      CommandResult.fromJson(value.cast<String, Object?>()),
-    );
   }
 
   void _handleDone() {

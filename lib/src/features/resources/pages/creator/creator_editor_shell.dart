@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zerobox/src/app/generated/app_localizations.dart';
 import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
+import 'package:zerobox/src/core/utils/layout.dart';
 
 class CreatorEditorShell extends StatefulWidget {
   const CreatorEditorShell({super.key});
@@ -47,7 +48,7 @@ class _CreatorEditorShellState extends State<CreatorEditorShell> {
       ),
       body: Row(
         children: [
-          if (MediaQuery.sizeOf(context).width >= 700)
+          if (useWideLayout(MediaQuery.sizeOf(context).width))
             NavigationRail(
               selectedIndex: _currentStep,
               onDestinationSelected: (index) =>

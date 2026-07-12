@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -43,7 +45,8 @@ class AboutSoftwarePage extends StatelessWidget {
                 title: l10n.settingsAboutSoftwareTeam,
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    final columns = constraints.maxWidth >= 720 ? 2 : 1;
+                    final useTwoColumns = constraints.maxWidth >= 720;
+                    final columns = useTwoColumns ? 2 : 1;
                     return GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
@@ -124,6 +127,13 @@ class AboutSoftwarePage extends StatelessWidget {
                     const SizedBox(width: 16),
                     FilledButton.tonalIcon(
                       onPressed: () async {
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          barrierDismissible: false,
+                          builder: (dialogContext) =>
+                              _LogDisclosureDialog(l10n: l10n),
+                        );
+                        if (confirmed != true || !context.mounted) return;
                         final opened = await openLogDirectory();
                         if (!opened && context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -168,6 +178,67 @@ class AboutSoftwarePage extends StatelessWidget {
   }
 }
 
+class _LogDisclosureDialog extends StatefulWidget {
+  const _LogDisclosureDialog({required this.l10n});
+
+  final AppLocalizations l10n;
+
+  @override
+  State<_LogDisclosureDialog> createState() => _LogDisclosureDialogState();
+}
+
+class _LogDisclosureDialogState extends State<_LogDisclosureDialog> {
+  static const _countdownSeconds = 5;
+  Timer? _timer;
+  var _remainingSeconds = _countdownSeconds;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_remainingSeconds <= 1) {
+        timer.cancel();
+        setState(() => _remainingSeconds = 0);
+      } else {
+        setState(() => _remainingSeconds -= 1);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final confirmLabel = _remainingSeconds > 0
+        ? '${widget.l10n.understood}(${_remainingSeconds}s)'
+        : widget.l10n.understood;
+    return PopScope(
+      canPop: false,
+      child: AlertDialog(
+        icon: const Icon(Icons.warning_amber_rounded),
+        title: Text(widget.l10n.settingsAboutLogsWarningTitle),
+        content: Text(widget.l10n.settingsAboutLogsWarningMessage),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(widget.l10n.cancel),
+          ),
+          TextButton(
+            onPressed: _remainingSeconds == 0
+                ? () => Navigator.pop(context, true)
+                : null,
+            child: Text(confirmLabel),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _AboutHeader extends StatelessWidget {
   const _AboutHeader({
     required this.title,
@@ -190,7 +261,7 @@ class _AboutHeader extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     return LayoutBuilder(
       builder: (context, constraints) {
-        final wide = constraints.maxWidth >= 720;
+        final useHorizontalHeader = constraints.maxWidth >= 720;
         final logo = Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -242,7 +313,9 @@ class _AboutHeader extends StatelessWidget {
         final actions = Wrap(
           spacing: 8,
           runSpacing: 8,
-          alignment: wide ? WrapAlignment.end : WrapAlignment.start,
+          alignment: useHorizontalHeader
+              ? WrapAlignment.end
+              : WrapAlignment.start,
           children: [
             FilledButton.tonalIcon(
               onPressed: onOpenRepository,
@@ -258,21 +331,26 @@ class _AboutHeader extends StatelessWidget {
         );
 
         return Padding(
-          padding: EdgeInsets.only(top: wide ? 24 : 8, bottom: wide ? 36 : 20),
+          padding: EdgeInsets.only(
+            top: useHorizontalHeader ? 24 : 8,
+            bottom: useHorizontalHeader ? 36 : 20,
+          ),
           child: Flex(
-            direction: wide ? Axis.horizontal : Axis.vertical,
-            crossAxisAlignment: wide
+            direction: useHorizontalHeader ? Axis.horizontal : Axis.vertical,
+            crossAxisAlignment: useHorizontalHeader
                 ? CrossAxisAlignment.center
                 : CrossAxisAlignment.stretch,
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              if (wide) Expanded(child: logo) else logo,
-              if (wide)
+              if (useHorizontalHeader) Expanded(child: logo) else logo,
+              if (useHorizontalHeader)
                 const SizedBox(width: 24)
               else
                 const SizedBox(height: 18),
               Align(
-                alignment: wide ? Alignment.centerRight : Alignment.centerLeft,
+                alignment: useHorizontalHeader
+                    ? Alignment.centerRight
+                    : Alignment.centerLeft,
                 child: actions,
               ),
             ],

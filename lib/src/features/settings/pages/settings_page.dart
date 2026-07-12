@@ -49,8 +49,9 @@ class SettingsPage extends ConsumerWidget {
     final l10n = AppLocalizations.of(context)!;
     final showDesktopAccentSource =
         !kIsWeb && defaultTargetPlatform == TargetPlatform.linux;
-    final showWideNavigationPosition =
-        MediaQuery.sizeOf(context).width >= LayoutBreakpoint.medium;
+    final showWideNavigationPosition = useWideLayout(
+      MediaQuery.sizeOf(context).width,
+    );
     final showDesktopWindowSettings =
         !kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.windows ||

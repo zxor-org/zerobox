@@ -12,6 +12,7 @@ import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
 import 'package:zerobox/src/core/models/bt_models.dart';
 import 'package:zerobox/src/core/models/device.dart';
+import 'package:zerobox/src/core/utils/layout.dart';
 import 'package:zerobox/src/device/core/connect_type.dart';
 import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
 import 'package:zerobox/src/features/devices/services/device_share_link.dart';
@@ -126,7 +127,7 @@ class _DeviceSwitchPageState extends ConsumerState<DeviceSwitchPage> {
   ) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isWide = constraints.maxWidth >= 840;
+        final isWide = useWideLayout(constraints.maxWidth);
         final savedList = _SavedDeviceList(
           selectedAddr: currentAddr,
           onComplete: () => setState(() {}),
@@ -193,7 +194,7 @@ class _DeviceSwitchPageState extends ConsumerState<DeviceSwitchPage> {
   ) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isWide = constraints.maxWidth >= 840;
+        final isWide = useWideLayout(constraints.maxWidth);
         final savedList = _SavedDeviceList(
           selectedAddr: currentAddr,
           onComplete: () => setState(() {}),
@@ -668,7 +669,7 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final isWide = MediaQuery.sizeOf(context).width >= 840;
+    final isWide = useWideLayout(MediaQuery.sizeOf(context).width);
     if (hiddenOnMobile && !isWide) {
       return const SizedBox.shrink();
     }

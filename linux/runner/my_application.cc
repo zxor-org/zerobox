@@ -21,6 +21,23 @@ static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
 }
 
+static void set_window_icon(GtkWindow* window) {
+  // Let installed packages resolve the application icon through hicolor first.
+  gtk_window_set_icon_name(window, APPLICATION_ID);
+
+  // A plain `flutter build linux` bundle is not installed into the system icon
+  // theme, so load the bundled Flutter asset as a deterministic fallback.
+  g_autofree gchar* executable = g_file_read_link("/proc/self/exe", nullptr);
+  if (executable == nullptr) return;
+  g_autofree gchar* executable_dir = g_path_get_dirname(executable);
+  g_autofree gchar* icon_path =
+      g_build_filename(executable_dir, "data", "flutter_assets", "assets",
+                       "images", "app_icon.png", nullptr);
+  if (g_file_test(icon_path, G_FILE_TEST_IS_REGULAR)) {
+    gtk_window_set_icon_from_file(window, icon_path, nullptr);
+  }
+}
+
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
@@ -34,6 +51,7 @@ static void my_application_activate(GApplication* application) {
 
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
+  set_window_icon(window);
 
   // Use a header bar when running in GNOME as this is the common style used
   // by applications and is the setup most users will be using (e.g. Ubuntu

@@ -7,6 +7,9 @@ abstract final class LayoutBreakpoint {
 
 enum ScreenSize { compact, medium, expanded }
 
+bool useWideLayout(double availableWidth) =>
+    availableWidth >= LayoutBreakpoint.medium;
+
 extension ScreenSizeExtension on ScreenSize {
   bool get isCompact => this == ScreenSize.compact;
   bool get isMedium => this == ScreenSize.medium;

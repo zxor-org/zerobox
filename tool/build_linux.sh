@@ -62,11 +62,18 @@ copy_bundle_to() {
     -exec strip --strip-unneeded {} \; 2>/dev/null || true
 }
 
+copy_system_icons_to() {
+  local root="$1"
+  mkdir -p "${root}/usr/share/icons"
+  cp -a "${PROJECT_ROOT}/linux/icons/hicolor" "${root}/usr/share/icons/"
+}
+
 build_deb() {
   local deb_root="${STAGING_ROOT}/deb"
   rm -rf "${deb_root}"
   copy_bundle_to "${deb_root}"
   prepare_desktop_file "${deb_root}/usr/share/applications/${DESKTOP_FILE}"
+  copy_system_icons_to "${deb_root}"
   mkdir -p "${deb_root}/DEBIAN"
 
   cat > "${deb_root}/DEBIAN/control" <<EOF
@@ -118,10 +125,13 @@ mkdir -p %{buildroot}${INSTALL_PREFIX}
 cp -a ${BUNDLE_DIR}/* %{buildroot}${INSTALL_PREFIX}/
 mkdir -p %{buildroot}/usr/share/applications
 cp ${STAGING_ROOT}/rpm-desktop/${DESKTOP_FILE} %{buildroot}/usr/share/applications/
+mkdir -p %{buildroot}/usr/share/icons
+cp -a ${PROJECT_ROOT}/linux/icons/hicolor %{buildroot}/usr/share/icons/
 
 %files
 ${INSTALL_PREFIX}
 /usr/share/applications/${DESKTOP_FILE}
+/usr/share/icons/hicolor
 
 %changelog
 * $(LC_ALL=C date +"%a %b %d %Y") ${MAINTAINER} - ${rpm_version}-${release_num}
@@ -170,6 +180,8 @@ package() {
   cp -a "${BUNDLE_DIR}"/* "\${pkgdir}${INSTALL_PREFIX}/"
   mkdir -p "\${pkgdir}/usr/share/applications"
   cp "${STAGING_ROOT}/arch-desktop/${DESKTOP_FILE}" "\${pkgdir}/usr/share/applications/"
+  mkdir -p "\${pkgdir}/usr/share/icons"
+  cp -a "${PROJECT_ROOT}/linux/icons/hicolor" "\${pkgdir}/usr/share/icons/"
 }
 EOF
 

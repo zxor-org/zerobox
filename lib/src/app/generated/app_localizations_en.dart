@@ -1283,4 +1283,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsAboutLogsOpenFailed => 'Unable to open the logs folder';
+
+  @override
+  String get settingsAboutLogsWarningTitle => 'Sensitive information warning';
+
+  @override
+  String get settingsAboutLogsWarningMessage =>
+      'Logs may contain BandBBS, Xiaomi, or Amazfit login credentials and other sensitive information. Do not share them with anyone other than official ZeroBox maintainers!';
 }

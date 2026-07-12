@@ -40,7 +40,7 @@ class _DesktopWindowHostState extends State<DesktopWindowHost>
     await windowManager.setPreventClose(true);
     final icon = Platform.isWindows
         ? 'assets/images/tray_icon.ico'
-        : 'assets/images/app_icon.png';
+        : 'assets/images/tray_icon.png';
     await trayManager.setIcon(icon);
     if (!Platform.isLinux) await trayManager.setToolTip('ZeroBox');
     await trayManager.setContextMenu(

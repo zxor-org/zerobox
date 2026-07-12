@@ -1227,4 +1227,11 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsAboutLogsOpenFailed => '无法打开日志文件夹';
+
+  @override
+  String get settingsAboutLogsWarningTitle => '敏感信息警告';
+
+  @override
+  String get settingsAboutLogsWarningMessage =>
+      '日志可能包含米坛/小米/华米登录凭证等敏感信息，请勿随意分享给除 ZeroBox 官方维护者以外的其他人！';
 }
