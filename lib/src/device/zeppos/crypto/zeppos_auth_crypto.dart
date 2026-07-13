@@ -27,7 +27,8 @@ class ZeppOsAuthKeyPair {
 }
 
 Uint8List parseZeppOsAuthKey(String authKey) {
-  final normalized = authKey.trim().toLowerCase();
+  final trimmed = authKey.trim();
+  final normalized = trimmed.toLowerCase();
   if (normalized.isEmpty) {
     return Uint8List.fromList('0123456789@ABCDE'.codeUnits);
   }
@@ -35,13 +36,23 @@ Uint8List parseZeppOsAuthKey(String authKey) {
       ? normalized.substring(2)
       : normalized;
   if (hex.length == 32) {
+    if (!RegExp(r'^[0-9a-f]{32}$').hasMatch(hex)) {
+      throw const FormatException(
+        'ZeppOS authkey must contain exactly 32 hexadecimal characters',
+      );
+    }
     final bytes = Uint8List(16);
     for (var i = 0; i < bytes.length; i += 1) {
       bytes[i] = int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16);
     }
     return bytes;
   }
-  final raw = Uint8List.fromList(authKey.trim().codeUnits);
+  if (normalized.startsWith('0x')) {
+    throw const FormatException(
+      'ZeppOS authkey with 0x prefix must contain 32 hexadecimal characters',
+    );
+  }
+  final raw = Uint8List.fromList(trimmed.codeUnits);
   final bytes = Uint8List(16);
   final copyLength = raw.length < bytes.length ? raw.length : bytes.length;
   if (copyLength > 0) {

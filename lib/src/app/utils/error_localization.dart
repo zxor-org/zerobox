@@ -28,7 +28,12 @@ String localizedErrorMessage(AppLocalizations l10n, Object? error) {
       normalized.contains('timed out') ||
       normalized.contains('future not completed') ||
       normalized.contains('操作超时')) {
-    return l10n.errorOperationTimeout;
+    // Preserve the connection stage carried by the error instead of reducing
+    // every failure to the same unactionable timeout message.
+    final detail = _trimPlatformNoise(raw);
+    return detail.isEmpty
+        ? l10n.errorOperationTimeout
+        : l10n.errorUnknownWithDetail(detail);
   }
 
   if (normalized.contains('device not ready')) {
@@ -44,7 +49,10 @@ String localizedErrorMessage(AppLocalizations l10n, Object? error) {
   if (normalized.contains('required ble characteristics not found') ||
       normalized.contains('characteristic') &&
           normalized.contains('not found')) {
-    return l10n.errorBleCharacteristicsMissing;
+    final detail = _trimPlatformNoise(raw);
+    return normalized.contains('discovered:')
+        ? l10n.errorUnknownWithDetail(detail)
+        : l10n.errorBleCharacteristicsMissing;
   }
 
   if (normalized.contains('send_failed') ||

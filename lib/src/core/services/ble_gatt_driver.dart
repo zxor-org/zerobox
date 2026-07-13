@@ -27,6 +27,7 @@ class BleConnection {
   StreamSubscription<bool>? _connectionSubscription;
   StreamSubscription<Uint8List>? _valueSubscription;
   bool _disposed = false;
+  Future<void> _writeTail = Future<void>.value();
 
   Stream<bool> get connectionState => _connectionController.stream;
 
@@ -50,10 +51,24 @@ class BleConnection {
     final targetChar = BleUuidParser.stringOrNull(charUuid);
     if (targetService == null || targetChar == null) return null;
 
+    // Prefer the expected parent service, but do not require it. Huami devices
+    // expose the ZeppOS 0x16/0x17 characteristics under FEE0 on some models,
+    // while Gadgetbridge resolves characteristics globally by UUID.
     for (final service in services) {
       if (!BleUuidParser.compareStrings(service.uuid, targetService)) continue;
       for (final characteristic in service.characteristics) {
         if (BleUuidParser.compareStrings(characteristic.uuid, targetChar)) {
+          return characteristic;
+        }
+      }
+    }
+    for (final service in services) {
+      for (final characteristic in service.characteristics) {
+        if (BleUuidParser.compareStrings(characteristic.uuid, targetChar)) {
+          _log.info(
+            '[$deviceId] characteristic $charUuid found under '
+            '${service.uuid} instead of $serviceUuid',
+          );
           return characteristic;
         }
       }
@@ -63,7 +78,13 @@ class BleConnection {
 
   Future<void> discoverServices() async {
     _log.info('[$deviceId] discovering services');
-    services = await UniversalBle.discoverServices(deviceId);
+    services = await UniversalBle.discoverServices(deviceId).timeout(
+      const Duration(seconds: 10),
+      onTimeout: () => throw TimeoutException(
+        'BLE service discovery timed out',
+        const Duration(seconds: 10),
+      ),
+    );
     _log.info('[$deviceId] discovered ${services.length} services');
     for (final service in services) {
       _log.fine(
@@ -88,7 +109,13 @@ class BleConnection {
       throw StateError('Characteristic $charUuid not found');
     }
     _log.info('[$deviceId] subscribing to $charUuid');
-    await characteristic.notifications.subscribe();
+    await characteristic.notifications.subscribe().timeout(
+      const Duration(seconds: 8),
+      onTimeout: () => throw TimeoutException(
+        'BLE notification subscription timed out for $charUuid',
+        const Duration(seconds: 8),
+      ),
+    );
     return characteristic.onValueReceived.listen(
       (data) {
         _log.fine('[$deviceId] received ${data.length} bytes from $charUuid');
@@ -110,14 +137,42 @@ class BleConnection {
       _log.severe('[$deviceId] characteristic $charUuid not found');
       throw StateError('Characteristic $charUuid not found');
     }
-    _log.fine('[$deviceId] writing ${data.length} bytes to $charUuid');
-    await characteristic.write(data, withResponse: withResponse);
+    final completer = Completer<void>();
+    _writeTail = _writeTail.then((_) async {
+      if (_disposed) throw StateError('BLE connection is disposed');
+      _log.fine('[$deviceId] writing ${data.length} bytes to $charUuid');
+      await characteristic
+          .write(data, withResponse: withResponse)
+          .timeout(
+            const Duration(seconds: 5),
+            onTimeout: () => throw TimeoutException(
+              'BLE write timed out for $charUuid',
+              const Duration(seconds: 5),
+            ),
+          );
+    }).then(
+      (_) => completer.complete(),
+      onError: (Object error, StackTrace stackTrace) =>
+          completer.completeError(error, stackTrace),
+    );
+    // Keep a failed operation from poisoning all later queued writes.
+    _writeTail = _writeTail.catchError((Object _) {});
+    await completer.future;
   }
 
   Future<int> requestMtu(int desiredMtu) async {
     try {
       _log.info('[$deviceId] requesting MTU $desiredMtu');
-      mtu = await UniversalBle.requestMtu(deviceId, desiredMtu);
+      mtu = await UniversalBle.requestMtu(
+        deviceId,
+        desiredMtu,
+      ).timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => throw TimeoutException(
+          'BLE MTU negotiation timed out',
+          const Duration(seconds: 5),
+        ),
+      );
       _log.info('[$deviceId] MTU granted: $mtu');
     } catch (e) {
       _log.warning('[$deviceId] MTU request failed, keeping $mtu', e);
@@ -137,7 +192,11 @@ class BleConnection {
       await _connectionController.close();
     }
     try {
-      await UniversalBle.disconnect(deviceId);
+      await UniversalBle.disconnect(
+        deviceId,
+      ).timeout(const Duration(seconds: 3));
+    } on TimeoutException catch (e) {
+      _log.warning('[$deviceId] disconnect timed out (ignored)', e);
     } catch (e) {
       _log.warning('[$deviceId] disconnect error', e);
     }
@@ -191,6 +250,7 @@ class BleGattDriver {
         address: device.deviceId,
         connectType: ConnectType.ble,
         rssi: device.rssi,
+        serviceUuids: List<String>.from(device.services),
       );
       final previous = _scanResults[device.deviceId];
       final shouldLog =
@@ -219,10 +279,21 @@ class BleGattDriver {
 
   Future<List<BluetoothEndpoint>> stopScan() async {
     _log.info('stopping BLE scan');
-    await _scanSubscription?.cancel();
+    final scanSubscription = _scanSubscription;
+    if (scanSubscription == null) {
+      return _scanResults.values.toList(growable: false);
+    }
+    await scanSubscription.cancel();
     _scanSubscription = null;
-    if (await UniversalBle.isScanning()) {
-      await UniversalBle.stopScan();
+    try {
+      final scanning = await UniversalBle.isScanning().timeout(
+        const Duration(seconds: 2),
+      );
+      if (scanning) {
+        await UniversalBle.stopScan().timeout(const Duration(seconds: 3));
+      }
+    } on TimeoutException catch (e) {
+      _log.warning('BLE stop scan timed out; continuing connection', e);
     }
     return _scanResults.values.toList(growable: false);
   }
@@ -237,6 +308,14 @@ class BleGattDriver {
   }) async {
     await stopScan();
     _log.info('[$deviceId] initiating BLE connection');
+    // Subscribe before starting the platform connection. Some backends emit
+    // connected=true before UniversalBle.connect() completes; subscribing
+    // afterwards loses that event and makes a healthy connection time out.
+    final connection = BleConnection(
+      deviceId: deviceId,
+      deviceName: deviceName,
+    );
+    await connection.start();
     try {
       await UniversalBle.connect(deviceId).timeout(
         const Duration(seconds: 12),
@@ -246,35 +325,26 @@ class BleGattDriver {
       );
     } catch (e) {
       _log.severe('[$deviceId] UniversalBle.connect failed', e);
+      await connection.dispose();
       rethrow;
     }
     _log.info('[$deviceId] UniversalBle.connect returned');
 
-    final connection = BleConnection(
-      deviceId: deviceId,
-      deviceName: deviceName,
-    );
-    await connection.start();
-
-    final connected = await _waitForConnectionState(
-      connection.connectionState,
-      timeout: const Duration(seconds: 5),
-    );
-    if (!connected) {
-      _log.severe('[$deviceId] device did not report connected in time');
-      await connection.dispose();
-      throw StateError('BLE device did not report connected in time');
-    }
-    _log.info('[$deviceId] controller reports connected');
+    // A successful platform connect is the readiness gate. The connection
+    // stream is retained for later disconnect events, but is not uniformly
+    // replayed by every UniversalBle backend and must not gate initialization.
+    _log.info('[$deviceId] platform connection established');
 
     if (attemptPair) {
       try {
         _log.info('[$deviceId] attempting pair');
-        await UniversalBle.pair(deviceId);
+        await UniversalBle.pair(deviceId).timeout(const Duration(seconds: 5));
         _log.info('[$deviceId] pair succeeded or not needed');
       } catch (e) {
         _log.warning('[$deviceId] pair failed (ignored)', e);
       }
+    } else {
+      _log.info('[$deviceId] skipping OS pairing for protocol-auth device');
     }
 
     try {
@@ -293,18 +363,29 @@ class BleGattDriver {
           null;
     }).toList();
     if (missing.isNotEmpty) {
+      final discovered = connection.services
+          .map(
+            (service) =>
+                '${service.uuid}:[${service.characteristics.map((c) => c.uuid).join(',')}]',
+          )
+          .join('; ');
       _log.severe(
         '[$deviceId] missing BLE characteristics: '
-        '${missing.map((c) => c.label ?? c.characteristicUuid).join(', ')}',
+        '${missing.map((c) => c.label ?? c.characteristicUuid).join(', ')}; '
+        'discovered=$discovered',
       );
       await connection.dispose();
-      throw StateError('Required BLE characteristics not found');
+      throw StateError(
+        'Required BLE characteristics not found for $deviceName @ $deviceId. '
+        'Missing: ${missing.map((c) => c.characteristicUuid).join(', ')}. '
+        'Discovered: $discovered',
+      );
     }
     if (requiredCharacteristics.isNotEmpty) {
       _log.info('[$deviceId] required BLE characteristics found');
     }
 
-    if (desiredMtu != null) {
+    if (desiredMtu != null && desiredMtu > 23) {
       try {
         connection.mtu = await connection.requestMtu(desiredMtu);
       } catch (e) {
@@ -314,18 +395,6 @@ class BleGattDriver {
 
     _log.info('[$deviceId] BLE connection ready');
     return connection;
-  }
-
-  Future<bool> _waitForConnectionState(
-    Stream<bool> stream, {
-    required Duration timeout,
-  }) async {
-    try {
-      await stream.firstWhere((connected) => connected).timeout(timeout);
-      return true;
-    } on TimeoutException catch (_) {
-      return false;
-    }
   }
 
   Future<void> dispose() async {

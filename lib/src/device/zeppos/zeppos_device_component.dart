@@ -25,6 +25,7 @@ class ZeppOsDeviceComponent {
   static const _flagLast = 0x02;
   static const _flagNeedsAck = 0x04;
   static const _flagEncrypted = 0x08;
+  static const _maxInboundPayloadLength = 1024 * 1024;
   static const _zeppServiceUuid = '00001530-0000-3512-2118-0009af100700';
   static const _zeppReadCharUuid = '00000017-0000-3512-2118-0009af100700';
 
@@ -39,6 +40,7 @@ class ZeppOsDeviceComponent {
   int? _currentHandle;
   int? _currentEndpoint;
   int? _currentLength;
+  int _expectedCount = 0;
   BytesBuilder? _reassembly;
 
   Future<void> sendToEndpoint(
@@ -106,9 +108,19 @@ class ZeppOsDeviceComponent {
     final handle = data[cursor++];
     final count = data[cursor++];
 
+    if (!first && _currentHandle == null) {
+      throw StateError('ZeppOS continuation chunk arrived before first chunk');
+    }
     if (_currentHandle != null && _currentHandle != handle) {
       _resetReassembly();
       throw StateError('Unexpected ZeppOS chunk handle $handle');
+    }
+    if (count != (first ? 0 : _expectedCount)) {
+      _resetReassembly();
+      throw StateError(
+        'Unexpected ZeppOS chunk count $count, expected '
+        '${first ? 0 : _expectedCount}',
+      );
     }
     if (encrypted) {
       throw UnsupportedError(
@@ -120,17 +132,32 @@ class ZeppOsDeviceComponent {
       if (data.length < cursor + 6) {
         throw StateError('ZeppOS first chunk is too short: ${data.length}');
       }
-      _currentLength = _readUint32Le(data, cursor);
+      final announcedLength = _readUint32Le(data, cursor);
+      if (announcedLength < 0 ||
+          announcedLength > _maxInboundPayloadLength) {
+        throw StateError(
+          'Invalid ZeppOS payload length $announcedLength',
+        );
+      }
+      _currentLength = announcedLength;
       cursor += 4;
       _currentEndpoint = _readUint16Le(data, cursor);
       cursor += 2;
       _currentHandle = handle;
+      _expectedCount = 0;
       _reassembly = BytesBuilder(copy: false);
     }
 
     _reassembly?.add(Uint8List.sublistView(data, cursor));
+    _expectedCount = (count + 1) & 0xff;
     if (needsAck) {
-      unawaited(_sendAck(handle: handle, count: count));
+      unawaited(
+        _sendAck(handle: handle, count: count).catchError(
+          (Object error, StackTrace stackTrace) {
+            _log.warning('Failed to send ZeppOS ACK', error, stackTrace);
+          },
+        ),
+      );
     }
     if (!last) return;
 
@@ -139,7 +166,12 @@ class ZeppOsDeviceComponent {
     final endpoint = _currentEndpoint;
     _resetReassembly();
     if (endpoint == null) return;
-    final actualLength = length < bytes.length ? length : bytes.length;
+    if (bytes.length < length) {
+      throw StateError(
+        'Truncated ZeppOS payload: expected $length, got ${bytes.length}',
+      );
+    }
+    final actualLength = length;
     onPayload?.call(
       ZeppOsPayload(
         endpoint: endpoint,
@@ -197,6 +229,7 @@ class ZeppOsDeviceComponent {
     _currentHandle = null;
     _currentEndpoint = null;
     _currentLength = null;
+    _expectedCount = 0;
     _reassembly = null;
   }
 

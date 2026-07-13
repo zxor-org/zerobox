@@ -2,6 +2,7 @@ import 'package:zerobox/src/device/core/ble_requirement.dart';
 import 'package:zerobox/src/device/core/connect_type.dart';
 import 'package:zerobox/src/device/core/device_kind.dart';
 import 'package:zerobox/src/device/core/xiaomi_wearable_catalog.dart';
+import 'package:zerobox/src/device/zeppos/zeppos_device_catalog.dart';
 
 class DeviceProfile {
   const DeviceProfile({
@@ -12,6 +13,7 @@ class DeviceProfile {
     required this.preferredConnectType,
     this.bleRequiredCharacteristics = xiaomiRequiredBleCharacteristics,
     this.bleDesiredMtu = 517,
+    this.bleAttemptPair = true,
     this.classicServiceUuid,
     this.classicFallbackChannels = const [5, 1],
   });
@@ -23,6 +25,7 @@ class DeviceProfile {
   final ConnectType preferredConnectType;
   final List<BleRequiredCharacteristic> bleRequiredCharacteristics;
   final int? bleDesiredMtu;
+  final bool bleAttemptPair;
   final String? classicServiceUuid;
   final List<int> classicFallbackChannels;
 
@@ -100,7 +103,12 @@ class DeviceRegistry {
           label: 'zeppos chunked 2021 write',
         ),
       ],
-      bleDesiredMtu: 23,
+      // Gadgetbridge starts the protocol encoder at MTU 23; it does not ask
+      // the operating system to negotiate MTU 23 before authentication.
+      bleDesiredMtu: null,
+      // ZeppOS performs its own endpoint 0x0082 authkey handshake. A system
+      // bond is not a prerequisite and can leave UniversalBle.pair hanging.
+      bleAttemptPair: false,
       classicServiceUuid: '00000022-0000-3512-2118-0009af100700',
     ),
   ];
@@ -116,6 +124,20 @@ class DeviceRegistry {
     required String name,
     String? codename,
   }) {
+    if (codename?.startsWith('zepp:') == true) {
+      return _profileById('zeppos');
+    }
+    // Some ZeppOS devices use Xiaomi/Mi product names (notably Mi Band 7).
+    // The Xiaomi wearable catalog also recognizes those names, so consulting
+    // it first incorrectly routes a ZeppOS device into the Xiaomi/Vela session.
+    // Explicit ZeppOS model matching must take precedence.
+    final zeppDevice = zeppOsDeviceForBluetoothName(name);
+    if (zeppDevice != null) {
+      return _profileById('zeppos');
+    }
+
+    final directProfile = resolve(name);
+
     final identity =
         xiaomiWearableIdentityForCodename(codename) ??
         normalizeXiaomiWearableIdentity(name);
@@ -123,7 +145,7 @@ class DeviceRegistry {
       return _resolveFamily(identity.family);
     }
 
-    return resolve(name);
+    return directProfile;
   }
 
   static DeviceProfile _resolveFamily(XiaomiWearableFamily family) {
@@ -146,5 +168,8 @@ class DeviceRegistry {
     namePattern: RegExp(r'.*'),
     illustrationAsset: _xiaomiWatchAsset,
     preferredConnectType: ConnectType.ble,
+    // Unknown BLE devices must be connected far enough to discover services;
+    // their protocol is selected from actual characteristics afterwards.
+    bleRequiredCharacteristics: const [],
   );
 }

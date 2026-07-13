@@ -97,6 +97,7 @@ abstract class BluetoothConnection {
   Stream<Uint8List> get incomingData;
   Stream<bool> get connectionState;
   int? get maxWriteLength;
+  bool supportsCharacteristic(BleRequiredCharacteristic characteristic);
 
   Future<void> send(
     Uint8List data, {

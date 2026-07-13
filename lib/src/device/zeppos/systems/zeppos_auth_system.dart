@@ -27,7 +27,11 @@ class ZeppOsAuthSystem extends System {
     if (_authCompleter != null) {
       throw StateError('ZeppOS authentication is already running');
     }
-    _authCompleter = Completer<void>();
+    // Validate before opening an authentication transaction so malformed keys
+    // fail locally and do not leave the device in a half-finished handshake.
+    parseZeppOsAuthKey(authKey);
+    final completer = Completer<void>();
+    _authCompleter = completer;
     _authKey = authKey;
     _keyPair = createZeppOsAuthKeyPair();
     final command = Uint8List(52)
@@ -37,11 +41,26 @@ class ZeppOsAuthSystem extends System {
       ..[3] = 0x02;
     command.setRange(4, 52, _keyPair!.publicKey);
     _log.info('starting ZeppOS authentication');
-    await _component.sendToEndpoint(
-      ZeppOsDeviceComponent.endpointAuthentication,
-      command,
-    );
-    return _authCompleter!.future.timeout(const Duration(seconds: 12));
+    try {
+      await _component.sendToEndpoint(
+        ZeppOsDeviceComponent.endpointAuthentication,
+        command,
+      );
+      await completer.future.timeout(const Duration(seconds: 12));
+    } on TimeoutException catch (_, st) {
+      final error = StateError(
+        'ZeppOS authentication timed out waiting for endpoint 0x0082',
+      );
+      _log.warning('ZeppOS authentication timed out', error, st);
+      entity.emit(AuthFailed(deviceId: entity.id, error: error.toString()));
+      throw error;
+    } finally {
+      if (identical(_authCompleter, completer)) {
+        _authCompleter = null;
+      }
+      _authKey = null;
+      _keyPair = null;
+    }
   }
 
   @override
@@ -100,10 +119,14 @@ class ZeppOsAuthSystem extends System {
     command.setRange(1, 17, encryptedRandom1);
     command.setRange(17, 33, encryptedRandom2);
     unawaited(
-      _component.sendToEndpoint(
-        ZeppOsDeviceComponent.endpointAuthentication,
-        command,
-      ),
+      _component
+          .sendToEndpoint(
+            ZeppOsDeviceComponent.endpointAuthentication,
+            command,
+          )
+          .catchError((Object error, StackTrace stackTrace) {
+            _fail(error, stackTrace);
+          }),
     );
   }
 

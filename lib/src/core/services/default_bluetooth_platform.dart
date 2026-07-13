@@ -76,12 +76,20 @@ class DefaultBluetoothPlatform implements BluetoothPlatform {
     final stopTypes = _activeScanTypes;
     _activeScanTypes = {};
 
-    if (stopTypes.isEmpty || stopTypes.contains(ConnectType.ble)) {
+    // An empty set means scanning is already stopped. Previously it meant
+    // "stop every backend again", so connect() could block forever waiting on
+    // an inactive native RFCOMM MethodChannel after the UI had already stopped
+    // the scan.
+    if (stopTypes.isEmpty) {
+      return _scanResults.values.toList(growable: false);
+    }
+
+    if (stopTypes.contains(ConnectType.ble)) {
       for (final endpoint in await _ble.stopScan()) {
         _rememberEndpoint(endpoint);
       }
     }
-    if (stopTypes.isEmpty || stopTypes.contains(ConnectType.spp)) {
+    if (stopTypes.contains(ConnectType.spp)) {
       for (final endpoint in await _stopRfcommScanBestEffort()) {
         _rememberEndpoint(endpoint);
       }
@@ -152,13 +160,6 @@ class DefaultBluetoothPlatform implements BluetoothPlatform {
     _connection = null;
     if (connection != null) {
       await connection.dispose();
-      return;
-    }
-
-    try {
-      await _rfcomm.disconnect();
-    } catch (e) {
-      _log.fine('RFCOMM disconnect ignored: $e');
     }
   }
 
@@ -194,6 +195,14 @@ class _BleBluetoothConnection implements BluetoothConnection {
 
   @override
   int? get maxWriteLength => _connection.mtu - 3;
+
+  @override
+  bool supportsCharacteristic(BleRequiredCharacteristic characteristic) =>
+      _connection.findCharacteristic(
+        characteristic.serviceUuid,
+        characteristic.characteristicUuid,
+      ) !=
+      null;
 
   @override
   Future<void> send(
@@ -258,6 +267,10 @@ class _SppBluetoothConnection implements BluetoothConnection {
 
   @override
   int? get maxWriteLength => null;
+
+  @override
+  bool supportsCharacteristic(BleRequiredCharacteristic characteristic) =>
+      false;
 
   @override
   Future<void> send(
