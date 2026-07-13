@@ -38,11 +38,25 @@ its final result.
 
 ```sh
 zerobox --nogui resource sources
-zerobox --nogui resource search calculator --source bandbbs --type quickapp
+zerobox --nogui resource devices --source bandbbs
+zerobox --nogui resource search calculator --source bandbbs --filter quickapp,free,bandbbs-category:101 --sort time
+zerobox --nogui resource list --source astrobox-repo --filter quickapp,hide-paid,hide-force-paid,o65m
 zerobox --nogui resource info bandbbs:6751
 zerobox --nogui resource download bandbbs:6751
 zerobox --nogui resource install bandbbs:6751
 ```
+
+Resource lists and searches accept comma-separated filter chips through one `--filter` option:
+
+- `quickapp`, `watchface`, `firmware`, or `miniprogram` selects one resource type
+- `free` hides both paid and forced-paid resources
+- `hide-paid` hides paid resources
+- `hide-force-paid` hides forced-paid resources, primarily for AstroBox Repo
+- Other values are treated as device or category IDs; multiple IDs can be selected in the same `--filter`
+
+Device and category IDs are source-specific; list valid values with `resource devices --source SOURCE`
+
+`--sort random|name|time` selects the sort order, while `--page N` and `--page-size N` control pagination
 
 ## Device content, accounts and settings
 

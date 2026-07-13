@@ -35,11 +35,25 @@ zerobox --nogui install watchface ./face.mwz --device AA:BB:CC:DD:EE:FF
 
 ```sh
 zerobox --nogui resource sources
-zerobox --nogui resource search calculator --source bandbbs --type quickapp
+zerobox --nogui resource devices --source bandbbs
+zerobox --nogui resource search 鸣潮 --source bandbbs --filter watchface,free,bandbbs-category:101 --sort time
+zerobox --nogui resource list --source astrobox-repo --filter quickapp,hide-paid,hide-force-paid,o65m
 zerobox --nogui resource info bandbbs:6751
 zerobox --nogui resource download bandbbs:6751
 zerobox --nogui resource install bandbbs:6751
 ```
+
+资源列表和搜索通过一个 `--filter` 接收逗号分隔的筛选 chip：
+
+- `quickapp`、`watchface`、`firmware` 或 `miniprogram` 筛选资源类型，一次只能选择一种
+- `free` 仅显示免费资源，同时隐藏普通付费和强制付费资源
+- `hide-paid` 隐藏普通付费资源
+- `hide-force-paid` 隐藏强制付费资源，主要用于 AstroBox Repo
+- 其他值作为设备或分区 ID，可在同一个 `--filter` 中选择多个
+
+不同资源源使用各自的设备或分区 ID，可通过 `resource devices --source SOURCE` 查询
+
+`--sort random|name|time` 设置排序规则，`--page N` 和 `--page-size N` 控制分页
 
 ## 设备内容、账号与设置
 

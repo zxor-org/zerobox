@@ -29,6 +29,11 @@ class CliInvocation {
   final Map<String, String?> options;
   final bool json;
   final bool quiet;
+
+  String requiredArgument(String label) {
+    if (arguments.isEmpty) throw CliUsageException('Missing $label');
+    return arguments.first;
+  }
 }
 
 class CliUsageException implements Exception {

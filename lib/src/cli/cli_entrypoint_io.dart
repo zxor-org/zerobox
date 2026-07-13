@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zerobox/src/cli/cli_models.dart';
 import 'package:zerobox/src/cli/cli_parser.dart';
+import 'package:zerobox/src/cli/resource_cli_command.dart';
 import 'package:zerobox/src/commands/command_protocol.dart';
 import 'package:zerobox/src/daemon/daemon_client.dart';
 import 'package:zerobox/src/daemon/daemon_server.dart';
@@ -245,49 +246,41 @@ Future<ZeroBoxCommand> _toCommand(CliInvocation invocation) async {
     'app.list' => const ZeroBoxCommand(method: 'app.list'),
     'app.uninstall' => ZeroBoxCommand(
       method: 'app.uninstall',
-      params: {'package': _requiredArgument(invocation, 'package name')},
+      params: {'package': invocation.requiredArgument('package name')},
     ),
     'app.launch' => ZeroBoxCommand(
       method: 'app.launch',
-      params: {'package': _requiredArgument(invocation, 'package name')},
+      params: {'package': invocation.requiredArgument('package name')},
     ),
     'watchface.list' => const ZeroBoxCommand(method: 'watchface.list'),
     'watchface.remove' => ZeroBoxCommand(
       method: 'watchface.remove',
-      params: {'id': _requiredArgument(invocation, 'watchface ID')},
+      params: {'id': invocation.requiredArgument('watchface ID')},
     ),
     'watchface.set' => ZeroBoxCommand(
       method: 'watchface.set',
-      params: {'id': _requiredArgument(invocation, 'watchface ID')},
+      params: {'id': invocation.requiredArgument('watchface ID')},
     ),
     'settings.list' => const ZeroBoxCommand(method: 'settings.list'),
     'settings.get' => ZeroBoxCommand(
       method: 'settings.get',
-      params: {'key': _requiredArgument(invocation, 'setting key')},
+      params: {'key': invocation.requiredArgument('setting key')},
     ),
     'settings.set' => ZeroBoxCommand(
       method: 'settings.set',
       params: {
-        'key': _requiredArgument(invocation, 'setting key'),
+        'key': invocation.requiredArgument('setting key'),
         'value': _settingValue(invocation),
       },
     ),
     'resource.sources' => const ZeroBoxCommand(method: 'resource.sources'),
-    'resource.list' || 'resource.search' => ZeroBoxCommand(
-      method: name,
+    'resource.list' ||
+    'resource.search' => buildResourceQueryCommand(invocation),
+    'resource.devices' => ZeroBoxCommand(
+      method: 'resource.devices',
       params: {
         if (invocation.options['source'] != null)
           'source': invocation.options['source'],
-        if (invocation.options['type'] != null)
-          'type': invocation.options['type'],
-        if (invocation.options['device'] != null)
-          'device': invocation.options['device'],
-        if (invocation.options['page'] != null)
-          'page': invocation.options['page'],
-        if (invocation.options['page-size'] != null)
-          'pageSize': invocation.options['page-size'],
-        if (name == 'resource.search')
-          'query': _requiredArgument(invocation, 'search query'),
       },
     ),
     'resource.info' ||
@@ -295,7 +288,7 @@ Future<ZeroBoxCommand> _toCommand(CliInvocation invocation) async {
     'resource.install' => ZeroBoxCommand(
       method: name,
       params: {
-        'ref': _requiredArgument(invocation, 'resource ref'),
+        'ref': invocation.requiredArgument('resource ref'),
         if (invocation.options['file'] != null)
           'file': invocation.options['file'],
         if (invocation.options['device'] != null)
@@ -307,33 +300,33 @@ Future<ZeroBoxCommand> _toCommand(CliInvocation invocation) async {
     'account.list' => const ZeroBoxCommand(method: 'account.list'),
     'account.status' => ZeroBoxCommand(
       method: 'account.status',
-      params: {'provider': _requiredArgument(invocation, 'account provider')},
+      params: {'provider': invocation.requiredArgument('account provider')},
     ),
     'account.logout' => ZeroBoxCommand(
       method: 'account.logout',
-      params: {'provider': _requiredArgument(invocation, 'account provider')},
+      params: {'provider': invocation.requiredArgument('account provider')},
     ),
     'account.login' => await _accountLoginCommand(invocation),
     'queue.list' || 'queue.watch' => const ZeroBoxCommand(method: 'queue.list'),
     'queue.get' => ZeroBoxCommand(
       method: 'queue.get',
-      params: {'id': _requiredArgument(invocation, 'task ID')},
+      params: {'id': invocation.requiredArgument('task ID')},
     ),
     'queue.wait' => ZeroBoxCommand(
       method: 'queue.wait',
-      params: {'id': _requiredArgument(invocation, 'task ID')},
+      params: {'id': invocation.requiredArgument('task ID')},
     ),
     'queue.cancel' => ZeroBoxCommand(
       method: 'queue.cancel',
-      params: {'id': _requiredArgument(invocation, 'task ID')},
+      params: {'id': invocation.requiredArgument('task ID')},
     ),
     'queue.remove' => ZeroBoxCommand(
       method: 'queue.remove',
-      params: {'id': _requiredArgument(invocation, 'task ID')},
+      params: {'id': invocation.requiredArgument('task ID')},
     ),
     'queue.retry' => ZeroBoxCommand(
       method: 'queue.retry',
-      params: {'id': _requiredArgument(invocation, 'task ID')},
+      params: {'id': invocation.requiredArgument('task ID')},
     ),
     'queue.start' => const ZeroBoxCommand(method: 'queue.start'),
     'queue.pause' => const ZeroBoxCommand(method: 'queue.pause'),
@@ -348,7 +341,7 @@ Future<ZeroBoxCommand> _toCommand(CliInvocation invocation) async {
         'type': invocation.command.last == 'miniprogram'
             ? 'quickapp'
             : invocation.command.last,
-        'path': _requiredArgument(invocation, 'resource path'),
+        'path': invocation.requiredArgument('resource path'),
         if (device != null) 'device': device,
       },
     ),
@@ -357,7 +350,7 @@ Future<ZeroBoxCommand> _toCommand(CliInvocation invocation) async {
 }
 
 Future<ZeroBoxCommand> _accountLoginCommand(CliInvocation invocation) async {
-  final provider = _requiredArgument(invocation, 'account provider');
+  final provider = invocation.requiredArgument('account provider');
   final needsPassword =
       provider == 'amazfit' || provider == 'huami' || provider == 'xiaomi';
   return ZeroBoxCommand(
@@ -383,11 +376,6 @@ Future<String> _readPassword(CliInvocation invocation) async {
     stdin.echoMode = true;
     stdout.writeln();
   }
-}
-
-String _requiredArgument(CliInvocation invocation, String label) {
-  if (invocation.arguments.isEmpty) throw CliUsageException('Missing $label');
-  return invocation.arguments.first;
 }
 
 Object _settingValue(CliInvocation invocation) {
@@ -449,7 +437,7 @@ Commands:
   app list|uninstall|launch
   watchface list|remove|set
   settings list|get|set
-  resource sources|list|search|info|download|install
+  resource sources|devices|list|search|info|download|install
   account list|status|login|logout
   queue list|get|wait|watch|cancel|remove|retry|start|pause|clear
   logs show|watch
@@ -458,6 +446,8 @@ Options:
   --json          Emit machine-readable JSON/JSONL
   --quiet         Suppress informational output
   --no-autostart  Do not automatically start the daemon
+  --filter        Comma-separated resource filter chips
+  --sort          Resource sort: random, name, or time
   --detach        Queue an install and return its task ID
   --wait          Wait for a detached task and return its final exit code
 ''';

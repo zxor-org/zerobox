@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zerobox/src/cli/cli_models.dart';
 import 'package:zerobox/src/cli/cli_parser.dart';
+import 'package:zerobox/src/cli/resource_cli_command.dart';
 
 void main() {
   test('GUI mode leaves arguments untouched', () {
@@ -53,6 +54,116 @@ void main() {
     expect(
       parseCliInvocation(const ['--nogui', '--json', '--version']).json,
       isTrue,
+    );
+  });
+
+  test('maps resource filters to the shared command protocol', () {
+    final invocation = parseCliInvocation([
+      '--nogui',
+      'resource',
+      'search',
+      '鸣潮',
+      '--source',
+      'bandbbs',
+      '--sort',
+      'name',
+      '--filter',
+      'watchface,free,bandbbs-category:81,bandbbs-category:95',
+      '--page',
+      '2',
+      '--page-size',
+      '50',
+    ]);
+
+    final command = buildResourceQueryCommand(invocation);
+
+    expect(command.method, 'resource.search');
+    expect(command.params, {
+      'source': 'bandbbs',
+      'type': 'watchface',
+      'sort': 'name',
+      'hidePaid': true,
+      'hideForcePaid': true,
+      'devices': ['bandbbs-category:81', 'bandbbs-category:95'],
+      'page': '2',
+      'pageSize': '50',
+      'query': '鸣潮',
+    });
+  });
+
+  test('rejects unsupported resource sort rules', () {
+    final invocation = parseCliInvocation([
+      '--nogui',
+      'resource',
+      'list',
+      '--sort',
+      'downloads',
+    ]);
+
+    expect(
+      () => buildResourceQueryCommand(invocation),
+      throwsA(isA<CliUsageException>()),
+    );
+  });
+
+  test('maps paid filter chips and removes duplicate devices', () {
+    final invocation = parseCliInvocation([
+      '--nogui',
+      'resource',
+      'list',
+      '--filter',
+      'hide-paid, hide-force-paid, o65m, n67, o65m',
+    ]);
+
+    expect(buildResourceQueryCommand(invocation).params, {
+      'hidePaid': true,
+      'hideForcePaid': true,
+      'devices': ['o65m', 'n67'],
+    });
+  });
+
+  test('rejects conflicting resource type chips', () {
+    final invocation = parseCliInvocation([
+      '--nogui',
+      'resource',
+      'list',
+      '--filter',
+      'quickapp,watchface',
+    ]);
+
+    expect(
+      () => buildResourceQueryCommand(invocation),
+      throwsA(isA<CliUsageException>()),
+    );
+  });
+
+  test('maps the GUI firmware type chip', () {
+    final invocation = parseCliInvocation([
+      '--nogui',
+      'resource',
+      'list',
+      '--filter',
+      'firmware,o65m',
+    ]);
+
+    expect(buildResourceQueryCommand(invocation).params, {
+      'type': 'firmware',
+      'devices': ['o65m'],
+    });
+  });
+
+  test('rejects unknown word-like resource filter chips', () {
+    final invocation = parseCliInvocation([
+      '--nogui',
+      'resource',
+      'list',
+      '--filter',
+      'watchface,fre',
+    ]);
+
+    expect(
+      () => buildResourceQueryCommand(invocation),
+      throwsA(isA<CliUsageException>()),
     );
   });
 }

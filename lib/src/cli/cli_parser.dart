@@ -17,6 +17,9 @@ const _booleanOptions = {
   'password-stdin',
   'detach',
   'wait',
+  'free',
+  'hide-paid',
+  'hide-force-paid',
   'help',
   'version',
 };
