@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -29,7 +30,10 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
     _deviceManagerSubscription = container.listen<DeviceManagerState>(
       deviceManagerProvider,
       (_, state) => _events.add(
-        CommandEvent('device.state', data: {'state': _deviceStateJson(state)}),
+        CommandEvent(
+          'device.state',
+          data: {'state': _wireValue(_deviceStateJson(state))},
+        ),
       ),
       fireImmediately: true,
     );
@@ -69,7 +73,7 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
     _activeCommandCancelled = false;
     try {
       final result = await _dispatch(command);
-      return CommandResult.success(result);
+      return CommandResult.success(_wireValue(result));
     } on CommandFailure catch (error) {
       return CommandResult.failure(
         CommandError(error.code, error.message, details: error.details),
@@ -82,6 +86,11 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
         CommandError('internal', error.toString(), details: '$stackTrace'),
       );
     }
+  }
+
+  Object? _wireValue(Object? value) {
+    if (value == null) return null;
+    return jsonDecode(jsonEncode(value));
   }
 
   @override

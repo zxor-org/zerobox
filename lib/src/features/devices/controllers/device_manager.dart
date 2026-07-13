@@ -155,7 +155,7 @@ class LocalDeviceManager extends DeviceManager {
 
   @override
   DeviceManagerState build() {
-    final bluetooth = ref.watch(bluetoothPlatformProvider);
+    final bluetooth = ref.read(bluetoothPlatformProvider);
 
     _bluetooth = bluetooth;
     _runtime = DeviceRuntime();
@@ -165,6 +165,7 @@ class LocalDeviceManager extends DeviceManager {
     ref.onDispose(() {
       _log.info('DeviceManager disposed');
       _scanTimer?.cancel();
+      _batteryRefreshTimer?.cancel();
       _scanSubscription?.cancel();
       _bluetooth.stopScan();
       _eventSubscription?.cancel();
@@ -214,6 +215,8 @@ class LocalDeviceManager extends DeviceManager {
   StreamSubscription<BluetoothEndpoint>? _scanSubscription;
   StreamSubscription<DeviceEvent>? _eventSubscription;
   Timer? _scanTimer;
+  Timer? _batteryRefreshTimer;
+  bool _batteryRefreshInProgress = false;
   BluetoothConnection? _bluetoothConnection;
   DeviceEntity? _currentEntity;
   final _scannedProfiles = <String, DeviceProfile>{};
@@ -643,6 +646,7 @@ class LocalDeviceManager extends DeviceManager {
         protocolState: ProtocolState.ready,
       );
       await _savePairedDevices();
+      _startBatteryRefreshLoop();
       unawaited(_loadInitialDeviceData(entity));
     } catch (e, st) {
       _log.severe('connect to $addr failed', e, st);
@@ -674,10 +678,44 @@ class LocalDeviceManager extends DeviceManager {
 
   Future<void> _loadInitialDeviceData(DeviceEntity entity) async {
     if (_currentEntity != entity) return;
+    for (final operation in <(String, Future<void> Function())>[
+      ('device data', refreshDeviceData),
+      ('app list', fetchApps),
+      ('watchface list', fetchWatchfaces),
+    ]) {
+      if (_currentEntity != entity) return;
+      try {
+        await operation.$2();
+      } catch (e, st) {
+        _log.warning('initial ${operation.$1} refresh failed', e, st);
+      }
+    }
+  }
+
+  void _startBatteryRefreshLoop() {
+    _batteryRefreshTimer?.cancel();
+    _batteryRefreshTimer = Timer.periodic(
+      const Duration(seconds: 2),
+      (_) => unawaited(_refreshBatteryInBackground()),
+    );
+  }
+
+  Future<void> _refreshBatteryInBackground() async {
+    if (_batteryRefreshInProgress ||
+        _currentEntity == null ||
+        state.protocolState != ProtocolState.ready) {
+      return;
+    }
+    _batteryRefreshInProgress = true;
     try {
-      await refreshDeviceData();
+      await refreshBattery();
     } catch (e, st) {
-      _log.warning('initial device data refresh failed', e, st);
+      if (_currentEntity != null &&
+          state.protocolState == ProtocolState.ready) {
+        _log.fine('periodic battery refresh failed', e, st);
+      }
+    } finally {
+      _batteryRefreshInProgress = false;
     }
   }
 
@@ -879,6 +917,8 @@ class LocalDeviceManager extends DeviceManager {
   }
 
   Future<void> _cleanupConnection() async {
+    _batteryRefreshTimer?.cancel();
+    _batteryRefreshTimer = null;
     final connection = _bluetoothConnection;
     final entity = _currentEntity;
     _bluetoothConnection = null;
@@ -1347,7 +1387,4 @@ class LocalDeviceManager extends DeviceManager {
 }
 
 final deviceManagerProvider =
-    NotifierProvider<DeviceManager, DeviceManagerState>(
-      LocalDeviceManager.new,
-      isAutoDispose: true,
-    );
+    NotifierProvider<DeviceManager, DeviceManagerState>(LocalDeviceManager.new);
