@@ -7,6 +7,7 @@ import 'package:zerobox/src/core/logging/logging_service.dart';
 import 'package:zerobox/src/core/models/bt_models.dart';
 import 'package:zerobox/src/core/providers/bluetooth_platform_provider.dart';
 import 'package:zerobox/src/core/services/shared_prefs_service.dart';
+import 'package:zerobox/src/device/core/ble_requirement.dart';
 import 'package:zerobox/src/device/core/ble_transport.dart';
 import 'package:zerobox/src/device/core/bluetooth_platform.dart';
 import 'package:zerobox/src/device/core/connect_type.dart';
@@ -26,6 +27,7 @@ import 'package:zerobox/src/device/xiaomi/components/thirdparty_app_system.dart'
 import 'package:zerobox/src/device/xiaomi/components/xiaomi_device_component.dart';
 import 'package:zerobox/src/device/xiaomi/xiaomi_device_factory.dart';
 import 'package:zerobox/src/device/zeppos/systems/zeppos_auth_system.dart';
+import 'package:zerobox/src/device/zeppos/zeppos_device_catalog.dart';
 import 'package:zerobox/src/device/zeppos/zeppos_device_factory.dart';
 import 'package:zerobox/src/features/accounts/models/mi_account_models.dart';
 import 'package:zerobox/src/protocols/common/device_protocol.dart'
@@ -155,8 +157,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
   }
 
   static final _log = getLogger('DeviceManager');
-  static const _connectMaxAttempts = 2;
-  static const _connectAttemptTimeout = Duration(seconds: 5);
+  static const _connectMaxAttempts = 1;
   static const _connectRetryDelay = Duration(milliseconds: 300);
   static const _sppFailedConnectSettleDelay = Duration(milliseconds: 500);
   static const _connectionProbeInterval = Duration(seconds: 10);
@@ -175,6 +176,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
   bool _connectionProbeRunning = false;
   bool _installBusy = false;
   int _connectionProbeFailures = 0;
+  final _scannedProfiles = <String, DeviceProfile>{};
 
   static const String _keyPairedDevices = 'paired_devices';
   static const String _keyAutoReconnect = 'auto_reconnect';
@@ -235,6 +237,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
       scannedDevices: const [],
       clearError: true,
     );
+    _scannedProfiles.clear();
 
     final available = await _bluetooth.isAvailable();
     if (!available) {
@@ -282,6 +285,19 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     if (savedAddrs.contains(endpoint.address)) return;
 
     final resolvedProfile = _resolveEndpointProfile(endpoint);
+    // A discovered endpoint must retain its real transport. Previously a
+    // ZeppOS Classic/RFCOMM result was relabelled with the profile's preferred
+    // BLE transport, causing its Classic address to be passed to GATT. BTBR is
+    // not protocol-ready yet, so do not offer those endpoints as connectable.
+    if (resolvedProfile.kind == DeviceKind.zepp &&
+        endpoint.connectType != ConnectType.ble) {
+      _log.fine(
+        'scan ignore ZeppOS ${endpoint.connectType.name} endpoint '
+        '${endpoint.address}; BTBR is not implemented',
+      );
+      return;
+    }
+    _scannedProfiles[endpoint.address] = resolvedProfile;
     final rawDisplayName = xiaomiDisplayNameForIdentity(name: endpoint.name);
     final displayName = _scanDisplayName(endpoint, rawDisplayName);
     final existingIndex = state.scannedDevices.indexWhere(
@@ -300,14 +316,14 @@ class DeviceManager extends Notifier<DeviceManagerState> {
       updated[existingIndex] = BTDeviceInfo(
         name: displayName,
         addr: endpoint.address,
-        connectType: resolvedProfile.preferredConnectType.name,
+        connectType: endpoint.connectType.name,
       );
       state = state.copyWith(scannedDevices: updated);
       return;
     }
     _log.fine(
       'scan add ${endpoint.address} "$displayName" '
-      'via ${resolvedProfile.preferredConnectType.name}',
+      'via ${endpoint.connectType.name}',
     );
     state = state.copyWith(
       scannedDevices: [
@@ -315,7 +331,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
         BTDeviceInfo(
           name: displayName,
           addr: endpoint.address,
-          connectType: resolvedProfile.preferredConnectType.name,
+          connectType: endpoint.connectType.name,
         ),
       ],
     );
@@ -326,7 +342,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     if (profile.kind == DeviceKind.zepp) return profile;
 
     final hasZeppService = endpoint.serviceUuids.any(
-      (uuid) => uuid.toLowerCase() == _zeppOsBleServiceUuid,
+      _isZeppOsServiceUuid,
     );
     if (!hasZeppService) return profile;
 
@@ -335,6 +351,13 @@ class DeviceManager extends Notifier<DeviceManagerState> {
       orElse: () => profile,
     );
   }
+
+  bool _isZeppOsServiceUuid(String uuid) {
+    final compact = uuid.toLowerCase().replaceAll('-', '');
+    final target = _zeppOsBleServiceUuid.replaceAll('-', '');
+    return compact == target || compact == '1530' || compact == '00001530';
+  }
+
 
   String _scanDisplayName(BluetoothEndpoint endpoint, String rawDisplayName) {
     final profile = _resolveEndpointProfile(endpoint);
@@ -374,19 +397,18 @@ class DeviceManager extends Notifier<DeviceManagerState> {
         '$attempt/$_connectMaxAttempts to $addr',
       );
       try {
-        final connection = await _bluetooth
-            .connect(
-              addr,
-              name,
-              BluetoothConnectOptions(
-                connectType: connectType,
-                bleRequiredCharacteristics: profile.bleRequiredCharacteristics,
-                bleDesiredMtu: profile.bleDesiredMtu,
-                sppServiceUuid: profile.classicServiceUuid,
-                sppFallbackChannels: profile.classicFallbackChannels,
-              ),
-            )
-            .timeout(_connectAttemptTimeout);
+        final connection = await _bluetooth.connect(
+          addr,
+          name,
+          BluetoothConnectOptions(
+            connectType: connectType,
+            bleRequiredCharacteristics: profile.bleRequiredCharacteristics,
+            bleDesiredMtu: profile.bleDesiredMtu,
+            bleAttemptPair: profile.bleAttemptPair,
+            sppServiceUuid: profile.classicServiceUuid,
+            sppFallbackChannels: profile.classicFallbackChannels,
+          ),
+        );
         _log.info(
           '${connectType.name.toUpperCase()} connected on attempt $attempt',
         );
@@ -445,19 +467,24 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     final identity =
         xiaomiWearableIdentityForCodename(existingDevice?.codename) ??
         normalizeXiaomiWearableIdentity(name);
-    final effectiveCodename = identity?.codename ?? existingDevice?.codename;
+    var effectiveCodename = identity?.codename ?? existingDevice?.codename;
+    final zeppCatalogDevice = zeppOsDeviceForBluetoothName(name);
+    if (zeppCatalogDevice != null) {
+      effectiveCodename = 'zepp:${zeppCatalogDevice.id}';
+    }
     final displayName = xiaomiDisplayNameForIdentity(
       name: name,
       codename: effectiveCodename,
     );
-    final profile = DeviceRegistry.resolveIdentity(
-      name: displayName,
-      codename: effectiveCodename,
-    );
+    final profile = _scannedProfiles[addr] ??
+        DeviceRegistry.resolveIdentity(
+          name: displayName,
+          codename: effectiveCodename,
+        );
     final profileSource = identity != null
         ? 'codename:${identity.codename}'
         : 'name';
-    final effectiveKind = kind == DeviceKind.xiaomi ? profile.kind : kind;
+    var effectiveKind = kind == DeviceKind.xiaomi ? profile.kind : kind;
     final requestedConnectType = connectType.toLowerCase().isEmpty
         ? profile.preferredConnectType.name
         : connectType.toLowerCase();
@@ -467,7 +494,8 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     _log.info(
       'connect request $addr rawName="$name" displayName="$displayName" '
       'codename="$effectiveCodename" via=$effectiveConnectType '
-      'profile=${profile.id} source=$profileSource authkey="$authKey"',
+      'profile=${profile.id} source=$profileSource '
+      'authkeyPresent=${authKey.trim().isNotEmpty}',
     );
     _log.info('connecting to $displayName @ $addr via $effectiveConnectType');
     state = state.copyWith(
@@ -489,6 +517,14 @@ class DeviceManager extends Notifier<DeviceManagerState> {
         profile,
         transportType,
       );
+
+      if (transportType == ConnectType.ble &&
+          _supportsZeppOsGatt(_bluetoothConnection!)) {
+        effectiveKind = DeviceKind.zepp;
+        _log.info(
+          'identified $addr as ZeppOS from discovered GATT characteristics',
+        );
+      }
 
       final Transport transport;
       if (transportType == ConnectType.spp) {
@@ -578,6 +614,22 @@ class DeviceManager extends Notifier<DeviceManagerState> {
       );
       await _cleanupConnection();
     }
+  }
+
+  bool _supportsZeppOsGatt(BluetoothConnection connection) {
+    const service = '00001530-0000-3512-2118-0009af100700';
+    return connection.supportsCharacteristic(
+          BleRequiredCharacteristic(
+            serviceUuid: service,
+            characteristicUuid: '00000016-0000-3512-2118-0009af100700',
+          ),
+        ) &&
+        connection.supportsCharacteristic(
+          BleRequiredCharacteristic(
+            serviceUuid: service,
+            characteristicUuid: '00000017-0000-3512-2118-0009af100700',
+          ),
+        );
   }
 
   Future<void> _loadInitialDeviceData(DeviceEntity entity) async {
