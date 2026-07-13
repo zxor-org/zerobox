@@ -46,7 +46,7 @@ class ResourceFilters {
 
 class ResourceModeController extends Notifier<ResourceMode> {
   @override
-  ResourceMode build() => ResourceMode.home;
+  ResourceMode build() => ResourceMode.library;
 
   void setMode(ResourceMode mode) => state = mode;
 }

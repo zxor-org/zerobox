@@ -194,7 +194,7 @@
   "settingsDesktopCloseBehavior": "关闭按钮行为",
   "settingsDesktopCloseBehaviorDesc": "选择关闭主窗口时执行的操作",
   "desktopCloseBehaviorAsk": "每次询问",
-  "desktopCloseBehaviorExit": "退出",
+  "desktopCloseBehaviorExit": "直接退出",
   "desktopCloseBehaviorTray": "最小化到托盘",
   "multiDevice": "多设备",
   "quickApp": "快应用",

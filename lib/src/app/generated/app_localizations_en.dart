@@ -600,7 +600,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get desktopCloseBehaviorAsk => 'Ask every time';
 
   @override
-  String get desktopCloseBehaviorExit => 'Exit';
+  String get desktopCloseBehaviorExit => 'Exit immediately';
 
   @override
   String get desktopCloseBehaviorTray => 'Minimize to tray';

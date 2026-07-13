@@ -1235,7 +1235,7 @@ abstract class AppLocalizations {
   /// No description provided for @desktopCloseBehaviorExit.
   ///
   /// In en, this message translates to:
-  /// **'Exit'**
+  /// **'Exit immediately'**
   String get desktopCloseBehaviorExit;
 
   /// No description provided for @desktopCloseBehaviorTray.

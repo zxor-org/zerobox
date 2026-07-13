@@ -194,7 +194,7 @@
   "settingsDesktopCloseBehavior": "Close button behavior",
   "settingsDesktopCloseBehaviorDesc": "Choose what happens when the main window is closed",
   "desktopCloseBehaviorAsk": "Ask every time",
-  "desktopCloseBehaviorExit": "Exit",
+  "desktopCloseBehaviorExit": "Exit immediately",
   "desktopCloseBehaviorTray": "Minimize to tray",
   "multiDevice": "Multi-device",
   "quickApp": "Quickapp",

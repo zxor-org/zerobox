@@ -737,7 +737,7 @@ class SettingsPage extends ConsumerWidget {
                       keyboardType: TextInputType.emailAddress,
                       decoration: InputDecoration(
                         labelText: l10n.settingsHuamiAccountUsername,
-                        prefixIcon: const Icon(Icons.functions),
+                        prefixIcon: const Icon(Icons.account_circle_outlined),
                       ),
                     ),
                     const SizedBox(height: 12),

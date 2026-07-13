@@ -585,7 +585,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get desktopCloseBehaviorAsk => '每次询问';
 
   @override
-  String get desktopCloseBehaviorExit => '退出';
+  String get desktopCloseBehaviorExit => '直接退出';
 
   @override
   String get desktopCloseBehaviorTray => '最小化到托盘';
