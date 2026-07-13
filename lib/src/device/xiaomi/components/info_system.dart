@@ -28,22 +28,32 @@ class XiaomiInfoSystem extends XiaomiPbSystem {
               p.id == pb_system.System_SystemID.GET_DEVICE_STATUS.value,
           responseMapper: (p) => p.system.deviceStatus,
         );
-    final battery = response.battery;
-    final status = models.BatteryStatus(
+    final status = _batteryStatus(response.battery);
+    _emitBattery(status, source: 'snapshot');
+    return status;
+  }
+
+  models.BatteryStatus _batteryStatus(pb_system.DeviceStatus_Battery battery) {
+    return models.BatteryStatus(
       capacity: battery.capacity,
       chargeStatus: _mapChargeStatus(battery.chargeStatus),
       chargeInfo: battery.hasChargeInfo()
           ? models.ChargeInfo(
               state: battery.chargeInfo.state.toInt(),
-              timestamp: battery.chargeInfo.timestamp.toInt(),
+              timestamp: battery.chargeInfo.hasTimestamp()
+                  ? battery.chargeInfo.timestamp.toInt()
+                  : null,
             )
           : null,
     );
+  }
+
+  void _emitBattery(models.BatteryStatus status, {required String source}) {
     _log.info(
-      '[${entity.id}] battery: ${status.capacity}%, ${status.chargeStatus}',
+      '[${entity.id}] battery $source: '
+      '${status.capacity}%, ${status.chargeStatus}',
     );
     entity.emit(BatteryUpdated(deviceId: entity.id, battery: status));
-    return status;
   }
 
   Future<models.SystemInfo> fetchDeviceInfo() async {
@@ -183,6 +193,11 @@ class XiaomiInfoSystem extends XiaomiPbSystem {
 
   @override
   void onWearPacket(pb.WearPacket packet) {
-    // Responses are handled via the request pool.
+    if (packet.whichPayload() != pb.WearPacket_Payload.system ||
+        packet.system.whichPayload() !=
+            pb_system.System_Payload.batteryStatus) {
+      return;
+    }
+    _emitBattery(_batteryStatus(packet.system.batteryStatus), source: 'report');
   }
 }

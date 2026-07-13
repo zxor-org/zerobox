@@ -29,7 +29,14 @@ class ZeroBoxDaemonClient implements ZeroBoxCommandBus {
     Duration timeout = const Duration(seconds: 1),
   }) async {
     if (!Platform.isWindows) {
-      return ZeroBoxDaemonClient._(await _connectUnix(timeout), null);
+      final client = ZeroBoxDaemonClient._(await _connectUnix(timeout), null);
+      try {
+        await client._verifyDaemon();
+        return client;
+      } catch (_) {
+        await client.close();
+        rethrow;
+      }
     }
 
     final endpoints = await readWindowsDaemonEndpoints();
@@ -46,7 +53,7 @@ class ZeroBoxDaemonClient implements ZeroBoxCommandBus {
           timeout: timeout,
         );
         client = ZeroBoxDaemonClient._(socket, endpoint.token);
-        await client._verifyWindowsDaemon();
+        await client._verifyDaemon();
         return client;
       } catch (error) {
         lastError = error;
@@ -56,7 +63,7 @@ class ZeroBoxDaemonClient implements ZeroBoxCommandBus {
     throw StateError('Unable to authenticate ZeroBox daemon: $lastError');
   }
 
-  Future<void> _verifyWindowsDaemon() async {
+  Future<void> _verifyDaemon() async {
     final result = await execute(
       const ZeroBoxCommand(method: 'daemon.info'),
       timeout: const Duration(seconds: 2),
@@ -70,30 +77,18 @@ class ZeroBoxDaemonClient implements ZeroBoxCommandBus {
     final info = result.value;
     if (info is! Map ||
         info['running'] != true ||
-        info['platform'] != 'windows' ||
+        info['platform'] != Platform.operatingSystem ||
         info['protocolVersion'] != zeroBoxProtocolVersion) {
       throw StateError('The endpoint is not a compatible ZeroBox daemon');
     }
   }
 
   static Future<Socket> _connectUnix(Duration timeout) async {
-    try {
-      return await Socket.connect(
-        InternetAddress(daemonSocketPath, type: InternetAddressType.unix),
-        0,
-        timeout: timeout,
-      );
-    } catch (_) {
-      // Only probe the former endpoint when it actually exists. Otherwise the
-      // fallback hides the useful error for the current endpoint, which made
-      // macOS sandbox failures appear to originate from Data/tmp.
-      if (!File(legacyDaemonSocketPath).existsSync()) rethrow;
-      return Socket.connect(
-        InternetAddress(legacyDaemonSocketPath, type: InternetAddressType.unix),
-        0,
-        timeout: timeout,
-      );
-    }
+    return Socket.connect(
+      InternetAddress(daemonSocketPath, type: InternetAddressType.unix),
+      0,
+      timeout: timeout,
+    );
   }
 
   @override
@@ -165,6 +160,9 @@ class ZeroBoxDaemonClient implements ZeroBoxCommandBus {
       }
     }
     _pending.clear();
+    if (!_events.isClosed) {
+      _events.add(const CommandEvent('daemon.disconnected'));
+    }
   }
 
   @override

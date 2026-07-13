@@ -7,20 +7,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zerobox/src/command_bus/local_command_bus.dart';
 import 'package:zerobox/src/commands/command_protocol.dart';
 import 'package:zerobox/src/daemon/daemon_endpoint.dart';
-import 'package:zerobox/src/daemon/daemon_task_queue.dart';
+import 'package:zerobox/src/host/application_host.dart';
 
 class ZeroBoxDaemonServer {
-  ZeroBoxDaemonServer(this.container) : bus = LocalCommandBus(container) {
-    tasks = DaemonTaskQueue(bus, onCancelRunning: bus.cancelActiveOperation);
-  }
+  ZeroBoxDaemonServer(this.container)
+    : host = ApplicationHost(LocalCommandBus(container));
 
   final ProviderContainer container;
-  final LocalCommandBus bus;
-  late final DaemonTaskQueue tasks;
+  final ApplicationHost host;
   ServerSocket? _server;
   final _clients = <Socket>{};
   StreamSubscription<CommandEvent>? _eventSubscription;
-  StreamSubscription<CommandEvent>? _taskEventSubscription;
   String? _windowsToken;
   RandomAccessFile? _windowsLock;
   final DateTime startedAt = DateTime.now();
@@ -59,8 +56,6 @@ class ZeroBoxDaemonServer {
           protocolVersion: zeroBoxProtocolVersion,
         ),
       );
-      final legacyToken = File(daemonWindowsTokenPath);
-      if (await legacyToken.exists()) await legacyToken.delete();
     } else {
       final socketFile = File(daemonSocketPath);
       if (await socketFile.exists()) {
@@ -83,8 +78,7 @@ class ZeroBoxDaemonServer {
       );
       await Process.run('chmod', ['600', daemonSocketPath]);
     }
-    _eventSubscription = bus.events.listen(_broadcastEvent);
-    _taskEventSubscription = tasks.events.listen(_broadcastEvent);
+    _eventSubscription = host.events.listen(_broadcastEvent);
     await for (final client in _server!) {
       _clients.add(client);
       unawaited(_serve(client));
@@ -134,42 +128,6 @@ class ZeroBoxDaemonServer {
         }
         final result = switch (command.method) {
           'daemon.info' => CommandResult.success(_daemonInfo()),
-          'task.enqueue' => CommandResult.success({
-            'taskId': tasks.enqueue(
-              ZeroBoxCommand.fromJson(
-                (command.params['command'] as Map).cast<String, Object?>(),
-              ),
-            ),
-          }),
-          'queue.list' => CommandResult.success(tasks.list()),
-          'queue.get' => () {
-            final task = tasks.get(command.params['id']?.toString() ?? '');
-            return task == null
-                ? const CommandResult.failure(
-                    CommandError('not_found', 'Task not found'),
-                  )
-                : CommandResult.success(task.toJson());
-          }(),
-          'queue.wait' => await (() async {
-            final task = await tasks.wait(
-              command.params['id']?.toString() ?? '',
-            );
-            return task == null
-                ? const CommandResult.failure(
-                    CommandError('not_found', 'Task not found'),
-                  )
-                : CommandResult.success(task.toJson());
-          })(),
-          'queue.cancel' => CommandResult.success({
-            'cancelled': tasks.cancel(command.params['id']?.toString() ?? ''),
-          }),
-          'queue.clear' => () {
-            tasks.clear();
-            return const CommandResult.success({'cleared': true});
-          }(),
-          'queue.remove' => CommandResult.success({
-            'removed': tasks.remove(command.params['id']?.toString() ?? ''),
-          }),
           _ => await _executeForClient(client, command),
         };
         _write(client, {'id': id, ...result.toJson()});
@@ -188,7 +146,7 @@ class ZeroBoxDaemonServer {
   ) async {
     _activeOperationClient = client;
     try {
-      return await bus.execute(command);
+      return await host.execute(command);
     } finally {
       if (identical(_activeOperationClient, client)) {
         _activeOperationClient = null;
@@ -207,25 +165,18 @@ class ZeroBoxDaemonServer {
         ? '127.0.0.1:${_server?.port ?? 0}'
         : daemonSocketPath,
     'capabilities': zeroBoxDaemonCapabilities,
-    'tasks': {
-      'total': tasks.list().length,
-      'running': tasks
-          .list()
-          .where((task) => task['status'] == 'running')
-          .length,
-      'pending': tasks
-          .list()
-          .where((task) => task['status'] == 'pending')
-          .length,
-    },
+    'tasks': host.taskSummary,
   };
 
   void _broadcastEvent(CommandEvent event) {
     final message = {'type': 'event', ...event.toJson()};
     final broadcast =
         event.event == 'device.state' ||
+        event.event == 'account.state' ||
+        event.event == 'settings.state' ||
         event.event == 'log' ||
-        event.event == 'task';
+        event.event == 'task' ||
+        event.event == 'task.removed';
     if (!broadcast && _activeOperationClient != null) {
       _write(_activeOperationClient!, message);
       return;
@@ -241,13 +192,11 @@ class ZeroBoxDaemonServer {
 
   Future<void> close() async {
     await _eventSubscription?.cancel();
-    await _taskEventSubscription?.cancel();
     await _server?.close();
     for (final client in _clients.toList()) {
       await client.close();
     }
-    await bus.close();
-    await tasks.close();
+    await host.close();
     container.dispose();
     if (!Platform.isWindows) {
       final socketFile = File(daemonSocketPath);

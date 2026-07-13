@@ -22,9 +22,7 @@ class _DeviceInfoPageState extends ConsumerState<DeviceInfoPage> {
     Future.microtask(() async {
       final manager = ref.read(deviceManagerProvider.notifier);
       try {
-        await manager.refreshBattery();
-        await manager.fetchSystemInfo();
-        await manager.fetchStorageInfo();
+        await manager.refreshDeviceData();
       } catch (_) {
         // Saved device metadata is still useful when the watch is disconnected.
       }

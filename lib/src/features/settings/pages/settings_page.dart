@@ -15,12 +15,8 @@ import 'package:zerobox/src/core/services/shared_prefs_service.dart';
 import 'package:zerobox/src/core/utils/layout.dart';
 import 'package:zerobox/src/data/astrobox/astrobox_cdn.dart';
 import 'package:zerobox/src/features/resources/application/resource_catalog_providers.dart';
-import 'package:zerobox/src/features/accounts/models/mi_account_models.dart';
-import 'package:zerobox/src/features/accounts/services/bandbbs_auth_service.dart';
-import 'package:zerobox/src/features/accounts/services/huami_auth_service.dart';
-import 'package:zerobox/src/features/accounts/services/mi_account_service.dart';
+import 'package:zerobox/src/features/accounts/application/host_accounts.dart';
 import 'package:zerobox/src/features/accounts/services/mi_account_two_factor_resolver.dart';
-import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
 
 final _desktopExitBehaviorProvider = Provider<int?>((ref) {
   return SharedPrefsService.instance.getInt('desktop.exit_behavior');
@@ -29,12 +25,6 @@ final _desktopExitBehaviorProvider = Provider<int?>((ref) {
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
 
-  static const _keyMiAccountRemember = 'mi_account.remember_credentials';
-  static const _keyMiAccountUsername = 'mi_account.username';
-  static const _keyMiAccountPassword = 'mi_account.password';
-  static const _keyMiAccountUserId = 'mi_account.user_id';
-  static const _keyHuamiAccountRemember = 'huami_account.remember_credentials';
-  static const _keyHuamiAccountPassword = 'huami_account.password';
   static const _colorSchemes = <Color>[
     Color(0xFFE91E63),
     Color(0xFF6750A4),
@@ -84,7 +74,7 @@ class SettingsPage extends ConsumerWidget {
                 title: Text(l10n.settingsHuamiAccount),
                 description: Consumer(
                   builder: (context, ref, _) {
-                    final account = ref.watch(huamiAuthProvider);
+                    final account = ref.watch(hostAccountsProvider).amazfit;
                     if (account.isBusy) {
                       return Text(l10n.settingsHuamiAccountSigningIn);
                     }
@@ -100,7 +90,7 @@ class SettingsPage extends ConsumerWidget {
                 ),
                 value: Consumer(
                   builder: (context, ref, _) {
-                    final account = ref.watch(huamiAuthProvider);
+                    final account = ref.watch(hostAccountsProvider).amazfit;
                     if (account.isBusy) {
                       return const SizedBox.square(
                         dimension: 18,
@@ -117,7 +107,7 @@ class SettingsPage extends ConsumerWidget {
               ),
               SettingsTile.navigation(
                 onPressed: (_) {
-                  final account = ref.read(bandBbsAuthProvider);
+                  final account = ref.read(hostAccountsProvider).bandbbs;
                   if (account.isSignedIn) {
                     context.push('/settings/bandbbs');
                   } else if (!account.isBusy) {
@@ -131,7 +121,7 @@ class SettingsPage extends ConsumerWidget {
                 title: Text(l10n.settingsAccountBandBbsAccount),
                 description: Consumer(
                   builder: (context, ref, _) {
-                    final account = ref.watch(bandBbsAuthProvider);
+                    final account = ref.watch(hostAccountsProvider).bandbbs;
                     if (account.isBusy) {
                       return Text(l10n.settingsAccountBandBbsSigningIn);
                     }
@@ -150,7 +140,7 @@ class SettingsPage extends ConsumerWidget {
                 ),
                 value: Consumer(
                   builder: (context, ref, _) {
-                    final account = ref.watch(bandBbsAuthProvider);
+                    final account = ref.watch(hostAccountsProvider).bandbbs;
                     if (account.isBusy) {
                       return const SizedBox.square(
                         dimension: 18,
@@ -442,17 +432,19 @@ class SettingsPage extends ConsumerWidget {
   Future<void> _showMiAccountLogin(BuildContext context, WidgetRef ref) async {
     final rootContext = context;
     final l10n = AppLocalizations.of(context)!;
-    final prefs = SharedPrefsService.instance;
-    var rememberCredentials = prefs.getBool(_keyMiAccountRemember) ?? false;
+    final accounts = ref.read(hostAccountsProvider.notifier);
+    final credentials = await accounts.rememberedCredentials('xiaomi');
+    var rememberCredentials = credentials['remember'] == true;
     var username = rememberCredentials
-        ? prefs.getString(_keyMiAccountUsername) ?? ''
+        ? credentials['username']?.toString() ?? ''
         : '';
     var password = rememberCredentials
-        ? prefs.getString(_keyMiAccountPassword) ?? ''
+        ? credentials['password']?.toString() ?? ''
         : '';
     var running = false;
     var obscurePassword = true;
     String? error;
+    if (!context.mounted) return;
 
     await showDialog<void>(
       context: context,
@@ -471,23 +463,19 @@ class SettingsPage extends ConsumerWidget {
                 running = true;
                 error = null;
               });
-              final accountService = ref.read(miAccountServiceProvider);
               try {
-                final token = await accountService.login(
-                  username: normalizedUsername,
-                  password: password,
-                );
-                final devices = await accountService.fetchBoundDevices(
-                  token: token,
-                );
-                final imported = await ref
-                    .read(deviceManagerProvider.notifier)
-                    .importMiCloudDevices(devices);
-                await _persistMiAccountCredentials(
+                final account = await ref
+                    .read(hostAccountsProvider.notifier)
+                    .loginXiaomi(
+                      username: normalizedUsername,
+                      password: password,
+                    );
+                await accounts.saveCredentials(
+                  provider: 'xiaomi',
                   remember: rememberCredentials,
                   username: normalizedUsername,
                   password: password,
-                  userId: token.userId,
+                  userId: account.userId ?? '',
                 );
                 if (dialogContext.mounted) {
                   Navigator.of(dialogContext).pop();
@@ -496,12 +484,14 @@ class SettingsPage extends ConsumerWidget {
                   ScaffoldMessenger.of(rootContext).showSnackBar(
                     SnackBar(
                       content: Text(
-                        l10n.settingsMiAccountSyncedDevices(imported),
+                        l10n.settingsMiAccountSyncedDevices(
+                          account.syncedDevices,
+                        ),
                       ),
                     ),
                   );
                 }
-              } on MiAccountTwoFactorRequired catch (e) {
+              } on HostTwoFactorRequired catch (e) {
                 try {
                   setState(() {
                     error = l10n.settingsMiAccountTwoFactorPrompt;
@@ -511,21 +501,18 @@ class SettingsPage extends ConsumerWidget {
                   }
                   final cookieHeader = await createMiAccountTwoFactorResolver()
                       .resolve(rootContext, Uri.parse(e.url));
-                  final token = await accountService.completeTwoFactorLogin(
-                    challenge: e,
-                    cookieHeader: cookieHeader,
-                  );
-                  final devices = await accountService.fetchBoundDevices(
-                    token: token,
-                  );
-                  final imported = await ref
-                      .read(deviceManagerProvider.notifier)
-                      .importMiCloudDevices(devices);
-                  await _persistMiAccountCredentials(
+                  final account = await ref
+                      .read(hostAccountsProvider.notifier)
+                      .completeXiaomiTwoFactor(
+                        challenge: e,
+                        cookieHeader: cookieHeader,
+                      );
+                  await accounts.saveCredentials(
+                    provider: 'xiaomi',
                     remember: rememberCredentials,
                     username: normalizedUsername,
                     password: password,
-                    userId: token.userId,
+                    userId: account.userId ?? '',
                   );
                   if (dialogContext.mounted) {
                     Navigator.of(dialogContext).pop();
@@ -534,7 +521,9 @@ class SettingsPage extends ConsumerWidget {
                     ScaffoldMessenger.of(rootContext).showSnackBar(
                       SnackBar(
                         content: Text(
-                          l10n.settingsMiAccountSyncedDevices(imported),
+                          l10n.settingsMiAccountSyncedDevices(
+                            account.syncedDevices,
+                          ),
                         ),
                       ),
                     );
@@ -650,42 +639,26 @@ class SettingsPage extends ConsumerWidget {
     );
   }
 
-  Future<void> _persistMiAccountCredentials({
-    required bool remember,
-    required String username,
-    required String password,
-    required String userId,
-  }) async {
-    final prefs = SharedPrefsService.instance;
-    if (userId.isNotEmpty) {
-      await prefs.setString(_keyMiAccountUserId, userId);
-    }
-    await prefs.setBool(_keyMiAccountRemember, remember);
-    if (!remember) {
-      await prefs.remove(_keyMiAccountUsername);
-      await prefs.remove(_keyMiAccountPassword);
-      return;
-    }
-    await prefs.setString(_keyMiAccountUsername, username);
-    await prefs.setString(_keyMiAccountPassword, password);
-  }
-
   Future<void> _showHuamiAccountLogin(
     BuildContext context,
     WidgetRef ref,
   ) async {
     final rootContext = context;
     final l10n = AppLocalizations.of(context)!;
-    final prefs = SharedPrefsService.instance;
-    final existing = ref.read(huamiAuthProvider);
-    var rememberCredentials = prefs.getBool(_keyHuamiAccountRemember) ?? false;
-    var username = existing.username ?? '';
+    final accounts = ref.read(hostAccountsProvider.notifier);
+    final credentials = await accounts.rememberedCredentials('amazfit');
+    final existing = ref.read(hostAccountsProvider).amazfit;
+    var rememberCredentials = credentials['remember'] == true;
+    var username = rememberCredentials
+        ? credentials['username']?.toString() ?? existing.username ?? ''
+        : existing.username ?? '';
     var password = rememberCredentials
-        ? prefs.getString(_keyHuamiAccountPassword) ?? ''
+        ? credentials['password']?.toString() ?? ''
         : '';
     var running = false;
     var obscurePassword = true;
     String? error;
+    if (!context.mounted) return;
 
     await showDialog<void>(
       context: context,
@@ -706,10 +679,15 @@ class SettingsPage extends ConsumerWidget {
               });
               try {
                 await ref
-                    .read(huamiAuthProvider.notifier)
-                    .login(username: normalizedUsername, password: password);
-                await _persistHuamiAccountCredentials(
+                    .read(hostAccountsProvider.notifier)
+                    .loginAmazfit(
+                      username: normalizedUsername,
+                      password: password,
+                    );
+                await accounts.saveCredentials(
+                  provider: 'amazfit',
                   remember: rememberCredentials,
+                  username: normalizedUsername,
                   password: password,
                 );
                 if (dialogContext.mounted) {
@@ -733,9 +711,11 @@ class SettingsPage extends ConsumerWidget {
                 running = true;
                 error = null;
               });
-              await ref.read(huamiAuthProvider.notifier).signOut();
-              await _persistHuamiAccountCredentials(
+              await ref.read(hostAccountsProvider.notifier).logout('amazfit');
+              await accounts.saveCredentials(
+                provider: 'amazfit',
                 remember: false,
+                username: '',
                 password: '',
               );
               if (dialogContext.mounted) {
@@ -843,19 +823,6 @@ class SettingsPage extends ConsumerWidget {
         );
       },
     );
-  }
-
-  Future<void> _persistHuamiAccountCredentials({
-    required bool remember,
-    required String password,
-  }) async {
-    final prefs = SharedPrefsService.instance;
-    await prefs.setBool(_keyHuamiAccountRemember, remember);
-    if (!remember) {
-      await prefs.remove(_keyHuamiAccountPassword);
-      return;
-    }
-    await prefs.setString(_keyHuamiAccountPassword, password);
   }
 
   Future<void> _showLanguageSelector(
@@ -1119,7 +1086,7 @@ class SettingsPage extends ConsumerWidget {
   Future<void> _startBandBbsLogin(BuildContext context, WidgetRef ref) async {
     final l10n = AppLocalizations.of(context)!;
     try {
-      await ref.read(bandBbsAuthProvider.notifier).startLogin();
+      await ref.read(hostAccountsProvider.notifier).startBandBbsLogin();
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.settingsAccountBandBbsOpenedBrowser)),

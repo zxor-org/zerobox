@@ -1,16 +1,16 @@
 import 'dart:async';
-import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:cross_file/cross_file.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:zerobox/src/core/providers/app_settings_providers.dart';
-import 'package:zerobox/src/core/services/background_task_guard.dart';
-import 'package:zerobox/src/core/services/shared_prefs_service.dart';
-import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:zerobox/src/commands/command_protocol.dart';
+import 'package:zerobox/src/daemon/daemon_task_models.dart';
 import 'package:zerobox/src/features/resources/domain/community_resource.dart';
+import 'package:zerobox/src/features/resources/domain/community_resource_codec.dart';
 import 'package:zerobox/src/features/resources/services/resource_install_service.dart';
-import 'package:zerobox/src/protocols/common/device_protocol.dart' as proto;
+import 'package:zerobox/src/host/application_host_provider.dart';
 
 export 'package:zerobox/src/features/resources/services/resource_install_service.dart'
     show LocalDeviceInstallType, ResourceTaskStatus;
@@ -24,123 +24,23 @@ class InstallTask {
     required this.description,
     required this.type,
     required this.filePath,
-    this.bytes,
     this.resource,
     this.file,
-    this.deleteAfterInstall = false,
     this.status = ResourceTaskStatus.pending,
     this.progress = 0,
     this.error,
   });
-
-  factory InstallTask.local({
-    required String path,
-    required String fileName,
-    required LocalDeviceInstallType type,
-    Uint8List? bytes,
-  }) {
-    return InstallTask(
-      id: path,
-      name: fileName,
-      description: _localTypeDescription(type),
-      type: type,
-      filePath: path,
-      bytes: bytes,
-    );
-  }
-
-  factory InstallTask.resource({
-    required CommunityResourceDetail resource,
-    required CommunityResourceFile file,
-    required String codename,
-    required String filePath,
-    Uint8List? bytes,
-  }) {
-    return InstallTask(
-      id: '${resource.ref.key}:${file.id}:$codename',
-      name: resource.name,
-      description: codename,
-      type: _installTypeForResource(resource.type),
-      filePath: filePath,
-      bytes: bytes,
-      resource: resource,
-      file: file,
-      deleteAfterInstall: true,
-    );
-  }
 
   final String id;
   final String name;
   final String description;
   final LocalDeviceInstallType type;
   final String filePath;
-  final Uint8List? bytes;
   final CommunityResourceDetail? resource;
   final CommunityResourceFile? file;
-  final bool deleteAfterInstall;
   final ResourceTaskStatus status;
   final double progress;
   final String? error;
-
-  Map<String, Object?> toPersistenceJson() => {
-    'id': id,
-    'name': name,
-    'description': description,
-    'type': type.name,
-    'filePath': filePath,
-    'deleteAfterInstall': deleteAfterInstall,
-    'status': status.name,
-    'progress': progress,
-    if (error != null) 'error': error,
-  };
-
-  factory InstallTask.fromPersistenceJson(Map<String, Object?> json) {
-    final storedStatus = ResourceTaskStatus.values.firstWhere(
-      (value) => value.name == json['status']?.toString(),
-      orElse: () => ResourceTaskStatus.pending,
-    );
-    return InstallTask(
-      id: json['id']?.toString() ?? '',
-      name: json['name']?.toString() ?? 'Recovered task',
-      description: json['description']?.toString() ?? '',
-      type: LocalDeviceInstallType.values.firstWhere(
-        (value) => value.name == json['type']?.toString(),
-        orElse: () => LocalDeviceInstallType.app,
-      ),
-      filePath: json['filePath']?.toString() ?? '',
-      deleteAfterInstall: json['deleteAfterInstall'] == true,
-      status:
-          storedStatus == ResourceTaskStatus.downloading ||
-              storedStatus == ResourceTaskStatus.installing
-          ? ResourceTaskStatus.pending
-          : storedStatus,
-      progress: storedStatus == ResourceTaskStatus.completed
-          ? 1
-          : (json['progress'] as num?)?.toDouble() ?? 0,
-      error: json['error']?.toString(),
-    );
-  }
-
-  InstallTask copyWith({
-    ResourceTaskStatus? status,
-    double? progress,
-    String? error,
-  }) {
-    return InstallTask(
-      id: id,
-      name: name,
-      description: description,
-      type: type,
-      filePath: filePath,
-      bytes: bytes,
-      resource: resource,
-      file: file,
-      deleteAfterInstall: deleteAfterInstall,
-      status: status ?? this.status,
-      progress: progress ?? this.progress,
-      error: error,
-    );
-  }
 }
 
 class InstallQueueState {
@@ -159,332 +59,220 @@ class InstallQueueState {
         task.status == ResourceTaskStatus.pending ||
         task.status == ResourceTaskStatus.failed,
   );
-  double get progress {
-    if (tasks.isEmpty) return 1;
-    return tasks.fold<double>(0, (sum, task) => sum + task.progress) /
-        tasks.length;
-  }
-
-  InstallQueueState copyWith({
-    List<InstallTask>? tasks,
-    QueueRunStatus? runStatus,
-  }) {
-    return InstallQueueState(
-      tasks: tasks ?? this.tasks,
-      runStatus: runStatus ?? this.runStatus,
-    );
-  }
+  double get progress => tasks.isEmpty
+      ? 1
+      : tasks.fold<double>(0, (sum, task) => sum + task.progress) /
+            tasks.length;
 }
 
 class InstallQueueNotifier extends Notifier<InstallQueueState> {
-  static const _mobileStorageKey = 'mobile.install.tasks';
+  StreamSubscription<CommandEvent>? _subscription;
 
   @override
   InstallQueueState build() {
-    ref.listen(deviceManagerProvider, (_, _) {});
-    if (!_isMobile) return const InstallQueueState();
-    listenSelf((_, next) => unawaited(_persistMobile(next)));
-    final rows =
-        SharedPrefsService.instance.getStringList(_mobileStorageKey) ??
-        const [];
-    final tasks = rows
-        .map((row) {
-          try {
-            return InstallTask.fromPersistenceJson(
-              (jsonDecode(row) as Map).cast<String, Object?>(),
-            );
-          } catch (_) {
-            return null;
-          }
-        })
-        .whereType<InstallTask>()
-        .where((task) => task.filePath.isNotEmpty)
-        .toList();
-    return InstallQueueState(tasks: tasks);
+    final host = ref.watch(applicationHostProvider);
+    _subscription = host.events.listen(_handleEvent);
+    ref.onDispose(() => unawaited(_subscription?.cancel()));
+    scheduleMicrotask(_refresh);
+    return const InstallQueueState();
   }
 
-  bool get _isMobile =>
-      !kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.android ||
-          defaultTargetPlatform == TargetPlatform.iOS);
-
-  Future<void> _persistMobile(InstallQueueState next) =>
-      SharedPrefsService.instance.setStringList(
-        _mobileStorageKey,
-        next.tasks.map((task) => jsonEncode(task.toPersistenceJson())).toList(),
-      );
-
-  void enqueueLocalFile(XFile file) {
-    final service = ResourceInstallService();
-    final fileName = file.name;
-
-    Future<void>(() async {
-      Uint8List bytes;
-      try {
-        bytes = await file.readAsBytes();
-      } catch (e) {
-        final task = InstallTask(
-          id: file.path,
-          name: fileName,
-          description: 'Read failed',
-          type: LocalDeviceInstallType.app,
-          filePath: file.path,
-          status: ResourceTaskStatus.failed,
-          error: 'Read failed: $e',
-        );
-        _addTask(task);
-        return;
-      }
-      final type = service.detectLocalInstallType(fileName, bytes);
-      if (type == null) {
-        final task = InstallTask(
-          id: file.path,
-          name: fileName,
-          description: 'Unsupported file',
-          type: LocalDeviceInstallType.app,
-          filePath: file.path,
-          bytes: bytes,
-          status: ResourceTaskStatus.failed,
-          error: 'Unsupported or unrecognized file type',
-        );
-        _addTask(task);
-        return;
-      }
-      _addTask(
-        InstallTask.local(
-          path: file.path,
-          fileName: fileName,
-          type: type,
-          bytes: bytes,
-        ),
-      );
-    });
+  Future<void> _refresh() async {
+    final result = await ref
+        .read(applicationHostProvider)
+        .execute(const ZeroBoxCommand(method: 'queue.list'));
+    if (!result.ok || result.value is! List) return;
+    _replaceFromRows((result.value as List).whereType<Map>());
   }
 
-  void enqueueResource({
-    required CommunityResourceDetail resource,
-    required CommunityResourceFile file,
-    required String codename,
-    required String filePath,
-    Uint8List? bytes,
-  }) {
-    _addTask(
-      InstallTask.resource(
-        resource: resource,
-        file: file,
-        codename: codename,
-        filePath: filePath,
-        bytes: bytes,
-      ),
-    );
-    if (ref.read(appSettingsProvider).autoInstall && _deviceReady()) {
-      start();
-    }
-  }
-
-  bool _deviceReady() {
-    final deviceState = ref.read(deviceManagerProvider);
-    return deviceState.protocolState == proto.ProtocolState.ready &&
-        deviceState.currentDevice != null &&
-        !deviceState.currentDevice!.disconnected;
-  }
-
-  void _addTask(InstallTask task) {
-    if (state.tasks.any(
-      (existing) =>
-          existing.id == task.id &&
-          existing.status != ResourceTaskStatus.completed,
-    )) {
+  void _handleEvent(CommandEvent event) {
+    if (event.event == 'host.connected') {
+      unawaited(_refresh());
       return;
     }
-    state = state.copyWith(tasks: [...state.tasks, task]);
+    if (event.event == 'task.removed') {
+      final id = event.data['id']?.toString();
+      state = InstallQueueState(
+        tasks: state.tasks.where((task) => task.id != id).toList(),
+        runStatus: state.runStatus,
+      );
+      return;
+    }
+    if (event.event != 'task') return;
+    final view = DaemonTaskView.fromJson(event.data);
+    if (view.method != 'install.local') return;
+    final task = _fromView(view);
+    final tasks = [...state.tasks];
+    final index = tasks.indexWhere((item) => item.id == task.id);
+    if (index < 0) {
+      tasks.add(task);
+    } else {
+      tasks[index] = task;
+    }
+    _setTasks(tasks);
   }
 
-  void remove(String taskId) {
-    state = state.copyWith(
-      tasks: state.tasks.where((task) => task.id != taskId).toList(),
-      runStatus: state.tasks.length <= 1
-          ? QueueRunStatus.pending
-          : state.runStatus,
-    );
-  }
-
-  void clearTerminal() {
-    state = state.copyWith(
-      tasks: state.tasks
-          .where(
-            (task) =>
-                task.status != ResourceTaskStatus.completed &&
-                task.status != ResourceTaskStatus.failed,
-          )
+  void _replaceFromRows(Iterable<Map> rows) {
+    _setTasks(
+      rows
+          .map((row) => DaemonTaskView.fromJson(row.cast<String, Object?>()))
+          .where((view) => view.method == 'install.local')
+          .map(_fromView)
           .toList(),
     );
   }
 
+  void _setTasks(List<InstallTask> tasks) {
+    final running = tasks.any(
+      (task) =>
+          task.status == ResourceTaskStatus.installing ||
+          task.status == ResourceTaskStatus.downloading,
+    );
+    state = InstallQueueState(
+      tasks: tasks,
+      runStatus: running ? QueueRunStatus.running : QueueRunStatus.pending,
+    );
+  }
+
+  InstallTask _fromView(DaemonTaskView view) {
+    final typeName = view.params['type']?.toString() ?? 'quickapp';
+    final resourceJson = view.params['resource'];
+    final resource = resourceJson is Map
+        ? communityResourceDetailFromJson(resourceJson.cast<String, Object?>())
+        : null;
+    final fileId = view.params['file']?.toString();
+    final resourceFile = resource?.files
+        .where((file) => file.id == fileId)
+        .firstOrNull;
+    return InstallTask(
+      id: view.id,
+      name:
+          view.params['title']?.toString() ??
+          view.path?.split(Platform.pathSeparator).last ??
+          'Local install',
+      description: view.params['description']?.toString().isNotEmpty == true
+          ? view.params['description']!.toString()
+          : typeName,
+      type: switch (typeName) {
+        'watchface' => LocalDeviceInstallType.watchface,
+        'firmware' => LocalDeviceInstallType.firmware,
+        _ => LocalDeviceInstallType.app,
+      },
+      filePath: view.path ?? '',
+      resource: resource,
+      file: resourceFile,
+      status: switch (view.status) {
+        'running' => ResourceTaskStatus.installing,
+        'completed' => ResourceTaskStatus.completed,
+        'failed' || 'cancelled' => ResourceTaskStatus.failed,
+        _ => ResourceTaskStatus.pending,
+      },
+      progress: view.progress,
+      error: view.error,
+    );
+  }
+
+  void enqueueLocalFile(XFile file) {
+    unawaited(_enqueueLocalFile(file));
+  }
+
+  Future<void> _enqueueLocalFile(XFile file) async {
+    final bytes = await file.readAsBytes();
+    final path = await _stage(file.name, bytes);
+    await _enqueue(
+      ZeroBoxCommand(
+        method: 'install.local',
+        params: {
+          'type': 'auto',
+          'path': path,
+          'title': file.name,
+          'deleteAfter': true,
+          'autoClean': true,
+        },
+      ),
+    );
+  }
+
+  Future<String> _stage(String name, Uint8List bytes) async {
+    final directory = await getTemporaryDirectory();
+    final safeName = name.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+    final file = File(
+      '${directory.path}${Platform.pathSeparator}'
+      'zerobox_queue_${DateTime.now().microsecondsSinceEpoch}_$safeName',
+    );
+    await file.writeAsBytes(bytes, flush: true);
+    return file.path;
+  }
+
+  Future<void> _enqueue(ZeroBoxCommand command) async {
+    final result = await ref
+        .read(applicationHostProvider)
+        .execute(
+          ZeroBoxCommand(
+            method: 'task.enqueue',
+            params: {'held': true, 'command': command.toJson()},
+          ),
+        );
+    if (!result.ok) throw StateError(result.error!.message);
+    await _refresh();
+  }
+
+  void remove(String taskId) => unawaited(_remove(taskId));
+  Future<void> _remove(String taskId) async {
+    final task = state.tasks.where((task) => task.id == taskId).firstOrNull;
+    final terminal =
+        task == null ||
+        task.status == ResourceTaskStatus.completed ||
+        task.status == ResourceTaskStatus.failed;
+    final host = ref.read(applicationHostProvider);
+    await host.execute(
+      ZeroBoxCommand(
+        method: terminal ? 'queue.remove' : 'queue.cancel',
+        params: {'id': taskId},
+      ),
+    );
+    if (!terminal) {
+      await host.execute(
+        ZeroBoxCommand(method: 'queue.remove', params: {'id': taskId}),
+      );
+    }
+  }
+
+  void clearTerminal() {
+    for (final task in state.tasks.where(
+      (task) =>
+          task.status == ResourceTaskStatus.completed ||
+          task.status == ResourceTaskStatus.failed,
+    )) {
+      unawaited(_remove(task.id));
+    }
+  }
+
   void retry(String taskId) {
-    state = state.copyWith(
-      tasks: [
-        for (final task in state.tasks)
-          if (task.id == taskId)
-            task.copyWith(
-              status: ResourceTaskStatus.pending,
-              progress: 0,
-              error: null,
-            )
-          else
-            task,
-      ],
+    unawaited(
+      ref
+          .read(applicationHostProvider)
+          .execute(
+            ZeroBoxCommand(method: 'queue.retry', params: {'id': taskId}),
+          ),
     );
   }
 
   void start() {
-    if (state.isRunning || !state.hasRunnableTasks) return;
-    final hasPending = state.tasks.any(
-      (task) => task.status == ResourceTaskStatus.pending,
+    unawaited(
+      ref
+          .read(applicationHostProvider)
+          .execute(const ZeroBoxCommand(method: 'queue.start')),
     );
-    if (!hasPending) {
-      state = state.copyWith(
-        tasks: [
-          for (final task in state.tasks)
-            if (task.status == ResourceTaskStatus.failed)
-              task.copyWith(
-                status: ResourceTaskStatus.pending,
-                progress: 0,
-                error: null,
-              )
-            else
-              task,
-        ],
-      );
-    }
-    state = state.copyWith(runStatus: QueueRunStatus.running);
-    _run();
   }
 
   void pause() {
-    if (!state.isRunning) return;
-    state = state.copyWith(runStatus: QueueRunStatus.stopping);
-  }
-
-  Future<void> _run() async {
-    final backgroundTask = await beginBackgroundTask('Installing resources');
-    try {
-      while (state.runStatus == QueueRunStatus.running) {
-        final next = state.tasks.cast<InstallTask?>().firstWhere(
-          (task) => task?.status == ResourceTaskStatus.pending,
-          orElse: () => null,
-        );
-        if (next == null) break;
-
-        await _runTask(next);
-
-        if (state.runStatus == QueueRunStatus.stopping) {
-          state = state.copyWith(runStatus: QueueRunStatus.pending);
-          return;
-        }
-      }
-
-      final settings = ref.read(appSettingsProvider);
-      if (!settings.disableAutoClean) {
-        state = state.copyWith(
-          tasks: state.tasks
-              .where((task) => task.status != ResourceTaskStatus.completed)
-              .toList(),
-          runStatus: QueueRunStatus.pending,
-        );
-        return;
-      }
-      state = state.copyWith(runStatus: QueueRunStatus.pending);
-    } finally {
-      await backgroundTask.end();
-    }
-  }
-
-  Future<void> _runTask(InstallTask task) async {
-    final service = ResourceInstallService();
-    final deviceState = ref.read(deviceManagerProvider);
-    if (deviceState.protocolState != proto.ProtocolState.ready ||
-        deviceState.currentDevice == null ||
-        deviceState.currentDevice!.disconnected) {
-      _updateTask(task.id, ResourceTaskStatus.failed, 0, 'Device not ready');
-      return;
-    }
-    final deviceManager = ref.read(deviceManagerProvider.notifier);
-
-    if (task.resource != null && task.file != null) {
-      await service.installDownloadedResource(
-        resource: task.resource!,
-        file: task.file!,
-        filePath: task.filePath,
-        bytes: task.bytes,
-        deviceManager: deviceManager,
-        deleteAfterInstall: task.deleteAfterInstall,
-        onUpdate: (status, progress, error) {
-          _updateTask(task.id, status, progress, error);
-        },
-      );
-      return;
-    }
-
-    await service.installLocalFile(
-      filePath: task.filePath,
-      bytes: task.bytes,
-      deviceManager: deviceManager,
-      onUpdate: (status, progress, error) {
-        _updateTask(task.id, status, progress, error);
-      },
+    unawaited(
+      ref
+          .read(applicationHostProvider)
+          .execute(const ZeroBoxCommand(method: 'queue.pause')),
     );
   }
-
-  void _updateTask(
-    String taskId,
-    ResourceTaskStatus status,
-    double progress,
-    String? error,
-  ) {
-    final current = state.tasks.cast<InstallTask?>().firstWhere(
-      (task) => task?.id == taskId,
-      orElse: () => null,
-    );
-    if (current == null) return;
-    final currentIsTerminal =
-        current.status == ResourceTaskStatus.failed ||
-        current.status == ResourceTaskStatus.completed;
-    final nextIsTerminal =
-        status == ResourceTaskStatus.failed ||
-        status == ResourceTaskStatus.completed;
-    if (currentIsTerminal && !nextIsTerminal) {
-      return;
-    }
-
-    state = state.copyWith(
-      tasks: [
-        for (final task in state.tasks)
-          if (task.id == taskId)
-            task.copyWith(status: status, progress: progress, error: error)
-          else
-            task,
-      ],
-    );
-  }
-}
-
-String _localTypeDescription(LocalDeviceInstallType type) {
-  return switch (type) {
-    LocalDeviceInstallType.app => 'Local app install',
-    LocalDeviceInstallType.watchface => 'Local watchface install',
-    LocalDeviceInstallType.firmware => 'Local firmware install',
-  };
-}
-
-LocalDeviceInstallType _installTypeForResource(CommunityResourceType type) {
-  return switch (type) {
-    CommunityResourceType.quickApp => LocalDeviceInstallType.app,
-    CommunityResourceType.watchface => LocalDeviceInstallType.watchface,
-    CommunityResourceType.firmware => LocalDeviceInstallType.firmware,
-    CommunityResourceType.fontpack || CommunityResourceType.iconpack =>
-      throw UnsupportedError('$type install not implemented yet'),
-  };
 }
 
 final installQueueProvider =

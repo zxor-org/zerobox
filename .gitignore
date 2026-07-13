@@ -131,3 +131,8 @@ app.*.symbols
 
 # FVM Version Cache
 .fvm/
+
+# AI Agent Dir
+.agents/
+.codex/
+skills-lock.json

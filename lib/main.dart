@@ -6,7 +6,7 @@ import 'package:zerobox/src/cli/cli_entrypoint.dart';
 import 'package:zerobox/src/core/logging/logging_service.dart';
 import 'package:zerobox/src/core/services/license_registry_service.dart';
 import 'package:zerobox/src/core/services/shared_prefs_service.dart';
-import 'package:zerobox/src/daemon/desktop_daemon_overrides.dart';
+import 'package:zerobox/src/host/gui_host_overrides.dart';
 import 'package:zerobox/src/features/devices/widgets/device_deep_link_handler.dart';
 
 void main(List<String> args) async {
@@ -16,11 +16,10 @@ void main(List<String> args) async {
   await runCliIfRequested(args);
   await LicenseRegistryService.registerThirdPartyLicenses();
   await initializeDesktopWindow();
-  final daemonOverride = desktopDaemonOverride();
   runApp(
     ProviderScope(
       overrides: [
-        if (daemonOverride != null) daemonOverride,
+        ...guiHostOverrides(),
         initialDeepLinksProvider.overrideWithValue(args),
       ],
       child: const ZeroBoxApp(),

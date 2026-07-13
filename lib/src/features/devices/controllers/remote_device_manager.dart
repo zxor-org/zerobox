@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -7,114 +6,53 @@ import 'package:path_provider/path_provider.dart';
 import 'package:zerobox/src/commands/command_protocol.dart';
 import 'package:zerobox/src/core/logging/logging_service.dart';
 import 'package:zerobox/src/core/models/bt_models.dart';
-import 'package:zerobox/src/core/services/shared_prefs_service.dart';
-import 'package:zerobox/src/daemon/daemon_client.dart';
 import 'package:zerobox/src/device/core/connect_type.dart';
 import 'package:zerobox/src/device/core/device_kind.dart';
 import 'package:zerobox/src/features/accounts/models/mi_account_models.dart';
 import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
+import 'package:zerobox/src/host/application_host_provider.dart';
 import 'package:zerobox/src/protocols/common/device_protocol.dart';
 
-class RemoteDeviceManager extends DeviceManager {
-  static final _log = getLogger('RemoteDeviceManager');
+class HostDeviceManager extends DeviceManager {
+  static final _log = getLogger('HostDeviceManager');
 
-  ZeroBoxDaemonClient? _client;
   StreamSubscription<CommandEvent>? _eventSubscription;
-  Future<ZeroBoxDaemonClient>? _connecting;
   bool _disposed = false;
 
   @override
   DeviceManagerState build() {
+    final host = ref.watch(applicationHostProvider);
     ref.onDispose(() {
       _disposed = true;
       unawaited(_eventSubscription?.cancel());
-      unawaited(_client?.close());
     });
+    _eventSubscription = host.events.listen(_handleEvent);
     scheduleMicrotask(_refreshSnapshot);
-    return DeviceManagerState(pairedDevices: _loadSavedDevices());
-  }
-
-  List<MiWearState> _loadSavedDevices() {
-    final rows =
-        SharedPrefsService.instance.getStringList('paired_devices') ?? const [];
-    return rows
-        .map((row) {
-          try {
-            return MiWearState.fromJson(
-              (jsonDecode(row) as Map).cast<String, dynamic>(),
-            );
-          } catch (_) {
-            return null;
-          }
-        })
-        .whereType<MiWearState>()
-        .toList();
-  }
-
-  Future<ZeroBoxDaemonClient> _ensureClient() {
-    final current = _client;
-    if (current != null) return Future.value(current);
-    return _connecting ??= _connect().whenComplete(() => _connecting = null);
-  }
-
-  Future<ZeroBoxDaemonClient> _connect() async {
-    try {
-      return await _attach(await ZeroBoxDaemonClient.connect());
-    } catch (_) {
-      await Process.start(Platform.resolvedExecutable, const [
-        '--nogui',
-        'daemon',
-        'run',
-      ], mode: ProcessStartMode.detached);
-      Object? lastError;
-      for (var attempt = 0; attempt < 50; attempt += 1) {
-        try {
-          return await _attach(
-            await ZeroBoxDaemonClient.connect(
-              timeout: const Duration(milliseconds: 250),
-            ),
-          );
-        } catch (error) {
-          lastError = error;
-          await Future<void>.delayed(const Duration(milliseconds: 100));
-        }
-      }
-      throw StateError('Unable to start ZeroBox daemon: $lastError');
-    }
-  }
-
-  Future<ZeroBoxDaemonClient> _attach(ZeroBoxDaemonClient client) async {
-    await _eventSubscription?.cancel();
-    _client = client;
-    _eventSubscription = client.events.listen(_handleEvent, onDone: _detach);
-    return client;
-  }
-
-  void _detach() {
-    _client = null;
-    if (!_disposed) {
-      state = state.copyWith(
-        connecting: false,
-        protocolState: ProtocolState.disconnected,
-        error: 'daemon_disconnected',
-      );
-    }
+    return const DeviceManagerState();
   }
 
   void _handleEvent(CommandEvent event) {
+    if (event.event == 'host.disconnected') {
+      if (!_disposed) {
+        state = state.copyWith(
+          connecting: false,
+          protocolState: ProtocolState.disconnected,
+          error: 'daemon_disconnected',
+        );
+      }
+      return;
+    }
+    if (event.event == 'host.connected') {
+      unawaited(_refreshSnapshot());
+      return;
+    }
     if (event.event != 'device.state') return;
     final raw = event.data['state'];
     if (raw is Map) _applyState(raw.cast<String, Object?>());
   }
 
   Future<CommandResult> _execute(ZeroBoxCommand command) async {
-    var client = await _ensureClient();
-    var result = await client.execute(command);
-    if (result.error?.code == 'daemon_disconnected') {
-      _client = null;
-      client = await _ensureClient();
-      result = await client.execute(command);
-    }
+    final result = await ref.read(applicationHostProvider).execute(command);
     if (!result.ok) {
       final error = result.error;
       if (error == null) {
@@ -277,6 +215,11 @@ class RemoteDeviceManager extends DeviceManager {
   }
 
   @override
+  Future<void> refreshDeviceData() async {
+    await _executeState('device.refresh.all');
+  }
+
+  @override
   Future<void> setFindingZeppOsDevice(bool finding) async {
     await _execute(
       ZeroBoxCommand(
@@ -356,12 +299,7 @@ class RemoteDeviceManager extends DeviceManager {
       '${directory.path}/zerobox_gui_${DateTime.now().microsecondsSinceEpoch}.$extension',
     );
     await file.writeAsBytes(bytes, flush: true);
-    final client = await _ensureClient();
-    final progressSubscription = client.events.listen((event) {
-      if (event.event != 'progress') return;
-      final value = event.data['progress'];
-      if (value is num) onProgress?.call(value.toDouble());
-    });
+    StreamSubscription<CommandEvent>? progressSubscription;
     try {
       final queued = await _execute(
         ZeroBoxCommand(
@@ -376,6 +314,15 @@ class RemoteDeviceManager extends DeviceManager {
       );
       final taskId = (queued.value as Map)['taskId']?.toString();
       if (taskId == null) throw StateError('Daemon did not return a task ID');
+      progressSubscription = ref.read(applicationHostProvider).events.listen((
+        event,
+      ) {
+        if (event.event != 'task' || event.data['id']?.toString() != taskId) {
+          return;
+        }
+        final value = event.data['progress'];
+        if (value is num) onProgress?.call(value.toDouble());
+      });
       final completed = await _execute(
         ZeroBoxCommand(method: 'queue.wait', params: {'id': taskId}),
       );
@@ -389,7 +336,7 @@ class RemoteDeviceManager extends DeviceManager {
       }
       await _refreshSnapshot();
     } finally {
-      await progressSubscription.cancel();
+      await progressSubscription?.cancel();
     }
   }
 

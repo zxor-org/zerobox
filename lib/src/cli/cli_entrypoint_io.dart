@@ -331,6 +331,12 @@ Future<ZeroBoxCommand> _toCommand(CliInvocation invocation) async {
       method: 'queue.remove',
       params: {'id': _requiredArgument(invocation, 'task ID')},
     ),
+    'queue.retry' => ZeroBoxCommand(
+      method: 'queue.retry',
+      params: {'id': _requiredArgument(invocation, 'task ID')},
+    ),
+    'queue.start' => const ZeroBoxCommand(method: 'queue.start'),
+    'queue.pause' => const ZeroBoxCommand(method: 'queue.pause'),
     'queue.clear' => const ZeroBoxCommand(method: 'queue.clear'),
     'logs.show' || 'logs.watch' => const ZeroBoxCommand(method: 'logs.recent'),
     'install.quickapp' ||
@@ -445,7 +451,7 @@ Commands:
   settings list|get|set
   resource sources|list|search|info|download|install
   account list|status|login|logout
-  queue list|get|wait|watch|cancel|remove|clear
+  queue list|get|wait|watch|cancel|remove|retry|start|pause|clear
   logs show|watch
 
 Options:

@@ -11,7 +11,7 @@ import 'package:zerobox/src/core/constants/style_constants.dart';
 import 'package:zerobox/src/core/utils/layout.dart';
 import 'package:zerobox/src/daemon/daemon_task_models.dart';
 import 'package:zerobox/src/daemon/daemon_task_monitor.dart';
-import 'package:zerobox/src/daemon/daemon_task_monitor_impl.dart';
+import 'package:zerobox/src/host/application_host_provider.dart';
 import 'package:zerobox/src/features/resources/services/download_queue_notifier.dart';
 import 'package:zerobox/src/features/resources/services/install_queue_notifier.dart';
 
@@ -129,13 +129,12 @@ class _InstallQueuePanel extends ConsumerWidget {
     final l10n = AppLocalizations.of(context)!;
     final state = ref.watch(installQueueProvider);
     final notifier = ref.read(installQueueProvider.notifier);
-    final daemonTasks = ref.watch(daemonTasksProvider).value ?? const [];
-    final daemonPaths = daemonTasks
-        .map((task) => task.path)
-        .whereType<String>()
-        .toSet();
-    final localTasks = state.tasks
-        .where((task) => !daemonPaths.contains(task.filePath))
+    final daemonTasks = (ref.watch(daemonTasksProvider).value ?? const [])
+        .where(
+          (task) =>
+              task.method != 'install.local' &&
+              task.method != 'resource.download',
+        )
         .toList();
     final running = state.runStatus == QueueRunStatus.running;
     final stopping = state.runStatus == QueueRunStatus.stopping;
@@ -150,7 +149,13 @@ class _InstallQueuePanel extends ConsumerWidget {
             IconButton(
               onPressed: () {
                 notifier.clearTerminal();
-                unawaited(clearDaemonTasks());
+                for (final task in daemonTasks.where(
+                  (task) => task.isTerminal,
+                )) {
+                  unawaited(
+                    removeHostTask(ref.read(applicationHostProvider), task.id),
+                  );
+                }
               },
               icon: const Icon(Icons.delete_outline),
               tooltip: l10n.queueClear,
@@ -180,11 +185,11 @@ class _InstallQueuePanel extends ConsumerWidget {
             error: task.error,
             onRemove: () => unawaited(
               task.isTerminal
-                  ? removeDaemonTask(task.id)
-                  : cancelDaemonTask(task.id),
+                  ? removeHostTask(ref.read(applicationHostProvider), task.id)
+                  : cancelHostTask(ref.read(applicationHostProvider), task.id),
             ),
           ),
-        for (final task in localTasks)
+        for (final task in state.tasks)
           _QueueTile(
             key: ValueKey('install-${task.id}'),
             icon: _installIcon(task.type),

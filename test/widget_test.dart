@@ -17,9 +17,10 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     await SharedPrefsService.instance.init();
 
-    await tester.pumpWidget(
-      const ProviderScope(child: ZeroBoxApp()),
-    );
+    await tester.pumpWidget(const ProviderScope(child: ZeroBoxApp()));
+    for (var attempt = 0; attempt < 4; attempt += 1) {
+      await tester.pump(const Duration(seconds: 1));
+    }
 
     expect(find.byType(MaterialApp), findsOneWidget);
   });

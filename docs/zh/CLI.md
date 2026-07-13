@@ -68,6 +68,9 @@ zerobox --nogui queue wait TASK_ID
 zerobox --nogui queue watch
 zerobox --nogui queue cancel TASK_ID
 zerobox --nogui queue remove TASK_ID
+zerobox --nogui queue retry TASK_ID
+zerobox --nogui queue start
+zerobox --nogui queue pause
 zerobox --nogui logs watch
 zerobox --nogui --json device status
 ```
@@ -86,21 +89,23 @@ zerobox --nogui --json device status
 | 8 | 守护进程错误 |
 | 70 | 内部错误 |
 
-## 移动端执行方式
+## 可组合架构
 
-Android 和 iOS 不会启动桌面式守护进程，而是在应用进程内执行相同的设备核心逻辑
+ZeroBox 将业务实现收口在 application host 中，GUI 和 CLI 只依赖共享 command interface
 
-Android 使用前台数据同步服务保护安装队列，iOS 使用系统提供的限时后台任务
+- Linux、macOS 和 Windows 使用 `GUI → IPC → host` 或 `CLI → IPC → host`
+- Android 和 iOS 使用 `GUI → 进程内 host`，不需要复制设备、账号、资源或队列实现
+- 移动端任务由 Android 前台服务或 iOS 系统后台任务保护，中断的运行任务会恢复为等待状态
+- IPC server 只是 host 的桌面 adapter，不包含独立业务逻辑
+- 设备连接、账号会话、资源访问、业务设置和持久化任务均由 host 持有
+- GUI 只保留主题、语言、窗口行为、表单输入和页面导航等纯界面状态
+- 设备、账号与设置状态通过事件广播和快照重新同步，daemon 重启后 GUI 会自动重连
 
-移动端会持久化任务元数据，若操作因进程挂起而中断，任务会恢复为等待状态，供用户继续执行
+## 桌面端部署
 
-共享命令协议本身不依赖桌面 IPC
-
-## 桌面端架构
-
-- 守护进程是桌面端唯一允许占用蓝牙传输通道的进程
-- GUI 和 CLI 客户端通过守护进程接收 `device.state` 状态快照
-- 设备操作会串行执行，避免协议请求相互重叠
-- CLI 后台任务与 GUI 安装任务均由守护进程持久化，包括任务状态和进度
-- Linux 的 Unix 套接字位于 `$XDG_RUNTIME_DIR/zerobox`，macOS 使用系统分配给当前用户或应用沙箱的临时目录，以满足 Unix socket 路径长度限制，升级期间仍兼容旧版 `/tmp` 端点
+- daemon 是桌面端唯一允许占用蓝牙传输通道和业务状态的进程
+- GUI 和 CLI 客户端通过 daemon 接收 `device.state`、`account.state`、`settings.state` 和任务事件
+- 设备与任务操作会串行执行，避免协议请求相互重叠
+- CLI 后台任务与 GUI 下载、安装任务均由 daemon 持久化，包括等待、运行、失败、取消状态和进度
+- Linux 的 Unix 套接字位于 `$XDG_RUNTIME_DIR/zerobox`，macOS 使用系统分配给当前用户或应用沙箱的临时目录，以满足 Unix socket 路径长度限制
 - Windows 使用随机回环端口，并将单次运行认证令牌保存在当前用户的本地应用数据目录中，客户端发送命令前会通过认证握手验证守护进程身份和协议版本

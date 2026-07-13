@@ -1,21 +1,25 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:zerobox/src/app/generated/app_localizations.dart';
 import 'package:zerobox/src/app/router/app_router.dart';
+import 'package:zerobox/src/commands/command_protocol.dart';
 import 'package:zerobox/src/core/services/shared_prefs_service.dart';
+import 'package:zerobox/src/host/application_host_provider.dart';
 
-class DesktopWindowHost extends StatefulWidget {
+class DesktopWindowHost extends ConsumerStatefulWidget {
   const DesktopWindowHost({super.key, required this.child});
   final Widget child;
 
   @override
-  State<DesktopWindowHost> createState() => _DesktopWindowHostState();
+  ConsumerState<DesktopWindowHost> createState() => _DesktopWindowHostState();
 }
 
-class _DesktopWindowHostState extends State<DesktopWindowHost>
+class _DesktopWindowHostState extends ConsumerState<DesktopWindowHost>
     with WindowListener, TrayListener {
   static const _exitBehaviorKey = 'desktop.exit_behavior';
   bool _initialized = false;
@@ -78,14 +82,24 @@ class _DesktopWindowHostState extends State<DesktopWindowHost>
   @override
   void onTrayMenuItemClick(MenuItem menuItem) {
     if (menuItem.key == 'show') _showWindow();
-    if (menuItem.key == 'exit') exit(0);
+    if (menuItem.key == 'exit') unawaited(_exitApplication());
+  }
+
+  Future<void> _exitApplication() async {
+    try {
+      await ref
+          .read(applicationHostProvider)
+          .execute(const ZeroBoxCommand(method: 'daemon.stop'));
+    } finally {
+      exit(0);
+    }
   }
 
   @override
   void onWindowClose() {
     final behavior = SharedPrefsService.instance.getInt(_exitBehaviorKey);
     if (behavior == 0) {
-      exit(0);
+      unawaited(_exitApplication());
     } else if (behavior == 1) {
       windowManager.hide();
     } else {
@@ -134,7 +148,7 @@ class _DesktopWindowHostState extends State<DesktopWindowHost>
                 if (remember) {
                   await SharedPrefsService.instance.setInt(_exitBehaviorKey, 0);
                 }
-                exit(0);
+                await _exitApplication();
               },
               child: Text(l10n.desktopCloseExit),
             ),

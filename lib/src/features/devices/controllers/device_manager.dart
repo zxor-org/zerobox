@@ -106,8 +106,52 @@ class DeviceManagerState {
   }
 }
 
-class DeviceManager extends Notifier<DeviceManagerState> {
+abstract class DeviceManager extends Notifier<DeviceManagerState> {
   static const errorBluetoothUnavailable = 'bluetooth_unavailable';
+
+  Future<void> startBluetoothScan({ConnectType connectType = ConnectType.ble});
+  Future<void> stopBluetoothScan();
+  Future<void> connect(
+    String addr,
+    String name,
+    String authKey, {
+    DeviceKind kind = DeviceKind.xiaomi,
+    String connectType = 'ble',
+  });
+  Future<void> disconnect();
+  Future<void> removeDevice(String addr);
+  Future<void> refreshBattery();
+  Future<void> refreshDeviceData();
+  Future<void> setFindingZeppOsDevice(bool finding);
+  Future<void> fetchSystemInfo();
+  Future<void> fetchStorageInfo();
+  Future<void> fetchApps();
+  Future<void> fetchWatchfaces();
+  Future<void> openApp(AppInfo app, {String page = ''});
+  Future<void> uninstallApp(AppInfo app);
+  Future<void> uninstallWatchface(WatchfaceInfo watchface);
+  Future<void> setWatchface(WatchfaceInfo watchface);
+  Future<void> installApp(
+    Uint8List packageBytes, {
+    required String packageName,
+    void Function(double progress)? onProgress,
+  });
+  Future<void> installWatchface(
+    Uint8List watchfaceBytes, {
+    required String watchfaceId,
+    void Function(double progress)? onProgress,
+  });
+  Future<void> installFirmware(
+    Uint8List firmwareBytes, {
+    void Function(double progress)? onProgress,
+  });
+  Future<void> importSharedDevice(MiWearState device);
+  Future<int> importMiCloudDevices(List<MiCloudDevice> devices);
+}
+
+class LocalDeviceManager extends DeviceManager {
+  static const errorBluetoothUnavailable =
+      DeviceManager.errorBluetoothUnavailable;
 
   @override
   DeviceManagerState build() {
@@ -121,7 +165,6 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     ref.onDispose(() {
       _log.info('DeviceManager disposed');
       _scanTimer?.cancel();
-      _stopConnectionWatchdog();
       _scanSubscription?.cancel();
       _bluetooth.stopScan();
       _eventSubscription?.cancel();
@@ -164,9 +207,6 @@ class DeviceManager extends Notifier<DeviceManagerState> {
   static const _connectMaxAttempts = 1;
   static const _connectRetryDelay = Duration(milliseconds: 300);
   static const _sppFailedConnectSettleDelay = Duration(milliseconds: 500);
-  static const _connectionProbeInterval = Duration(seconds: 10);
-  static const _connectionProbeTimeout = Duration(seconds: 8);
-  static const _connectionProbeFailureLimit = 3;
   static const _zeppOsBleServiceUuid = '00001530-0000-3512-2118-0009af100700';
 
   late BluetoothPlatform _bluetooth;
@@ -174,12 +214,8 @@ class DeviceManager extends Notifier<DeviceManagerState> {
   StreamSubscription<BluetoothEndpoint>? _scanSubscription;
   StreamSubscription<DeviceEvent>? _eventSubscription;
   Timer? _scanTimer;
-  Timer? _connectionWatchdogTimer;
   BluetoothConnection? _bluetoothConnection;
   DeviceEntity? _currentEntity;
-  bool _connectionProbeRunning = false;
-  bool _installBusy = false;
-  int _connectionProbeFailures = 0;
   final _scannedProfiles = <String, DeviceProfile>{};
 
   static const String _keyPairedDevices = 'paired_devices';
@@ -232,6 +268,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     );
   }
 
+  @override
   Future<void> startBluetoothScan({
     ConnectType connectType = ConnectType.ble,
   }) async {
@@ -277,6 +314,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     return {connectType};
   }
 
+  @override
   Future<void> stopBluetoothScan() async {
     _log.info('stopping scan');
     _scanTimer?.cancel();
@@ -345,9 +383,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     final profile = DeviceRegistry.resolveIdentity(name: endpoint.name);
     if (profile.kind == DeviceKind.zepp) return profile;
 
-    final hasZeppService = endpoint.serviceUuids.any(
-      _isZeppOsServiceUuid,
-    );
+    final hasZeppService = endpoint.serviceUuids.any(_isZeppOsServiceUuid);
     if (!hasZeppService) return profile;
 
     return DeviceRegistry.profiles.firstWhere(
@@ -361,7 +397,6 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     final target = _zeppOsBleServiceUuid.replaceAll('-', '');
     return compact == target || compact == '1530' || compact == '00001530';
   }
-
 
   String _scanDisplayName(BluetoothEndpoint endpoint, String rawDisplayName) {
     final profile = _resolveEndpointProfile(endpoint);
@@ -458,6 +493,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     }
   }
 
+  @override
   Future<void> connect(
     String addr,
     String name,
@@ -480,7 +516,8 @@ class DeviceManager extends Notifier<DeviceManagerState> {
       name: name,
       codename: effectiveCodename,
     );
-    final profile = _scannedProfiles[addr] ??
+    final profile =
+        _scannedProfiles[addr] ??
         DeviceRegistry.resolveIdentity(
           name: displayName,
           codename: effectiveCodename,
@@ -605,7 +642,6 @@ class DeviceManager extends Notifier<DeviceManagerState> {
         connectStatus: 2,
         protocolState: ProtocolState.ready,
       );
-      _startConnectionWatchdog(addr);
       await _savePairedDevices();
       unawaited(_loadInitialDeviceData(entity));
     } catch (e, st) {
@@ -637,35 +673,11 @@ class DeviceManager extends Notifier<DeviceManagerState> {
   }
 
   Future<void> _loadInitialDeviceData(DeviceEntity entity) async {
-    final zeppBatterySystem = entity.system<ZeppOsBatterySystem>();
-    if (zeppBatterySystem != null) {
-      try {
-        final services = await entity
-            .system<ZeppOsServicesSystem>()!
-            .fetchSupportedServices();
-        if (!services.containsKey(ZeppOsBatterySystem.endpoint)) {
-          _log.info('ZeppOS device does not advertise battery endpoint 0x0029');
-          return;
-        }
-        zeppBatterySystem.encrypted =
-            services[ZeppOsBatterySystem.endpoint] ?? true;
-        await zeppBatterySystem.fetchBatteryInfo();
-      } catch (e, st) {
-        _log.warning('initial ZeppOS battery fetch failed', e, st);
-      }
-      return;
-    }
-    final infoSystem = entity.system<XiaomiInfoSystem>();
-    if (infoSystem == null) return;
+    if (_currentEntity != entity) return;
     try {
-      await infoSystem.fetchBatteryInfo();
+      await refreshDeviceData();
     } catch (e, st) {
-      _log.warning('initial battery fetch failed', e, st);
-    }
-    try {
-      await _fetchDeviceInfoWithEuiccFallback(infoSystem);
-    } catch (e, st) {
-      _log.warning('initial device info fetch failed', e, st);
+      _log.warning('initial device data refresh failed', e, st);
     }
   }
 
@@ -716,58 +728,6 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     return tokens.contains('esim') ||
         tokens.contains('lte') ||
         tokens.contains('o65m');
-  }
-
-  void _startConnectionWatchdog(String deviceId) {
-    _stopConnectionWatchdog();
-    _connectionProbeFailures = 0;
-    _connectionWatchdogTimer = Timer.periodic(_connectionProbeInterval, (_) {
-      unawaited(_probeConnection(deviceId));
-    });
-  }
-
-  void _stopConnectionWatchdog() {
-    _connectionWatchdogTimer?.cancel();
-    _connectionWatchdogTimer = null;
-    _connectionProbeRunning = false;
-    _connectionProbeFailures = 0;
-  }
-
-  Future<void> _probeConnection(String deviceId) async {
-    if (_connectionProbeRunning || _installBusy) return;
-
-    final entity = _currentEntity;
-    if (entity == null ||
-        entity.id != deviceId ||
-        state.currentDevice?.addr != deviceId ||
-        state.protocolState != ProtocolState.ready) {
-      return;
-    }
-
-    final infoSystem = entity.system<XiaomiInfoSystem>();
-    if (infoSystem == null) return;
-
-    _connectionProbeRunning = true;
-    try {
-      await infoSystem.fetchBatteryInfo().timeout(_connectionProbeTimeout);
-      _connectionProbeFailures = 0;
-    } catch (e, st) {
-      _connectionProbeFailures += 1;
-      _log.warning(
-        'connection probe failed ($_connectionProbeFailures/$_connectionProbeFailureLimit) for $deviceId',
-        e,
-        st,
-      );
-      if (_connectionProbeFailures >= _connectionProbeFailureLimit &&
-          _currentEntity?.id == deviceId &&
-          state.currentDevice?.addr == deviceId &&
-          state.protocolState == ProtocolState.ready) {
-        _log.warning('connection probe marked $deviceId as disconnected');
-        _onDisconnected();
-      }
-    } finally {
-      _connectionProbeRunning = false;
-    }
   }
 
   void _onDeviceEvent(DeviceEvent event) {
@@ -885,6 +845,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     _cleanupConnection();
   }
 
+  @override
   Future<void> disconnect() async {
     final current = state.currentDevice;
     if (current == null) {
@@ -918,7 +879,6 @@ class DeviceManager extends Notifier<DeviceManagerState> {
   }
 
   Future<void> _cleanupConnection() async {
-    _stopConnectionWatchdog();
     final connection = _bluetoothConnection;
     final entity = _currentEntity;
     _bluetoothConnection = null;
@@ -940,6 +900,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     await Future.wait(futures);
   }
 
+  @override
   Future<void> removeDevice(String addr) async {
     final updatedPaired = state.pairedDevices
         .where((d) => d.addr != addr)
@@ -963,6 +924,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     await _savePairedDevices();
   }
 
+  @override
   Future<void> refreshBattery() async {
     final entity = _currentEntity;
     if (entity == null || state.protocolState != ProtocolState.ready) {
@@ -970,6 +932,15 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     }
     final zeppBatterySystem = entity.system<ZeppOsBatterySystem>();
     if (zeppBatterySystem != null) {
+      final servicesSystem = entity.system<ZeppOsServicesSystem>();
+      if (servicesSystem == null) return;
+      final services = await servicesSystem.fetchSupportedServices();
+      if (!services.containsKey(ZeppOsBatterySystem.endpoint)) {
+        _log.info('ZeppOS device does not advertise battery endpoint 0x0029');
+        return;
+      }
+      zeppBatterySystem.encrypted =
+          services[ZeppOsBatterySystem.endpoint] ?? true;
       final battery = await zeppBatterySystem.fetchBatteryInfo();
       state = state.copyWith(battery: battery);
       return;
@@ -979,6 +950,24 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     state = state.copyWith(battery: battery);
   }
 
+  @override
+  Future<void> refreshDeviceData() async {
+    final entity = _currentEntity;
+    if (entity == null || state.protocolState != ProtocolState.ready) {
+      throw ProtocolException('Device not ready');
+    }
+    if (entity.system<ZeppOsBatterySystem>() != null) {
+      await refreshBattery();
+      return;
+    }
+    await Future.wait([
+      refreshBattery(),
+      fetchSystemInfo(),
+      fetchStorageInfo(),
+    ]);
+  }
+
+  @override
   Future<void> setFindingZeppOsDevice(bool finding) async {
     final entity = _currentEntity;
     if (entity == null || state.protocolState != ProtocolState.ready) {
@@ -991,6 +980,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     await system.setFinding(finding);
   }
 
+  @override
   Future<void> fetchSystemInfo() async {
     final entity = _currentEntity;
     if (entity == null || state.protocolState != ProtocolState.ready) {
@@ -1001,6 +991,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     state = state.copyWith(systemInfo: info);
   }
 
+  @override
   Future<void> fetchStorageInfo() async {
     final entity = _currentEntity;
     if (entity == null || state.protocolState != ProtocolState.ready) {
@@ -1022,6 +1013,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     );
   }
 
+  @override
   Future<void> fetchApps() async {
     final entity = _currentEntity;
     if (entity == null || state.protocolState != ProtocolState.ready) {
@@ -1058,6 +1050,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     state = state.copyWith(apps: apps);
   }
 
+  @override
   Future<void> fetchWatchfaces() async {
     final entity = _currentEntity;
     if (entity == null || state.protocolState != ProtocolState.ready) {
@@ -1068,6 +1061,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     state = state.copyWith(watchfaces: watchfaces);
   }
 
+  @override
   Future<void> openApp(AppInfo app, {String page = ''}) async {
     final entity = _currentEntity;
     if (entity == null || state.protocolState != ProtocolState.ready) {
@@ -1095,6 +1089,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     await thirdpartySystem.launchApp(_thirdpartyAppInfo(app), page);
   }
 
+  @override
   Future<void> uninstallApp(AppInfo app) async {
     final entity = _currentEntity;
     if (entity == null || state.protocolState != ProtocolState.ready) {
@@ -1164,6 +1159,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     }
   }
 
+  @override
   Future<void> uninstallWatchface(WatchfaceInfo watchface) async {
     final entity = _currentEntity;
     if (entity == null || state.protocolState != ProtocolState.ready) {
@@ -1181,6 +1177,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     );
   }
 
+  @override
   Future<void> setWatchface(WatchfaceInfo watchface) async {
     final entity = _currentEntity;
     if (entity == null || state.protocolState != ProtocolState.ready) {
@@ -1202,6 +1199,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     );
   }
 
+  @override
   Future<void> installApp(
     Uint8List packageBytes, {
     required String packageName,
@@ -1219,18 +1217,14 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     }
     _log.info('installing app $packageName (${packageBytes.length} bytes)');
     final installSystem = entity.system<XiaomiInstallSystem>()!;
-    _installBusy = true;
-    try {
-      await installSystem.installApp(
-        packageBytes,
-        packageName: packageName,
-        onProgress: onProgress,
-      );
-    } finally {
-      _installBusy = false;
-    }
+    await installSystem.installApp(
+      packageBytes,
+      packageName: packageName,
+      onProgress: onProgress,
+    );
   }
 
+  @override
   Future<void> installWatchface(
     Uint8List watchfaceBytes, {
     required String watchfaceId,
@@ -1244,18 +1238,14 @@ class DeviceManager extends Notifier<DeviceManagerState> {
       'installing watchface $watchfaceId (${watchfaceBytes.length} bytes)',
     );
     final installSystem = entity.system<XiaomiInstallSystem>()!;
-    _installBusy = true;
-    try {
-      await installSystem.installWatchface(
-        watchfaceBytes,
-        watchfaceId: watchfaceId,
-        onProgress: onProgress,
-      );
-    } finally {
-      _installBusy = false;
-    }
+    await installSystem.installWatchface(
+      watchfaceBytes,
+      watchfaceId: watchfaceId,
+      onProgress: onProgress,
+    );
   }
 
+  @override
   Future<void> installFirmware(
     Uint8List firmwareBytes, {
     void Function(double progress)? onProgress,
@@ -1266,17 +1256,10 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     }
     _log.info('installing firmware (${firmwareBytes.length} bytes)');
     final installSystem = entity.system<XiaomiInstallSystem>()!;
-    _installBusy = true;
-    try {
-      await installSystem.installFirmware(
-        firmwareBytes,
-        onProgress: onProgress,
-      );
-    } finally {
-      _installBusy = false;
-    }
+    await installSystem.installFirmware(firmwareBytes, onProgress: onProgress);
   }
 
+  @override
   Future<void> importSharedDevice(MiWearState device) async {
     final normalized = _normalizeDeviceIdentity(device).copyWith(
       connectType: device.connectType.toLowerCase().isEmpty
@@ -1305,6 +1288,7 @@ class DeviceManager extends Notifier<DeviceManagerState> {
     await _savePairedDevices();
   }
 
+  @override
   Future<int> importMiCloudDevices(List<MiCloudDevice> devices) async {
     final importable = devices.where((device) => device.hasAuthKey).toList();
     _log.info(
@@ -1364,6 +1348,6 @@ class DeviceManager extends Notifier<DeviceManagerState> {
 
 final deviceManagerProvider =
     NotifierProvider<DeviceManager, DeviceManagerState>(
-      DeviceManager.new,
+      LocalDeviceManager.new,
       isAutoDispose: true,
     );

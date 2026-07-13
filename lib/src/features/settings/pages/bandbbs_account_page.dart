@@ -12,7 +12,7 @@ import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
 import 'package:zerobox/src/core/providers/app_settings_providers.dart';
 import 'package:zerobox/src/data/community/community_source.dart';
-import 'package:zerobox/src/features/accounts/services/bandbbs_auth_service.dart';
+import 'package:zerobox/src/features/accounts/application/host_accounts.dart';
 import 'package:zerobox/src/features/resources/application/resource_catalog_providers.dart';
 import 'package:zerobox/src/features/resources/domain/community_resource.dart';
 import 'package:zerobox/src/features/resources/services/download_queue_notifier.dart';
@@ -65,7 +65,7 @@ class _BandBbsAccountPageState extends ConsumerState<BandBbsAccountPage> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final account = ref.watch(bandBbsAuthProvider);
+    final account = ref.watch(hostAccountsProvider).bandbbs;
     return Scaffold(
       appBar: SysAppBar(title: Text(l10n.bandBbsAccountTitle)),
       body: SingleChildScrollView(
@@ -102,7 +102,9 @@ class _BandBbsAccountPageState extends ConsumerState<BandBbsAccountPage> {
                     ),
                     trailing: TextButton(
                       onPressed: () async {
-                        await ref.read(bandBbsAuthProvider.notifier).signOut();
+                        await ref
+                            .read(hostAccountsProvider.notifier)
+                            .logout('bandbbs');
                         if (!context.mounted) return;
                         ZeroBoxDialog.showToast(
                           message: l10n.bandBbsLoggedOut,

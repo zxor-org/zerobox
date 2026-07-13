@@ -5,20 +5,26 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zerobox/src/commands/command_protocol.dart';
 import 'package:zerobox/src/core/models/bt_models.dart';
 import 'package:zerobox/src/core/logging/logging_service.dart';
+import 'package:zerobox/src/core/providers/app_settings_providers.dart';
 import 'package:zerobox/src/core/services/shared_prefs_service.dart';
 import 'package:zerobox/src/device/core/connect_type.dart';
 import 'package:zerobox/src/data/community/community_source.dart';
+import 'package:zerobox/src/data/bandbbs/bandbbs_resource_provider.dart';
+import 'package:zerobox/src/data/huami/huami_app_store_resource_provider.dart';
 import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
 import 'package:zerobox/src/features/accounts/services/bandbbs_auth_service.dart';
 import 'package:zerobox/src/features/accounts/services/huami_auth_service.dart';
 import 'package:zerobox/src/features/accounts/services/mi_account_service.dart';
+import 'package:zerobox/src/features/accounts/models/mi_account_models.dart';
 import 'package:zerobox/src/features/resources/services/resource_install_service.dart';
 import 'package:zerobox/src/features/resources/application/resource_catalog_providers.dart';
 import 'package:zerobox/src/features/resources/domain/community_resource.dart';
+import 'package:zerobox/src/features/resources/domain/community_resource_codec.dart';
 import 'package:zerobox/src/features/resources/domain/resource_catalog.dart';
+import 'package:zerobox/src/host/application_host.dart';
 import 'package:zerobox/src/protocols/common/device_protocol.dart';
 
-class LocalCommandBus implements ZeroBoxCommandBus {
+class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
   LocalCommandBus(this.container) {
     _deviceManagerSubscription = container.listen<DeviceManagerState>(
       deviceManagerProvider,
@@ -69,17 +75,16 @@ class LocalCommandBus implements ZeroBoxCommandBus {
         CommandError(error.code, error.message, details: error.details),
       );
     } catch (error, stackTrace) {
-      getLogger('LocalCommandBus').severe(
-        'Command ${command.method} failed',
-        error,
-        stackTrace,
-      );
+      getLogger(
+        'LocalCommandBus',
+      ).severe('Command ${command.method} failed', error, stackTrace);
       return CommandResult.failure(
         CommandError('internal', error.toString(), details: '$stackTrace'),
       );
     }
   }
 
+  @override
   Future<void> cancelActiveOperation() async {
     _activeCommandCancelled = true;
     if (_state.connecting || _state.protocolState == ProtocolState.ready) {
@@ -106,6 +111,7 @@ class LocalCommandBus implements ZeroBoxCommandBus {
     'device.scan.start' => _scanStart(command.params),
     'device.scan.stop' => _scanStop(),
     'device.info' => _deviceInfo(),
+    'device.refresh.all' => _refreshDeviceData(),
     'device.refresh.battery' => _refreshBattery(),
     'device.refresh.system' => _refreshSystem(),
     'device.refresh.storage' => _refreshStorage(),
@@ -124,7 +130,11 @@ class LocalCommandBus implements ZeroBoxCommandBus {
     'settings.get' => Future.value(
       _settingsGet(command.params['key']?.toString()),
     ),
-    'settings.set' => _settingsSet(command.params),
+    'settings.set' => _withStateEvent(
+      'settings.state',
+      () => _settingsSet(command.params),
+      () => _settingsList(),
+    ),
     'resource.sources' => Future.value(
       CommunitySourceId.values
           .map(
@@ -134,14 +144,40 @@ class LocalCommandBus implements ZeroBoxCommandBus {
     ),
     'resource.list' || 'resource.search' => _resourceList(command.params),
     'resource.info' => _resourceInfo(command.params),
+    'resource.devices' => _resourceDevices(command.params),
+    'resource.probe' => _resourceProbe(command.params),
+    'resource.bandbbs.categories' => _bandBbsCategories(),
+    'resource.huami.publisher' => _huamiPublisher(command.params),
     'resource.download' => _resourceDownload(command.params, install: false),
     'resource.install' => _resourceDownload(command.params, install: true),
     'account.list' => Future.value(_accountList()),
     'account.status' => Future.value(
       _freshAccountStatus(command.params['provider']?.toString()),
     ),
-    'account.login' => _accountLogin(command.params),
-    'account.logout' => _accountLogout(command.params['provider']?.toString()),
+    'account.credentials.get' => Future.value(
+      _accountCredentials(command.params['provider']?.toString()),
+    ),
+    'account.credentials.set' => _setAccountCredentials(command.params),
+    'account.login' => _withStateEvent(
+      'account.state',
+      () => _accountLogin(command.params),
+      () => _accountList(),
+    ),
+    'account.xiaomi.complete' => _withStateEvent(
+      'account.state',
+      () => _completeXiaomiLogin(command.params),
+      () => _accountList(),
+    ),
+    'account.bandbbs.callback' => _withStateEvent(
+      'account.state',
+      () => _bandBbsCallback(command.params),
+      () => _accountList(),
+    ),
+    'account.logout' => _withStateEvent(
+      'account.state',
+      () => _accountLogout(command.params['provider']?.toString()),
+      () => _accountList(),
+    ),
     'logs.recent' => Future.value(recentZeroBoxLogs),
     'install.local' => _installLocal(command.params),
     _ => throw CommandFailure(
@@ -149,6 +185,16 @@ class LocalCommandBus implements ZeroBoxCommandBus {
       'Unknown command: ${command.method}',
     ),
   };
+
+  Future<Object?> _withStateEvent(
+    String event,
+    Future<Object?> Function() operation,
+    Object? Function() snapshot,
+  ) async {
+    final result = await operation();
+    _events.add(CommandEvent(event, data: {'state': snapshot()}));
+    return result;
+  }
 
   Map<String, Object?> _status() {
     final current = _state.currentDevice;
@@ -285,9 +331,7 @@ class LocalCommandBus implements ZeroBoxCommandBus {
 
   Future<Object?> _deviceInfo() async {
     await _ensureConnected(null);
-    await _manager.refreshBattery();
-    await _manager.fetchSystemInfo();
-    await _manager.fetchStorageInfo();
+    await _manager.refreshDeviceData();
     final device = _state.currentDevice;
     final info = _state.systemInfo;
     final battery = _state.battery;
@@ -330,6 +374,12 @@ class LocalCommandBus implements ZeroBoxCommandBus {
   Future<Object?> _refreshBattery() async {
     await _ensureConnected(null);
     await _manager.refreshBattery();
+    return _deviceStateJson(_state);
+  }
+
+  Future<Object?> _refreshDeviceData() async {
+    await _ensureConnected(null);
+    await _manager.refreshDeviceData();
     return _deviceStateJson(_state);
   }
 
@@ -446,8 +496,11 @@ class LocalCommandBus implements ZeroBoxCommandBus {
   static const _settingKeys = <String>{
     'auto_reconnect',
     'auto_install',
+    'disable_auto_clean',
     'community_source',
-    'desktop.exit_behavior',
+    'astrobox_cdn',
+    'bandbbs_load_previews',
+    'bandbbs_show_all_categories',
   };
 
   Map<String, Object?> _settingsList() => {
@@ -473,6 +526,7 @@ class LocalCommandBus implements ZeroBoxCommandBus {
     } else {
       await prefs.setString(key!, raw.toString());
     }
+    container.invalidate(appSettingsProvider);
     return {'key': key, 'value': _readSetting(key)};
   }
 
@@ -485,9 +539,12 @@ class LocalCommandBus implements ZeroBoxCommandBus {
   Object? _readSetting(String key) {
     final prefs = SharedPrefsService.instance;
     return switch (key) {
-      'auto_reconnect' || 'auto_install' => prefs.getBool(key),
-      'desktop.exit_behavior' => prefs.getInt(key),
-      'community_source' => prefs.getString(key),
+      'auto_reconnect' ||
+      'auto_install' ||
+      'disable_auto_clean' ||
+      'bandbbs_load_previews' ||
+      'bandbbs_show_all_categories' => prefs.getBool(key),
+      'community_source' || 'astrobox_cdn' => prefs.getString(key),
       _ => null,
     };
   }
@@ -498,22 +555,33 @@ class LocalCommandBus implements ZeroBoxCommandBus {
     if (path.isEmpty) {
       throw const CommandFailure('usage', 'Missing resource path');
     }
-    final type = switch (typeName) {
-      'quickapp' || 'app' => LocalDeviceInstallType.app,
-      'watchface' => LocalDeviceInstallType.watchface,
-      'firmware' => LocalDeviceInstallType.firmware,
-      _ => throw CommandFailure('usage', 'Unsupported install type: $typeName'),
-    };
     final file = File(path);
     if (!await file.exists()) {
       throw CommandFailure('file', 'File not found: $path');
     }
+    var installed = false;
     try {
       final bytes = await file.readAsBytes();
+      final service = container.read(resourceInstallServiceProvider);
+      final type = switch (typeName) {
+        'auto' => service.detectLocalInstallType(
+          file.uri.pathSegments.last,
+          bytes,
+        ),
+        'quickapp' || 'app' => LocalDeviceInstallType.app,
+        'watchface' => LocalDeviceInstallType.watchface,
+        'firmware' => LocalDeviceInstallType.firmware,
+        _ => null,
+      };
+      if (type == null) {
+        throw CommandFailure(
+          'usage',
+          'Unsupported or unrecognized install type: $typeName',
+        );
+      }
       _throwIfCancelled();
       await _ensureConnected(params['device']?.toString());
       _throwIfCancelled();
-      final service = container.read(resourceInstallServiceProvider);
       await service.installLocalPayload(
         type: type,
         fileName: file.uri.pathSegments.last,
@@ -523,10 +591,11 @@ class LocalCommandBus implements ZeroBoxCommandBus {
           CommandEvent('progress', data: {'progress': progress, 'path': path}),
         ),
       );
+      installed = true;
       _events.add(CommandEvent('completed', data: {'path': path}));
-      return {'installed': true, 'path': path, 'type': typeName};
+      return {'installed': true, 'path': path, 'type': type.name};
     } finally {
-      if (params['deleteAfter'] == true && await file.exists()) {
+      if (installed && params['deleteAfter'] == true && await file.exists()) {
         await file.delete();
       }
     }
@@ -535,18 +604,30 @@ class LocalCommandBus implements ZeroBoxCommandBus {
   Future<Object?> _resourceList(Map<String, Object?> params) async {
     _reloadPersistedAccounts();
     final source = _source(params['source']?.toString());
-    final catalog = container.read(communityCatalogProviderForSource(source));
+    final catalog = container.read(
+      localCommunityCatalogProviderForSource(source),
+    );
     final type = _resourceType(params['type']?.toString(), required: false);
+    final devices = params['devices'];
+    final selectedDevices = devices is List
+        ? devices.map((item) => item.toString()).toSet()
+        : {
+            if (params['device']?.toString().isNotEmpty == true)
+              params['device'].toString(),
+          };
     final page = await catalog.getPage(
       CommunityResourceQuery(
         page: int.tryParse(params['page']?.toString() ?? '') ?? 0,
         pageSize: int.tryParse(params['pageSize']?.toString() ?? '') ?? 30,
         query: params['query']?.toString() ?? '',
+        sort: CommunitySortRule.values.firstWhere(
+          (value) => value.name == params['sort']?.toString(),
+          orElse: () => CommunitySortRule.time,
+        ),
         type: type,
-        selectedDevices: {
-          if (params['device']?.toString().isNotEmpty == true)
-            params['device'].toString(),
-        },
+        hidePaid: params['hidePaid'] == true,
+        hideForcePaid: params['hideForcePaid'] == true,
+        selectedDevices: selectedDevices,
       ),
     );
     return {
@@ -557,11 +638,71 @@ class LocalCommandBus implements ZeroBoxCommandBus {
     };
   }
 
+  Future<Object?> _resourceDevices(Map<String, Object?> params) async {
+    _reloadPersistedAccounts();
+    final source = _source(params['source']?.toString());
+    final catalog = container.read(
+      localCommunityCatalogProviderForSource(source),
+    );
+    final devices = await catalog.getDevices();
+    return devices
+        .map(
+          (device) => {
+            'codename': device.codename,
+            'name': device.name,
+            'description': device.description,
+          },
+        )
+        .toList(growable: false);
+  }
+
+  Future<Object?> _resourceProbe(Map<String, Object?> params) async {
+    _reloadPersistedAccounts();
+    final source = _source(params['source']?.toString());
+    final catalog = container.read(
+      localCommunityCatalogProviderForSource(source),
+    );
+    final raw = (params['file'] as Map).cast<String, Object?>();
+    return catalog.probeDownloadSize(communityResourceFileFromJson(raw));
+  }
+
+  Future<Object?> _bandBbsCategories() async {
+    _reloadPersistedAccounts();
+    final catalog =
+        container.read(
+              localCommunityCatalogProviderForSource(CommunitySourceId.bandbbs),
+            )
+            as BandBbsCatalog;
+    final tree = await catalog.getCategoryTree();
+    Map<String, Object?> encode(BandBbsCategoryNode node) => {
+      'id': node.id,
+      'title': node.title,
+      'resourceCount': node.resourceCount,
+      'children': node.children.map(encode).toList(growable: false),
+    };
+    return tree.map(encode).toList(growable: false);
+  }
+
+  Future<Object?> _huamiPublisher(Map<String, Object?> params) async {
+    _reloadPersistedAccounts();
+    final catalog =
+        container.read(
+              localCommunityCatalogProviderForSource(
+                CommunitySourceId.huamiAppStore,
+              ),
+            )
+            as HuamiAppStoreCatalog;
+    final resources = await catalog.getPublisherResources(
+      publisherName: params['publisher']?.toString() ?? '',
+    );
+    return resources.map(communityResourceToJson).toList(growable: false);
+  }
+
   Future<Object?> _resourceInfo(Map<String, Object?> params) async {
     _reloadPersistedAccounts();
     final ref = _resourceRef(params);
     final catalog = container.read(
-      communityCatalogProviderForSource(ref.source),
+      localCommunityCatalogProviderForSource(ref.source),
     );
     final detail = await catalog.getDetail(ref);
     _throwIfCancelled();
@@ -575,7 +716,7 @@ class LocalCommandBus implements ZeroBoxCommandBus {
     _reloadPersistedAccounts();
     final ref = _resourceRef(params);
     final catalog = container.read(
-      communityCatalogProviderForSource(ref.source),
+      localCommunityCatalogProviderForSource(ref.source),
     );
     final detail = await catalog.getDetail(ref);
     if (detail.files.isEmpty) {
@@ -636,6 +777,13 @@ class LocalCommandBus implements ZeroBoxCommandBus {
     return {
       'path': downloaded.path,
       'fileName': downloaded.fileName,
+      'type': switch (detail.type) {
+        CommunityResourceType.quickApp => 'quickapp',
+        CommunityResourceType.watchface => 'watchface',
+        CommunityResourceType.firmware => 'firmware',
+        CommunityResourceType.fontpack => 'fontpack',
+        CommunityResourceType.iconpack => 'iconpack',
+      },
       'installed': install,
     };
   }
@@ -684,33 +832,11 @@ class LocalCommandBus implements ZeroBoxCommandBus {
     );
   }
 
-  Map<String, Object?> _resourceJson(CommunityResource resource) => {
-    'ref': resource.ref.key,
-    'name': resource.name,
-    'type': resource.type.name,
-    'paidType': resource.paidType.name,
-    'authors': resource.authors.map((author) => author.name).toList(),
-    'devices': resource.supportedDevices.toList(),
-    if (resource.tags.isNotEmpty) 'tags': resource.tags,
-    if (resource.summary.isNotEmpty) 'summary': resource.summary,
-    if (resource.version != null) 'version': resource.version,
-  };
+  Map<String, Object?> _resourceJson(CommunityResource resource) =>
+      communityResourceToJson(resource);
 
-  Map<String, Object?> _resourceDetailJson(CommunityResourceDetail detail) => {
-    ..._resourceJson(detail),
-    'content': detail.content.value,
-    'canDownload': detail.canDownload,
-    'files': detail.files
-        .map(
-          (file) => {
-            'id': file.id,
-            'fileName': file.fileName,
-            'version': file.version,
-            if (file.size != null) 'size': file.size,
-          },
-        )
-        .toList(growable: false),
-  };
+  Map<String, Object?> _resourceDetailJson(CommunityResourceDetail detail) =>
+      communityResourceDetailToJson(detail);
 
   List<Map<String, Object?>> _accountList() {
     _reloadPersistedAccounts();
@@ -753,10 +879,65 @@ class LocalCommandBus implements ZeroBoxCommandBus {
           'signedIn': account.isSignedIn,
           if (account.username != null) 'username': account.username,
           if (account.userId != null) 'userId': account.userId,
+          if (account.avatarUrl != null) 'avatarUrl': account.avatarUrl,
         };
       }(),
       _ => throw CommandFailure('usage', 'Unknown account provider: $provider'),
     };
+  }
+
+  Map<String, Object?> _accountCredentials(String? provider) {
+    final normalized = provider == 'huami' ? 'amazfit' : provider;
+    if (normalized != 'xiaomi' && normalized != 'amazfit') {
+      throw CommandFailure(
+        'usage',
+        'Credentials are not supported for provider: $provider',
+      );
+    }
+    final prefs = SharedPrefsService.instance;
+    final prefix = normalized == 'xiaomi' ? 'mi_account' : 'huami_account';
+    final remember = prefs.getBool('$prefix.remember_credentials') ?? false;
+    return {
+      'provider': normalized,
+      'remember': remember,
+      if (remember) 'username': prefs.getString('$prefix.username') ?? '',
+      if (remember) 'password': prefs.getString('$prefix.password') ?? '',
+      if (normalized == 'xiaomi')
+        'userId': prefs.getString('mi_account.user_id') ?? '',
+    };
+  }
+
+  Future<Object?> _setAccountCredentials(Map<String, Object?> params) async {
+    final provider = params['provider']?.toString();
+    final normalized = provider == 'huami' ? 'amazfit' : provider;
+    if (normalized != 'xiaomi' && normalized != 'amazfit') {
+      throw CommandFailure(
+        'usage',
+        'Credentials are not supported for provider: $provider',
+      );
+    }
+    final prefs = SharedPrefsService.instance;
+    final prefix = normalized == 'xiaomi' ? 'mi_account' : 'huami_account';
+    final remember = params['remember'] == true;
+    await prefs.setBool('$prefix.remember_credentials', remember);
+    if (normalized == 'xiaomi' &&
+        params['userId']?.toString().isNotEmpty == true) {
+      await prefs.setString('mi_account.user_id', params['userId'].toString());
+    }
+    if (!remember) {
+      await prefs.remove('$prefix.username');
+      await prefs.remove('$prefix.password');
+    } else {
+      await prefs.setString(
+        '$prefix.username',
+        params['username']?.toString() ?? '',
+      );
+      await prefs.setString(
+        '$prefix.password',
+        params['password']?.toString() ?? '',
+      );
+    }
+    return _accountCredentials(normalized);
   }
 
   Future<Object?> _accountLogin(Map<String, Object?> params) async {
@@ -784,16 +965,23 @@ class LocalCommandBus implements ZeroBoxCommandBus {
           );
         }
         final service = container.read(miAccountServiceProvider);
-        final token = await service.login(
-          username: username,
-          password: password,
-        );
+        late final MiAccountToken token;
+        try {
+          token = await service.login(username: username, password: password);
+        } on MiAccountTwoFactorRequired catch (error) {
+          throw CommandFailure(
+            'two_factor_required',
+            'Xiaomi account requires two-factor verification',
+            details: {'url': error.url, 'deviceId': error.deviceId},
+          );
+        }
         final devices = await service.fetchBoundDevices(token: token);
         final imported = await _manager.importMiCloudDevices(devices);
         return {
           'provider': 'xiaomi',
           'signedIn': true,
           'importedDevices': imported,
+          'userId': token.userId,
         };
       case 'bandbbs':
         await container.read(bandBbsAuthProvider.notifier).startLogin();
@@ -801,6 +989,39 @@ class LocalCommandBus implements ZeroBoxCommandBus {
       default:
         throw CommandFailure('usage', 'Unknown account provider: $provider');
     }
+  }
+
+  Future<Object?> _completeXiaomiLogin(Map<String, Object?> params) async {
+    final service = container.read(miAccountServiceProvider);
+    final token = await service.completeTwoFactorLogin(
+      challenge: MiAccountTwoFactorRequired(
+        url: params['url']?.toString() ?? '',
+        deviceId: params['deviceId']?.toString() ?? '',
+      ),
+      cookieHeader: params['cookieHeader']?.toString() ?? '',
+    );
+    final devices = await service.fetchBoundDevices(token: token);
+    final imported = await _manager.importMiCloudDevices(devices);
+    return {
+      'provider': 'xiaomi',
+      'signedIn': true,
+      'importedDevices': imported,
+      'userId': token.userId,
+    };
+  }
+
+  Future<Object?> _bandBbsCallback(Map<String, Object?> params) async {
+    final uri = Uri.tryParse(params['uri']?.toString() ?? '');
+    if (uri == null) {
+      throw const CommandFailure('usage', 'Invalid BandBBS callback URI');
+    }
+    final handled = await container
+        .read(bandBbsAuthProvider.notifier)
+        .handleCallback(uri);
+    if (!handled) {
+      throw const CommandFailure('usage', 'Unsupported BandBBS callback URI');
+    }
+    return _accountStatus('bandbbs');
   }
 
   Future<Object?> _accountLogout(String? provider) async {

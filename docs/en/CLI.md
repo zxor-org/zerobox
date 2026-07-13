@@ -72,6 +72,9 @@ zerobox --nogui queue wait TASK_ID
 zerobox --nogui queue watch
 zerobox --nogui queue cancel TASK_ID
 zerobox --nogui queue remove TASK_ID
+zerobox --nogui queue retry TASK_ID
+zerobox --nogui queue start
+zerobox --nogui queue pause
 zerobox --nogui logs watch
 zerobox --nogui --json device status
 ```
@@ -90,26 +93,39 @@ zerobox --nogui --json device status
 | 8 | Daemon failure |
 | 70 | Internal error |
 
-## Mobile execution
+## Composable architecture
 
-Android and iOS do not start a desktop-style daemon. They execute the same
-device core in-process. Android installation queues are protected by a
-foreground data-sync service. iOS uses a finite system background task. Mobile
-task metadata is persisted; an operation interrupted by process suspension is
-restored as pending so the user can resume it. The shared command protocol does
-not depend on desktop IPC.
+ZeroBox keeps its implementation inside an application host. GUI and CLI
+clients depend only on the shared command interface.
 
-## Desktop architecture
+- Linux, macOS, and Windows compose either `GUI → IPC → host` or
+  `CLI → IPC → host`.
+- Android and iOS compose `GUI → in-process host`, reusing the same device,
+  account, resource, settings, and task implementations.
+- Mobile task execution is protected by an Android foreground service or iOS
+  system background task; interrupted running tasks resume as pending.
+- The IPC server is a desktop adapter around the host and contains no separate
+  application implementation.
+- The host owns device connections, account sessions, resource access,
+  operational settings, and persisted tasks.
+- The GUI owns only presentation state such as themes, locale, window behavior,
+  form input, and navigation.
+- Device, account, and settings snapshots are resynchronized through events;
+  the GUI reconnects automatically after a daemon restart.
 
-- The daemon is the only desktop process allowed to own Bluetooth transports.
-- GUI and CLI clients receive `device.state` snapshots from the daemon.
-- Device operations are serialized to prevent overlapping protocol requests.
-- Detached and GUI installation tasks are persisted by the daemon, including
-  status and progress.
+## Desktop deployment
+
+- The daemon is the only desktop process allowed to own Bluetooth transports
+  and application state.
+- GUI and CLI clients receive `device.state`, `account.state`,
+  `settings.state`, and task events from the daemon.
+- Device and task operations are serialized to prevent overlapping protocol
+  requests.
+- Detached CLI tasks and GUI downloads/installations are persisted by the
+  daemon, including held, running, failed, cancelled states, and progress.
 - Unix sockets live under `$XDG_RUNTIME_DIR/zerobox` on Linux. macOS uses its
   per-user or sandbox temporary directory to stay within the Unix socket path
-  limit, with a compatibility fallback for the former `/tmp` endpoint during
-  upgrades.
+  limit.
 - Windows publishes a random loopback port and per-run authentication token in
   the user's local application-data directory. Clients verify the daemon and
   protocol version with an authenticated handshake before issuing commands.

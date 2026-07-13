@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-const zeroBoxProtocolVersion = 1;
+const zeroBoxProtocolVersion = 2;
 
 const zeroBoxDaemonCapabilities = <String>[
   'device',

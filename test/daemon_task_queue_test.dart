@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -11,6 +12,8 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     await SharedPrefsService.instance.init();
   });
+
+  setUp(() => SharedPrefsService.instance.remove('daemon.tasks'));
 
   test('runs queued commands strictly one at a time', () async {
     final bus = _DelayedBus();
@@ -35,6 +38,46 @@ void main() {
     expect(queue.cancel(id), isTrue);
     expect((await queue.wait(id))?.status, 'cancelled');
     expect(bus.cancelled, isTrue);
+    await queue.close();
+  });
+
+  test('wraps task execution in the configured platform lease', () async {
+    final bus = _DelayedBus();
+    var activeLeases = 0;
+    final queue = DaemonTaskQueue(
+      bus,
+      beginExecution: (_) async {
+        activeLeases += 1;
+        return () async {
+          activeLeases -= 1;
+        };
+      },
+    );
+
+    final id = queue.enqueue(const ZeroBoxCommand(method: 'install.local'));
+    expect((await queue.wait(id))?.status, 'completed');
+    expect(activeLeases, 0);
+    await queue.close();
+  });
+
+  test('resumes a task that was running before host restart', () async {
+    final task = DaemonTask(
+      id: 'recovered',
+      command: const ZeroBoxCommand(method: 'resource.download'),
+      status: 'running',
+      createdAt: DateTime(2026),
+      startedAt: DateTime(2026, 1, 1, 0, 1),
+      progress: .5,
+    );
+    await SharedPrefsService.instance.setStringList('daemon.tasks', [
+      jsonEncode(task.toJson()),
+    ]);
+    final bus = _DelayedBus();
+    final queue = DaemonTaskQueue(bus);
+
+    final recovered = await queue.wait('recovered');
+    expect(recovered?.status, 'completed');
+    expect(bus.methods, ['resource.download']);
     await queue.close();
   });
 }

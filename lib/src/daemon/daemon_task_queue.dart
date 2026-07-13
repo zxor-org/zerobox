@@ -5,13 +5,22 @@ import 'package:zerobox/src/commands/command_protocol.dart';
 import 'package:zerobox/src/core/services/shared_prefs_service.dart';
 
 class DaemonTaskQueue {
-  DaemonTaskQueue(this.bus, {this.onCancelRunning}) {
+  DaemonTaskQueue(
+    this.bus, {
+    this.onCancelRunning,
+    this.beginExecution,
+    this.onCompleted,
+    this.shouldRemoveCompleted,
+  }) {
     _restore();
   }
 
   static const _storageKey = 'daemon.tasks';
   final ZeroBoxCommandBus bus;
   final Future<void> Function()? onCancelRunning;
+  final Future<Future<void> Function()> Function(DaemonTask)? beginExecution;
+  final Future<void> Function(DaemonTask, CommandResult)? onCompleted;
+  final Future<bool> Function(DaemonTask, CommandResult)? shouldRemoveCompleted;
   final _tasks = <String, DaemonTask>{};
   final _waiters = <String, List<Completer<DaemonTask>>>{};
   final _events = StreamController<CommandEvent>.broadcast();
@@ -24,16 +33,16 @@ class DaemonTaskQueue {
       _tasks.values.map((task) => task.toJson()).toList(growable: false)
         ..sort((a, b) => '${b['createdAt']}'.compareTo('${a['createdAt']}'));
 
-  String enqueue(ZeroBoxCommand command) {
+  String enqueue(ZeroBoxCommand command, {bool held = false}) {
     final now = DateTime.now();
     final id = '${now.microsecondsSinceEpoch}';
     _tasks[id] = DaemonTask(
       id: id,
       command: command,
-      status: 'pending',
+      status: held ? 'held' : 'pending',
       createdAt: now,
     );
-    _persist();
+    _notify(_tasks[id]!);
     _schedulePump();
     return id;
   }
@@ -81,8 +90,36 @@ class DaemonTaskQueue {
       _tasks[id] = updated;
       _notify(updated);
     });
-    final result = await bus.execute(task.command);
-    await progressSubscription.cancel();
+    Future<void> Function()? endExecution;
+    late CommandResult result;
+    try {
+      endExecution = await beginExecution?.call(task);
+      result = await bus.execute(task.command);
+    } catch (error, stackTrace) {
+      result = CommandResult.failure(
+        CommandError(
+          'task_execution',
+          error.toString(),
+          details: '$stackTrace',
+        ),
+      );
+    } finally {
+      await progressSubscription.cancel();
+      await endExecution?.call();
+    }
+    if (result.ok && onCompleted != null) {
+      try {
+        await onCompleted!(task, result);
+      } catch (error, stackTrace) {
+        result = CommandResult.failure(
+          CommandError(
+            'task_completion',
+            error.toString(),
+            details: '$stackTrace',
+          ),
+        );
+      }
+    }
     task = _tasks[id];
     if (task == null) return;
     final status = task.cancelRequested
@@ -99,6 +136,10 @@ class DaemonTaskQueue {
     _tasks[id] = task;
     _notify(task);
     _completeWaiters(task);
+    if (status == 'completed' &&
+        await shouldRemoveCompleted?.call(task, result) == true) {
+      remove(id);
+    }
   }
 
   bool cancel(String id) {
@@ -107,7 +148,7 @@ class DaemonTaskQueue {
         {'completed', 'failed', 'cancelled'}.contains(task.status)) {
       return false;
     }
-    final updated = task.status == 'pending'
+    final updated = task.status == 'pending' || task.status == 'held'
         ? task.copyWith(status: 'cancelled', finishedAt: DateTime.now())
         : task.copyWith(cancelRequested: true);
     _tasks[id] = updated;
@@ -116,6 +157,51 @@ class DaemonTaskQueue {
       unawaited(onCancelRunning?.call());
     }
     if (updated.status == 'cancelled') _completeWaiters(updated);
+    return true;
+  }
+
+  int startHeld() {
+    var count = 0;
+    for (final entry in _tasks.entries.toList()) {
+      if (entry.value.status != 'held' && entry.value.status != 'failed') {
+        continue;
+      }
+      _tasks[entry.key] = entry.value.copyWith(
+        status: 'pending',
+        progress: 0,
+        clearResult: true,
+      );
+      _notify(_tasks[entry.key]!);
+      count += 1;
+    }
+    _schedulePump();
+    return count;
+  }
+
+  int holdPending() {
+    var count = 0;
+    for (final entry in _tasks.entries.toList()) {
+      if (entry.value.status != 'pending') continue;
+      _tasks[entry.key] = entry.value.copyWith(status: 'held');
+      _notify(_tasks[entry.key]!);
+      count += 1;
+    }
+    return count;
+  }
+
+  bool retry(String id) {
+    final task = _tasks[id];
+    if (task == null || !{'failed', 'cancelled'}.contains(task.status)) {
+      return false;
+    }
+    final updated = task.copyWith(
+      status: 'pending',
+      progress: 0,
+      clearResult: true,
+    );
+    _tasks[id] = updated;
+    _notify(updated);
+    _schedulePump();
     return true;
   }
 
@@ -177,14 +263,12 @@ class DaemonTaskQueue {
         );
         _tasks[task.id] = task.status == 'running'
             ? task.copyWith(
-                status: 'failed',
-                result: const {
-                  'ok': false,
-                  'error': {
-                    'code': 'daemon_restarted',
-                    'message': 'Daemon restarted while task was running',
-                  },
-                },
+                status: 'pending',
+                progress: 0,
+                cancelRequested: false,
+                clearStartedAt: true,
+                clearFinishedAt: true,
+                clearResult: true,
               )
             : task;
       } catch (_) {}
@@ -243,16 +327,19 @@ class DaemonTask {
     bool? cancelRequested,
     Map<String, Object?>? result,
     double? progress,
+    bool clearStartedAt = false,
+    bool clearFinishedAt = false,
+    bool clearResult = false,
   }) => DaemonTask(
     id: id,
     command: command,
     status: status ?? this.status,
     createdAt: createdAt,
-    startedAt: startedAt ?? this.startedAt,
-    finishedAt: finishedAt ?? this.finishedAt,
+    startedAt: clearStartedAt ? null : startedAt ?? this.startedAt,
+    finishedAt: clearFinishedAt ? null : finishedAt ?? this.finishedAt,
     cancelRequested: cancelRequested ?? this.cancelRequested,
     progress: progress ?? this.progress,
-    result: result ?? this.result,
+    result: clearResult ? null : result ?? this.result,
   );
 
   Map<String, Object?> toJson() => {

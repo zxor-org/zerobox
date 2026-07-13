@@ -33,19 +33,8 @@ String resolveDaemonRuntimeDirectory({
 
 String get daemonSocketPath => '$daemonRuntimeDirectory/daemon.sock';
 
-String get legacyDaemonSocketPath {
-  final user =
-      Platform.environment['USER'] ??
-      Platform.environment['USERNAME'] ??
-      'user';
-  return '${Directory.systemTemp.path}/zerobox-$user.sock';
-}
-
-const legacyDaemonWindowsPort = 47832;
 String get daemonWindowsEndpointPath =>
     '$daemonRuntimeDirectory${Platform.pathSeparator}daemon.json';
-String get daemonWindowsTokenPath =>
-    '$daemonRuntimeDirectory${Platform.pathSeparator}daemon.token';
 String get daemonWindowsLockPath =>
     '$daemonRuntimeDirectory${Platform.pathSeparator}daemon.lock';
 
@@ -102,20 +91,6 @@ Future<List<WindowsDaemonEndpoint>> readWindowsDaemonEndpoints() async {
     }
   }
 
-  final legacyTokenFile = File(daemonWindowsTokenPath);
-  if (await legacyTokenFile.exists()) {
-    final token = (await legacyTokenFile.readAsString()).trim();
-    if (token.isNotEmpty) {
-      endpoints.add(
-        WindowsDaemonEndpoint(
-          port: legacyDaemonWindowsPort,
-          token: token,
-          pid: 0,
-          protocolVersion: zeroBoxProtocolVersion,
-        ),
-      );
-    }
-  }
   return endpoints;
 }
 

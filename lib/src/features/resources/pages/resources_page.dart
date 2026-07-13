@@ -13,8 +13,7 @@ import 'package:zerobox/src/core/providers/app_settings_providers.dart';
 import 'package:zerobox/src/data/community/community_source.dart';
 import 'package:zerobox/src/data/bandbbs/bandbbs_resource_provider.dart';
 import 'package:zerobox/src/device/core/xiaomi_wearable_catalog.dart';
-import 'package:zerobox/src/features/accounts/services/bandbbs_auth_service.dart';
-import 'package:zerobox/src/features/accounts/services/huami_auth_service.dart';
+import 'package:zerobox/src/features/accounts/application/host_accounts.dart';
 import 'package:zerobox/src/features/resources/application/resource_catalog_providers.dart';
 import 'package:zerobox/src/features/resources/controllers/resource_filter_controller.dart';
 import 'package:zerobox/src/features/resources/domain/community_resource.dart';
@@ -574,7 +573,7 @@ class _CommunitySourceMenu extends ConsumerWidget {
                   ? null
                   : () async {
                       if (candidate == CommunitySourceId.bandbbs &&
-                          !ref.read(bandBbsAuthProvider).isSignedIn) {
+                          !ref.read(hostAccountsProvider).bandbbs.isSignedIn) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(l10n.settingsBandBbsAccountRequired),
@@ -583,7 +582,7 @@ class _CommunitySourceMenu extends ConsumerWidget {
                         return;
                       }
                       if (candidate == CommunitySourceId.huamiAppStore &&
-                          !ref.read(huamiAuthProvider).isSignedIn) {
+                          !ref.read(hostAccountsProvider).amazfit.isSignedIn) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(l10n.settingsHuamiAccountRequired),

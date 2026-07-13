@@ -55,8 +55,7 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
         reconnectCurrent();
         return;
       }
-      await manager.refreshBattery();
-      await manager.fetchSystemInfo();
+      await manager.refreshDeviceData();
     }
 
     return DropTarget(
@@ -483,10 +482,7 @@ class _BatteryIndicator extends StatelessWidget {
                 width: 20,
                 height: 10,
                 decoration: BoxDecoration(
-                  border: Border.all(
-                    color: indicatorColor,
-                    width: 1.5,
-                  ),
+                  border: Border.all(color: indicatorColor, width: 1.5),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -515,11 +511,7 @@ class _BatteryIndicator extends StatelessWidget {
         ],
         Text(
           '${battery.capacity}%',
-          style: TextStyle(
-            color: indicatorColor,
-            fontSize: 13,
-            height: 1,
-          ),
+          style: TextStyle(color: indicatorColor, fontSize: 13, height: 1),
         ),
       ],
     );

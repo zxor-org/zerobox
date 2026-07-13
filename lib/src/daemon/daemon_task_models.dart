@@ -5,6 +5,7 @@ class DaemonTaskView {
     required this.status,
     required this.progress,
     required this.createdAt,
+    this.params = const {},
     this.path,
     this.error,
   });
@@ -14,6 +15,7 @@ class DaemonTaskView {
   final String status;
   final double progress;
   final DateTime createdAt;
+  final Map<String, Object?> params;
   final String? path;
   final String? error;
 
@@ -33,6 +35,7 @@ class DaemonTaskView {
       createdAt:
           DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
+      params: params ?? const {},
       path: params?['path']?.toString(),
       error: error?['message']?.toString(),
     );
