@@ -7,6 +7,7 @@ RELEASE_DIR="${PROJECT_ROOT}/build/release"
 DEV_MODE="false"
 VERSION=""
 GIT_HASH=""
+BUILD_USER=""
 
 APP_NAME="zerobox"
 PACKAGE_NAME="org.zxor.zerobox"
@@ -76,6 +77,18 @@ get_git_hash() {
   git -C "${PROJECT_ROOT}" rev-parse --short=7 HEAD 2>/dev/null || echo "nogit"
 }
 
+get_build_user() {
+  if command -v id >/dev/null 2>&1; then
+    id -un
+  elif [[ -n "${USER:-}" ]]; then
+    echo "${USER}"
+  elif [[ -n "${USERNAME:-}" ]]; then
+    echo "${USERNAME}"
+  else
+    echo "unknown"
+  fi
+}
+
 is_git_dirty() {
   git -C "${PROJECT_ROOT}" update-index --refresh >/dev/null 2>&1 || true
   ! git -C "${PROJECT_ROOT}" diff-index --quiet HEAD -- 2>/dev/null || \
@@ -114,6 +127,7 @@ compute_version() {
 init_build() {
   parse_common_args "$@"
   GIT_HASH="$(get_git_hash)"
+  BUILD_USER="$(get_build_user)"
   VERSION="$(compute_version "${DEV_MODE}")"
 }
 
@@ -140,6 +154,7 @@ require_flutter() {
 flutter_release_defines() {
   echo "--dart-define=APP_VERSION=${VERSION}"
   echo "--dart-define=GIT_COMMIT_HASH=${GIT_HASH}"
+  echo "--dart-define=BUILD_USER=${BUILD_USER}"
 }
 
 build_number_or_default() {

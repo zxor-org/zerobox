@@ -37,6 +37,7 @@ $GitHash = (git -C $ProjectRoot rev-parse --short=7 HEAD 2>$null)
 if ([string]::IsNullOrWhiteSpace($GitHash)) {
   $GitHash = "nogit"
 }
+$BuildUser = [Environment]::UserName
 
 git -C $ProjectRoot update-index --refresh *> $null
 $Dirty = $false
@@ -74,7 +75,7 @@ if (!$SkipWebView2Sdk) {
 New-Item -ItemType Directory -Force -Path $ReleaseDir | Out-Null
 
 Write-Host "[INFO] Building Windows release package for version $Version"
-flutter build windows --release --obfuscate --split-debug-info=symbols\windows --build-name=$Version --build-number=$($VersionInfo.BuildNumber) --dart-define=APP_VERSION=$Version --dart-define=GIT_COMMIT_HASH=$GitHash
+flutter build windows --release --obfuscate --split-debug-info=symbols\windows --build-name=$Version --build-number=$($VersionInfo.BuildNumber) --dart-define=APP_VERSION=$Version --dart-define=GIT_COMMIT_HASH=$GitHash --dart-define=BUILD_USER=$BuildUser
 
 $BundleDir = Join-Path $ProjectRoot "build/windows/x64/runner/Release"
 $ExePath = Join-Path $BundleDir "$AppName.exe"

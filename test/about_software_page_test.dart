@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zerobox/src/app/generated/app_localizations.dart';
+import 'package:zerobox/src/core/services/build_info_service.dart';
 import 'package:zerobox/src/features/settings/pages/about_software_page.dart';
 
 void main() {
@@ -16,6 +17,11 @@ void main() {
       ),
     );
     await tester.pump();
+
+    expect(
+      find.textContaining('BUILD_USER: ${BuildInfoService.buildUser}'),
+      findsOneWidget,
+    );
 
     final openLogs = find.text('打开日志文件夹');
     await tester.ensureVisible(openLogs);

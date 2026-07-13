@@ -74,7 +74,7 @@ if not exist "%RELEASE_DIR%" mkdir "%RELEASE_DIR%"
 
 echo [INFO] Building Windows release package for version %VERSION%
 echo [INFO] Running: flutter build windows --release
-flutter build windows --release --obfuscate --split-debug-info=symbols\windows --build-name=%VERSION% --build-number=%BUILD_NUMBER% --dart-define=APP_VERSION=%VERSION% --dart-define=GIT_COMMIT_HASH=%GIT_HASH%
+flutter build windows --release --obfuscate --split-debug-info=symbols\windows --build-name=%VERSION% --build-number=%BUILD_NUMBER% --dart-define=APP_VERSION=%VERSION% --dart-define=GIT_COMMIT_HASH=%GIT_HASH% "--dart-define=BUILD_USER=%USERNAME%"
 if errorlevel 1 exit /b 1
 
 set "BUNDLE_DIR=%PROJECT_ROOT%\build\windows\x64\runner\Release"

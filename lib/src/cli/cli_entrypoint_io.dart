@@ -39,12 +39,14 @@ Future<CliExitCode> _run(CliInvocation invocation) async {
           'name': 'ZeroBox',
           'version': BuildInfoService.appVersion,
           'commit': commit,
+          'builder': BuildInfoService.buildUser,
           'protocolVersion': zeroBoxProtocolVersion,
         }),
       );
     } else {
       stdout.writeln(
         'ZeroBox ${BuildInfoService.appVersion} ($commit), '
+        'built by ${BuildInfoService.buildUser}, '
         'protocol $zeroBoxProtocolVersion',
       );
     }

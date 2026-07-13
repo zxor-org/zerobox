@@ -149,7 +149,14 @@ class BandBbsCatalog implements CommunityResourceCatalog {
   /// Categories not worth surfacing: Xiaomi Band 6 and older, plus
   /// non-Xiaomi/misc sections.
   static bool _isBlockedCategory(String title) {
-    const blockedTitles = {'BlueOS穿戴系列', '安卓智能手表', '黑加手环', '小米手表Color', '论坛杂务'};
+    const blockedTitles = {
+      '测试区',
+      'BlueOS穿戴系列',
+      '安卓智能手表',
+      '黑加手环',
+      '小米手表Color',
+      '论坛杂务',
+    };
     const blockedBrands = ['荣耀', '华为', '黑鲨'];
     if (blockedTitles.contains(title)) return true;
     if (blockedBrands.any(title.contains)) return true;

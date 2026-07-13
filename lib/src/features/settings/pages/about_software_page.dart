@@ -102,7 +102,8 @@ class AboutSoftwarePage extends StatelessWidget {
                     final commit = snapshot.data ?? 'local';
                     return SelectableText(
                       'APP_VERSION: ${BuildInfoService.appVersion}\n'
-                      'GIT_COMMIT_HASH: $commit',
+                      'GIT_COMMIT_HASH: $commit\n'
+                      'BUILD_USER: ${BuildInfoService.buildUser}',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                         fontFamily: 'monospace',

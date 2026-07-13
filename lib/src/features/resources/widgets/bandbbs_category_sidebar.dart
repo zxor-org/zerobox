@@ -38,57 +38,53 @@ class _BandBbsCategorySidebarState
       resourceFiltersProvider.select((filters) => filters.selectedDevices),
     );
     final tree = ref.watch(bandbbsCategoryTreeProvider);
-    return ColoredBox(
-      color: theme.colorScheme.surfaceContainerLow.withValues(alpha: .5),
-      child: tree.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (_, _) => const SizedBox.shrink(),
-        data: (roots) {
-          _initExpanded(roots);
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(12, 16, 12, 32),
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                child: Text(
-                  l10n.categories,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              _CategoryTile(
-                title: l10n.all,
-                count: null,
-                depth: 0,
-                selected: selected.isEmpty,
-                onTap: () =>
-                    ref.read(resourceFiltersProvider.notifier).clearDevices(),
-              ),
-              for (final root in roots)
-                _CategoryNodeTile(
-                  node: root,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
+      child: Material(
+        color: theme.colorScheme.surfaceContainerLow.withValues(alpha: .5),
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: tree.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (_, _) => const SizedBox.shrink(),
+          data: (roots) {
+            _initExpanded(roots);
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+              children: [
+                _CategoryTile(
+                  title: l10n.all,
+                  count: null,
                   depth: 0,
-                  expanded: _expanded,
-                  selected: selected,
-                  onToggle: (id) => setState(() {
-                    if (!_expanded.add(id)) _expanded.remove(id);
-                  }),
-                  onSelect: (node) async {
-                    if (needsUnsupportedResourceWarning(node.title)) {
-                      await showUnsupportedResourceWarning(context, l10n);
-                      if (!context.mounted) return;
-                    }
-                    ref
-                        .read(resourceFiltersProvider.notifier)
-                        .selectDevice(
-                          '${BandBbsCategorySidebar.categoryFilterPrefix}${node.id}',
-                        );
-                  },
+                  selected: selected.isEmpty,
+                  onTap: () =>
+                      ref.read(resourceFiltersProvider.notifier).clearDevices(),
                 ),
-            ],
-          );
-        },
+                for (final root in roots)
+                  _CategoryNodeTile(
+                    node: root,
+                    depth: 0,
+                    expanded: _expanded,
+                    selected: selected,
+                    onToggle: (id) => setState(() {
+                      if (!_expanded.add(id)) _expanded.remove(id);
+                    }),
+                    onSelect: (node) async {
+                      if (needsUnsupportedResourceWarning(node.title)) {
+                        await showUnsupportedResourceWarning(context, l10n);
+                        if (!context.mounted) return;
+                      }
+                      ref
+                          .read(resourceFiltersProvider.notifier)
+                          .selectDevice(
+                            '${BandBbsCategorySidebar.categoryFilterPrefix}${node.id}',
+                          );
+                    },
+                  ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
