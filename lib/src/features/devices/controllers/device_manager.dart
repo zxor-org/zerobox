@@ -283,11 +283,16 @@ class LocalDeviceManager extends DeviceManager {
     );
     _scannedProfiles.clear();
 
-    final available = await _bluetooth.isAvailable();
-    if (!available) {
-      _log.warning('bluetooth not available');
-      state = state.copyWith(scanning: false, error: errorBluetoothUnavailable);
-      return;
+    if (!kIsWeb) {
+      final available = await _bluetooth.isAvailable();
+      if (!available) {
+        _log.warning('bluetooth not available');
+        state = state.copyWith(
+          scanning: false,
+          error: errorBluetoothUnavailable,
+        );
+        return;
+      }
     }
 
     try {
@@ -310,7 +315,7 @@ class LocalDeviceManager extends DeviceManager {
   }
 
   Set<ConnectType> _scanConnectTypes(ConnectType connectType) {
-    if (kIsWeb) return const {ConnectType.ble};
+    if (kIsWeb) return const {ConnectType.spp};
     if (connectType == ConnectType.ble) {
       return const {ConnectType.ble, ConnectType.spp};
     }
@@ -532,9 +537,7 @@ class LocalDeviceManager extends DeviceManager {
     final requestedConnectType = connectType.toLowerCase().isEmpty
         ? profile.preferredConnectType.name
         : connectType.toLowerCase();
-    final effectiveConnectType = kIsWeb
-        ? ConnectType.ble.name
-        : requestedConnectType;
+    final effectiveConnectType = requestedConnectType;
     _log.info(
       'connect request $addr rawName="$name" displayName="$displayName" '
       'codename="$effectiveCodename" via=$effectiveConnectType '
@@ -712,7 +715,7 @@ class LocalDeviceManager extends DeviceManager {
     } catch (e, st) {
       if (_currentEntity != null &&
           state.protocolState == ProtocolState.ready) {
-        _log.fine('periodic battery refresh failed', e, st);
+        _log.warning('periodic battery refresh failed', e, st);
       }
     } finally {
       _batteryRefreshInProgress = false;
@@ -722,7 +725,11 @@ class LocalDeviceManager extends DeviceManager {
   Future<SystemInfo> _fetchDeviceInfoWithEuiccFallback(
     XiaomiInfoSystem infoSystem,
   ) async {
-    final info = await infoSystem.fetchDeviceInfo();
+    var info = await infoSystem.fetchDeviceInfo();
+    final storageInfo = state.systemInfo?.storageInfo;
+    if (storageInfo != null) {
+      info = info.copyWith(storageInfo: storageInfo);
+    }
     if (!_shouldFetchEuiccImei(state.currentDevice, info)) {
       return info;
     }
@@ -735,7 +742,10 @@ class LocalDeviceManager extends DeviceManager {
         );
         return info;
       }
-      final updatedInfo = info.copyWith(imei: imei);
+      final updatedInfo = info.copyWith(
+        imei: imei,
+        storageInfo: state.systemInfo?.storageInfo ?? info.storageInfo,
+      );
       state = state.copyWith(systemInfo: updatedInfo);
       _log.info(
         'device info ${state.currentDevice?.addr ?? info.model}: '
@@ -785,14 +795,15 @@ class LocalDeviceManager extends DeviceManager {
         _log.warning('event: transport disconnected');
         _onDisconnected();
       case BatteryUpdated(:final battery):
-        _log.info('event: battery ${battery.capacity}%');
         state = state.copyWith(battery: battery);
       case DeviceInfoUpdated(:final info):
         _log.info(
           'device info ${event.deviceId}: model=${info.model}, '
           'fw=${info.firmwareVersion}',
         );
-        state = state.copyWith(systemInfo: info);
+        state = state.copyWith(
+          systemInfo: info.copyWith(storageInfo: state.systemInfo?.storageInfo),
+        );
         final current = state.currentDevice;
         final identity = normalizeXiaomiWearableIdentity(info.model);
         if (current != null && identity != null) {
@@ -1000,11 +1011,9 @@ class LocalDeviceManager extends DeviceManager {
       await refreshBattery();
       return;
     }
-    await Future.wait([
-      refreshBattery(),
-      fetchSystemInfo(),
-      fetchStorageInfo(),
-    ]);
+    await refreshBattery();
+    await fetchSystemInfo();
+    await fetchStorageInfo();
   }
 
   @override

@@ -1,10 +1,14 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zerobox/src/commands/command_protocol.dart';
 import 'package:zerobox/src/daemon/daemon_task_models.dart';
+import 'package:zerobox/src/features/resources/application/resource_catalog_providers.dart';
 import 'package:zerobox/src/features/resources/domain/community_resource.dart';
 import 'package:zerobox/src/features/resources/domain/community_resource_codec.dart';
+import 'package:zerobox/src/features/resources/services/install_queue_notifier.dart';
 import 'package:zerobox/src/features/resources/services/resource_install_service.dart';
 import 'package:zerobox/src/host/application_host_provider.dart';
 
@@ -36,9 +40,11 @@ class ResourceTask {
 
 class DownloadQueueNotifier extends Notifier<List<ResourceTask>> {
   StreamSubscription<CommandEvent>? _subscription;
+  CancelToken? _cancelToken;
 
   @override
   List<ResourceTask> build() {
+    if (kIsWeb) return const [];
     final host = ref.watch(applicationHostProvider);
     _subscription = host.events.listen(_handleEvent);
     ref.onDispose(() => unawaited(_subscription?.cancel()));
@@ -76,6 +82,17 @@ class DownloadQueueNotifier extends Notifier<List<ResourceTask>> {
     CommunityResourceFile file,
     String codename,
   ) async {
+    if (kIsWeb) {
+      final task = ResourceTask(
+        id: '${resource.ref.key}:${file.id}:$codename',
+        resource: resource,
+        file: file,
+        codename: codename,
+      );
+      state = [...state, task];
+      _startNextWeb();
+      return;
+    }
     final result = await ref
         .read(applicationHostProvider)
         .execute(
@@ -101,11 +118,81 @@ class DownloadQueueNotifier extends Notifier<List<ResourceTask>> {
     await _refresh();
   }
 
+  void _startNextWeb() {
+    if (runningTask != null) return;
+    final next = state
+        .where((task) => task.status == ResourceTaskStatus.pending)
+        .firstOrNull;
+    if (next != null) unawaited(_runWeb(next));
+  }
+
+  Future<void> _runWeb(ResourceTask task) async {
+    _cancelToken = CancelToken();
+    _updateWeb(task.id, ResourceTaskStatus.downloading, 0, null);
+    try {
+      final downloaded = await ResourceInstallService().downloadResource(
+        resource: task.resource,
+        file: task.file,
+        catalog: ref.read(
+          localCommunityCatalogProviderForSource(task.resource.ref.source),
+        ),
+        targetDevice: task.codename,
+        onUpdate: (status, progress, error) =>
+            _updateWeb(task.id, status, progress, error),
+      );
+      if (downloaded == null || !state.any((entry) => entry.id == task.id)) {
+        return;
+      }
+      ref
+          .read(installQueueProvider.notifier)
+          .enqueueResource(
+            resource: task.resource,
+            file: task.file,
+            codename: task.codename,
+            filePath: downloaded.path,
+            bytes: downloaded.bytes,
+          );
+      state = state.where((entry) => entry.id != task.id).toList();
+    } finally {
+      _cancelToken = null;
+      _startNextWeb();
+    }
+  }
+
+  void _updateWeb(
+    String id,
+    ResourceTaskStatus status,
+    double progress,
+    String? error,
+  ) {
+    state = [
+      for (final task in state)
+        if (task.id == id)
+          ResourceTask(
+            id: task.id,
+            resource: task.resource,
+            file: task.file,
+            codename: task.codename,
+            status: status,
+            progress: progress,
+            error: error,
+          )
+        else
+          task,
+    ];
+  }
+
   void remove(String id) => unawaited(_remove(id));
 
   Future<void> _remove(String id) async {
     final task = state.where((task) => task.id == id).firstOrNull;
     if (task == null) return;
+    if (kIsWeb) {
+      if (task == runningTask) _cancelToken?.cancel('Removed from queue');
+      state = state.where((entry) => entry.id != id).toList();
+      _startNextWeb();
+      return;
+    }
     final host = ref.read(applicationHostProvider);
     if (task.status == ResourceTaskStatus.completed ||
         task.status == ResourceTaskStatus.failed) {
@@ -123,6 +210,16 @@ class DownloadQueueNotifier extends Notifier<List<ResourceTask>> {
   }
 
   void clearTerminal() {
+    if (kIsWeb) {
+      state = state
+          .where(
+            (task) =>
+                task.status != ResourceTaskStatus.completed &&
+                task.status != ResourceTaskStatus.failed,
+          )
+          .toList();
+      return;
+    }
     for (final task in state.where(
       (task) =>
           task.status == ResourceTaskStatus.completed ||
@@ -133,6 +230,22 @@ class DownloadQueueNotifier extends Notifier<List<ResourceTask>> {
   }
 
   void retry(String id) {
+    if (kIsWeb) {
+      state = [
+        for (final task in state)
+          if (task.id == id)
+            ResourceTask(
+              id: task.id,
+              resource: task.resource,
+              file: task.file,
+              codename: task.codename,
+            )
+          else
+            task,
+      ];
+      _startNextWeb();
+      return;
+    }
     unawaited(
       ref
           .read(applicationHostProvider)

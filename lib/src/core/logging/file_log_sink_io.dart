@@ -1,7 +1,9 @@
 import 'dart:io';
+import 'dart:ffi';
 
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:zerobox/src/core/services/build_info_service.dart';
 
 const _androidLogsChannel = MethodChannel('zerobox/logs');
 
@@ -37,22 +39,38 @@ class SerialFileLogWriter {
   }
 }
 
-Future<void> initializeFileLogSink() async {
+Future<void> initializeFileLogSink({List<String> arguments = const []}) async {
   final support = await getApplicationSupportDirectory();
   final directory = Directory('${support.path}${Platform.pathSeparator}logs');
   await directory.create(recursive: true);
   _logDirectory = directory;
   await _removeExpiredLogs(directory);
   final now = DateTime.now();
-  final date =
+  final timestamp =
       '${now.year.toString().padLeft(4, '0')}-'
       '${now.month.toString().padLeft(2, '0')}-'
-      '${now.day.toString().padLeft(2, '0')}';
+      '${now.day.toString().padLeft(2, '0')}_'
+      '${now.hour.toString().padLeft(2, '0')}-'
+      '${now.minute.toString().padLeft(2, '0')}-'
+      '${now.second.toString().padLeft(2, '0')}-'
+      '${now.millisecond.toString().padLeft(3, '0')}';
   final file = File(
-    '${directory.path}${Platform.pathSeparator}zerobox-$date.log',
+    '${directory.path}${Platform.pathSeparator}zerobox-$timestamp-$pid.log',
   );
   await _writer?.close();
-  _writer = SerialFileLogWriter(file.openWrite(mode: FileMode.append));
+  _writer = SerialFileLogWriter(file.openWrite(mode: FileMode.write));
+  final commit = await BuildInfoService.resolveCommitHash();
+  _writer!.writeLine('ZeroBox ${BuildInfoService.appVersion} ($commit)');
+  _writer!.writeLine('Builder: ${BuildInfoService.buildUser}');
+  _writer!.writeLine('Started: ${now.toIso8601String()}');
+  _writer!.writeLine(
+    'Platform: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}',
+  );
+  _writer!.writeLine('Architecture: ${Abi.current()}');
+  _writer!.writeLine('Dart: ${Platform.version}');
+  _writer!.writeLine('Process: $pid');
+  _writer!.writeLine('Arguments: ${arguments.join(' ')}');
+  _writer!.writeLine('');
 }
 
 Future<void> _removeExpiredLogs(Directory directory) async {

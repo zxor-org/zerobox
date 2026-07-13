@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zerobox/src/commands/command_protocol.dart';
 import 'package:zerobox/src/core/models/bt_models.dart';
@@ -560,23 +562,45 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
 
   Future<Object?> _installLocal(Map<String, Object?> params) async {
     final path = params['path']?.toString() ?? '';
+    final rawBytes = params['bytes'];
+    final memoryPayload = params['payloadMode'] == 'memory';
     final typeName = params['type']?.toString() ?? '';
-    if (path.isEmpty) {
-      throw const CommandFailure('usage', 'Missing resource path');
+    if (path.isEmpty && !memoryPayload) {
+      throw const CommandFailure('usage', 'Missing resource payload');
     }
-    final file = File(path);
-    if (!await file.exists()) {
+    if (kIsWeb && !memoryPayload) {
+      throw const CommandFailure(
+        'unsupported',
+        'Web installs require an in-memory resource payload',
+      );
+    }
+    final file = memoryPayload ? null : File(path);
+    if (file != null && !await file.exists()) {
       throw CommandFailure('file', 'File not found: $path');
     }
+    final Uint8List bytes;
+    if (memoryPayload) {
+      bytes = switch (rawBytes) {
+        Uint8List value => value,
+        List value => Uint8List.fromList(
+          value.map((item) => (item as num).toInt()).toList(),
+        ),
+        _ => throw const CommandFailure(
+          'usage',
+          'Missing in-memory resource bytes',
+        ),
+      };
+    } else {
+      bytes = await file!.readAsBytes();
+    }
+    final fileName = params['fileName']?.toString().isNotEmpty == true
+        ? params['fileName'].toString()
+        : file!.uri.pathSegments.last;
     var installed = false;
     try {
-      final bytes = await file.readAsBytes();
       final service = container.read(resourceInstallServiceProvider);
       final type = switch (typeName) {
-        'auto' => service.detectLocalInstallType(
-          file.uri.pathSegments.last,
-          bytes,
-        ),
+        'auto' => service.detectLocalInstallType(fileName, bytes),
         'quickapp' || 'app' => LocalDeviceInstallType.app,
         'watchface' => LocalDeviceInstallType.watchface,
         'firmware' => LocalDeviceInstallType.firmware,
@@ -593,7 +617,7 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
       _throwIfCancelled();
       await service.installLocalPayload(
         type: type,
-        fileName: file.uri.pathSegments.last,
+        fileName: fileName,
         bytes: bytes,
         deviceManager: _manager,
         onProgress: (progress) => _events.add(
@@ -604,7 +628,10 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
       _events.add(CommandEvent('completed', data: {'path': path}));
       return {'installed': true, 'path': path, 'type': type.name};
     } finally {
-      if (installed && params['deleteAfter'] == true && await file.exists()) {
+      if (installed &&
+          params['deleteAfter'] == true &&
+          file != null &&
+          await file.exists()) {
         await file.delete();
       }
     }

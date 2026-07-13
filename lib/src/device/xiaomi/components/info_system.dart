@@ -17,7 +17,6 @@ class XiaomiInfoSystem extends XiaomiPbSystem {
   static final _log = getLogger('XiaomiInfoSystem');
 
   Future<models.BatteryStatus> fetchBatteryInfo() async {
-    _log.info('[${entity.id}] fetching battery info');
     final response = await component.requestPool
         .request<pb_system.DeviceStatus>(
           packet: buildSystemPacket(
@@ -29,7 +28,7 @@ class XiaomiInfoSystem extends XiaomiPbSystem {
           responseMapper: (p) => p.system.deviceStatus,
         );
     final status = _batteryStatus(response.battery);
-    _emitBattery(status, source: 'snapshot');
+    _emitBattery(status);
     return status;
   }
 
@@ -48,11 +47,7 @@ class XiaomiInfoSystem extends XiaomiPbSystem {
     );
   }
 
-  void _emitBattery(models.BatteryStatus status, {required String source}) {
-    _log.info(
-      '[${entity.id}] battery $source: '
-      '${status.capacity}%, ${status.chargeStatus}',
-    );
+  void _emitBattery(models.BatteryStatus status) {
     entity.emit(BatteryUpdated(deviceId: entity.id, battery: status));
   }
 
@@ -198,6 +193,6 @@ class XiaomiInfoSystem extends XiaomiPbSystem {
             pb_system.System_Payload.batteryStatus) {
       return;
     }
-    _emitBattery(_batteryStatus(packet.system.batteryStatus), source: 'report');
+    _emitBattery(_batteryStatus(packet.system.batteryStatus));
   }
 }

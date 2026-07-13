@@ -12,9 +12,9 @@ final _recentLogLines = <String>[];
 Stream<String> get zeroBoxLogStream => _logLines.stream;
 List<String> get recentZeroBoxLogs => List.unmodifiable(_recentLogLines);
 
-Future<void> initLogging() async {
-  await initializeFileLogSink();
-  Logger.root.level = Level.ALL;
+Future<void> initLogging({List<String> arguments = const []}) async {
+  await initializeFileLogSink(arguments: arguments);
+  Logger.root.level = Level.INFO;
   Logger.root.onRecord.listen((record) {
     final time = record.time.toIso8601String();
     final logger = record.loggerName;

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:zerobox/src/commands/command_protocol.dart';
 import 'package:zerobox/src/core/logging/logging_service.dart';
@@ -294,6 +295,34 @@ class HostDeviceManager extends DeviceManager {
     String extension,
     void Function(double progress)? onProgress,
   ) async {
+    if (kIsWeb) {
+      StreamSubscription<CommandEvent>? progressSubscription;
+      try {
+        progressSubscription = ref.read(applicationHostProvider).events.listen((
+          event,
+        ) {
+          if (event.event != 'progress') return;
+          final value = event.data['progress'];
+          if (value is num) onProgress?.call(value.toDouble());
+        });
+        await _execute(
+          ZeroBoxCommand(
+            method: 'install.local',
+            params: {
+              'type': type,
+              'payloadMode': 'memory',
+              'bytes': bytes,
+              'fileName': 'zerobox_web.$extension',
+            },
+          ),
+        );
+        await _refreshSnapshot();
+      } finally {
+        await progressSubscription?.cancel();
+      }
+      return;
+    }
+
     final directory = await getTemporaryDirectory();
     final file = File(
       '${directory.path}/zerobox_gui_${DateTime.now().microsecondsSinceEpoch}.$extension',

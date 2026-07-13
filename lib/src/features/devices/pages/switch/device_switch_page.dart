@@ -31,7 +31,7 @@ class _DeviceSwitchPageState extends ConsumerState<DeviceSwitchPage> {
   void initState() {
     super.initState();
     Future.microtask(() async {
-      if (mounted) {
+      if (mounted && !kIsWeb) {
         ref.read(deviceManagerProvider.notifier).startBluetoothScan();
       }
     });

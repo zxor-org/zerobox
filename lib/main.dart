@@ -11,7 +11,7 @@ import 'package:zerobox/src/features/devices/widgets/device_deep_link_handler.da
 
 void main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
-  await initLogging();
+  await initLogging(arguments: args);
   await SharedPrefsService.instance.init();
   await runCliIfRequested(args);
   await LicenseRegistryService.registerThirdPartyLicenses();

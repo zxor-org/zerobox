@@ -1,16 +1,19 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:cross_file/cross_file.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:zerobox/src/commands/command_protocol.dart';
+import 'package:zerobox/src/core/providers/app_settings_providers.dart';
 import 'package:zerobox/src/daemon/daemon_task_models.dart';
 import 'package:zerobox/src/features/resources/domain/community_resource.dart';
 import 'package:zerobox/src/features/resources/domain/community_resource_codec.dart';
 import 'package:zerobox/src/features/resources/services/resource_install_service.dart';
+import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
 import 'package:zerobox/src/host/application_host_provider.dart';
+import 'package:zerobox/src/protocols/common/device_protocol.dart' as proto;
 
 export 'package:zerobox/src/features/resources/services/resource_install_service.dart'
     show LocalDeviceInstallType, ResourceTaskStatus;
@@ -24,6 +27,7 @@ class InstallTask {
     required this.description,
     required this.type,
     required this.filePath,
+    this.bytes,
     this.resource,
     this.file,
     this.status = ResourceTaskStatus.pending,
@@ -36,6 +40,7 @@ class InstallTask {
   final String description;
   final LocalDeviceInstallType type;
   final String filePath;
+  final Uint8List? bytes;
   final CommunityResourceDetail? resource;
   final CommunityResourceFile? file;
   final ResourceTaskStatus status;
@@ -70,6 +75,10 @@ class InstallQueueNotifier extends Notifier<InstallQueueState> {
 
   @override
   InstallQueueState build() {
+    if (kIsWeb) {
+      ref.listen(deviceManagerProvider, (_, _) {});
+      return const InstallQueueState();
+    }
     final host = ref.watch(applicationHostProvider);
     _subscription = host.events.listen(_handleEvent);
     ref.onDispose(() => unawaited(_subscription?.cancel()));
@@ -178,6 +187,26 @@ class InstallQueueNotifier extends Notifier<InstallQueueState> {
 
   Future<void> _enqueueLocalFile(XFile file) async {
     final bytes = await file.readAsBytes();
+    if (kIsWeb) {
+      final type = ResourceInstallService().detectLocalInstallType(
+        file.name,
+        bytes,
+      );
+      final task = InstallTask(
+        id: file.path,
+        name: file.name,
+        description: type?.name ?? 'Unsupported file',
+        type: type ?? LocalDeviceInstallType.app,
+        filePath: file.path,
+        bytes: bytes,
+        status: type == null
+            ? ResourceTaskStatus.failed
+            : ResourceTaskStatus.pending,
+        error: type == null ? 'Unsupported or unrecognized file type' : null,
+      );
+      _addWebTask(task);
+      return;
+    }
     final path = await _stage(file.name, bytes);
     await _enqueue(
       ZeroBoxCommand(
@@ -217,8 +246,68 @@ class InstallQueueNotifier extends Notifier<InstallQueueState> {
     await _refresh();
   }
 
+  void enqueueResource({
+    required CommunityResourceDetail resource,
+    required CommunityResourceFile file,
+    required String codename,
+    required String filePath,
+    Uint8List? bytes,
+  }) {
+    assert(kIsWeb);
+    _addWebTask(
+      InstallTask(
+        id: '${resource.ref.key}:${file.id}:$codename',
+        name: resource.name,
+        description: codename,
+        type: switch (resource.type) {
+          CommunityResourceType.quickApp => LocalDeviceInstallType.app,
+          CommunityResourceType.watchface => LocalDeviceInstallType.watchface,
+          CommunityResourceType.firmware => LocalDeviceInstallType.firmware,
+          CommunityResourceType.fontpack || CommunityResourceType.iconpack =>
+            throw UnsupportedError('${resource.type} install not implemented'),
+        },
+        filePath: filePath,
+        bytes: bytes,
+        resource: resource,
+        file: file,
+      ),
+    );
+    if (ref.read(appSettingsProvider).autoInstall && _webDeviceReady()) {
+      start();
+    }
+  }
+
+  void _addWebTask(InstallTask task) {
+    if (state.tasks.any(
+      (item) =>
+          item.id == task.id && item.status != ResourceTaskStatus.completed,
+    )) {
+      return;
+    }
+    state = InstallQueueState(
+      tasks: [...state.tasks, task],
+      runStatus: state.runStatus,
+    );
+  }
+
+  bool _webDeviceReady() {
+    final device = ref.read(deviceManagerProvider);
+    return device.protocolState == proto.ProtocolState.ready &&
+        device.currentDevice != null &&
+        !device.currentDevice!.disconnected;
+  }
+
   void remove(String taskId) => unawaited(_remove(taskId));
   Future<void> _remove(String taskId) async {
+    if (kIsWeb) {
+      state = InstallQueueState(
+        tasks: state.tasks.where((task) => task.id != taskId).toList(),
+        runStatus: state.tasks.length <= 1
+            ? QueueRunStatus.pending
+            : state.runStatus,
+      );
+      return;
+    }
     final task = state.tasks.where((task) => task.id == taskId).firstOrNull;
     final terminal =
         task == null ||
@@ -239,6 +328,19 @@ class InstallQueueNotifier extends Notifier<InstallQueueState> {
   }
 
   void clearTerminal() {
+    if (kIsWeb) {
+      state = InstallQueueState(
+        tasks: state.tasks
+            .where(
+              (task) =>
+                  task.status != ResourceTaskStatus.completed &&
+                  task.status != ResourceTaskStatus.failed,
+            )
+            .toList(),
+        runStatus: state.runStatus,
+      );
+      return;
+    }
     for (final task in state.tasks.where(
       (task) =>
           task.status == ResourceTaskStatus.completed ||
@@ -249,6 +351,28 @@ class InstallQueueNotifier extends Notifier<InstallQueueState> {
   }
 
   void retry(String taskId) {
+    if (kIsWeb) {
+      state = InstallQueueState(
+        tasks: [
+          for (final task in state.tasks)
+            if (task.id == taskId)
+              InstallTask(
+                id: task.id,
+                name: task.name,
+                description: task.description,
+                type: task.type,
+                filePath: task.filePath,
+                bytes: task.bytes,
+                resource: task.resource,
+                file: task.file,
+              )
+            else
+              task,
+        ],
+        runStatus: state.runStatus,
+      );
+      return;
+    }
     unawaited(
       ref
           .read(applicationHostProvider)
@@ -259,6 +383,17 @@ class InstallQueueNotifier extends Notifier<InstallQueueState> {
   }
 
   void start() {
+    if (kIsWeb) {
+      if (state.isRunning || !state.hasRunnableTasks || !_webDeviceReady()) {
+        return;
+      }
+      state = InstallQueueState(
+        tasks: state.tasks,
+        runStatus: QueueRunStatus.running,
+      );
+      unawaited(_runWeb());
+      return;
+    }
     unawaited(
       ref
           .read(applicationHostProvider)
@@ -267,11 +402,80 @@ class InstallQueueNotifier extends Notifier<InstallQueueState> {
   }
 
   void pause() {
+    if (kIsWeb) {
+      if (!state.isRunning) return;
+      state = InstallQueueState(
+        tasks: state.tasks,
+        runStatus: QueueRunStatus.stopping,
+      );
+      return;
+    }
     unawaited(
       ref
           .read(applicationHostProvider)
           .execute(const ZeroBoxCommand(method: 'queue.pause')),
     );
+  }
+
+  Future<void> _runWeb() async {
+    while (state.runStatus == QueueRunStatus.running) {
+      final task = state.tasks
+          .where((item) => item.status == ResourceTaskStatus.pending)
+          .firstOrNull;
+      if (task == null) break;
+      await _runWebTask(task);
+      if (state.runStatus == QueueRunStatus.stopping) break;
+    }
+    state = InstallQueueState(
+      tasks: state.tasks,
+      runStatus: QueueRunStatus.pending,
+    );
+  }
+
+  Future<void> _runWebTask(InstallTask task) async {
+    final manager = ref.read(deviceManagerProvider.notifier);
+    void update(ResourceTaskStatus status, double progress, String? error) {
+      state = InstallQueueState(
+        tasks: [
+          for (final item in state.tasks)
+            if (item.id == task.id)
+              InstallTask(
+                id: item.id,
+                name: item.name,
+                description: item.description,
+                type: item.type,
+                filePath: item.filePath,
+                bytes: item.bytes,
+                resource: item.resource,
+                file: item.file,
+                status: status,
+                progress: progress,
+                error: error,
+              )
+            else
+              item,
+        ],
+        runStatus: state.runStatus,
+      );
+    }
+
+    if (task.resource != null && task.file != null) {
+      await ResourceInstallService().installDownloadedResource(
+        resource: task.resource!,
+        file: task.file!,
+        filePath: task.filePath,
+        bytes: task.bytes,
+        deviceManager: manager,
+        onUpdate: update,
+      );
+    } else {
+      await ResourceInstallService().installLocalFile(
+        filePath: task.filePath,
+        bytes: task.bytes,
+        deviceManager: manager,
+        onUpdate: update,
+      );
+    }
   }
 }
 
