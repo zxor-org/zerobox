@@ -57,8 +57,14 @@ class _DeviceInfoPageState extends ConsumerState<DeviceInfoPage> {
         _InfoGroup(
           title: l10n.deviceInfoGroupSystem,
           children: [
-            _InfoRow(label: l10n.fieldModel, value: shown(state.systemInfo!.model)),
-            _InfoRow(label: l10n.fieldImei, value: shown(state.systemInfo!.imei)),
+            _InfoRow(
+              label: l10n.fieldModel,
+              value: shown(state.systemInfo!.model),
+            ),
+            _InfoRow(
+              label: l10n.fieldImei,
+              value: shown(state.systemInfo!.imei),
+            ),
             _InfoRow(
               label: l10n.fieldFirmware,
               value: shown(state.systemInfo!.firmwareVersion),
@@ -91,7 +97,7 @@ class _DeviceInfoPageState extends ConsumerState<DeviceInfoPage> {
     ];
 
     return Scaffold(
-      appBar: SysAppBar(title: Text(l10n.deviceInfoTitle)),
+      appBar: SysAppBar(secondary: true, title: Text(l10n.deviceInfoTitle)),
       body: PageContainer(
         padding: EdgeInsets.zero,
         child: ListView.separated(

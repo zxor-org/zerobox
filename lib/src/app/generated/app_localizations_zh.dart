@@ -66,6 +66,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pluginPermissions => '权限';
 
   @override
+  String get pluginInstallConfirmTitle => '插件安装确认';
+
+  @override
+  String get pluginUpdateConfirmTitle => '插件更新确认';
+
+  @override
+  String get pluginDeclaredPermissions => '此插件声明了以下权限：';
+
+  @override
+  String get pluginNoPermissions => '未声明任何权限';
+
+  @override
+  String get pluginUpToDate => '已安装且为最新版本';
+
+  @override
   String get pluginUninstallTitle => '卸载插件';
 
   @override
@@ -470,6 +485,37 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get connectFailed => '连接失败';
+
+  @override
+  String deviceConnectingTo(String deviceName) {
+    return '正在连接 $deviceName…';
+  }
+
+  @override
+  String get deviceConnectionPreparing => '正在准备连接…';
+
+  @override
+  String deviceConnectionEstablishing(String transport) {
+    return '正在建立 $transport 连接…';
+  }
+
+  @override
+  String get deviceConnectionInitializing => '正在初始化设备协议…';
+
+  @override
+  String get deviceConnectionAuthenticating => '正在认证设备…';
+
+  @override
+  String get deviceConnectionFetchingStatus => '正在读取设备信息…';
+
+  @override
+  String get deviceTransportBle => 'BLE';
+
+  @override
+  String get deviceTransportSpp => 'SPP';
+
+  @override
+  String get deviceCompatibilityUnknown => '未识别设备';
 
   @override
   String get webSerialTitle => 'Web Serial';

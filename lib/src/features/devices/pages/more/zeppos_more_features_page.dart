@@ -48,7 +48,7 @@ class _ZeppOsMoreFeaturesPageState
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: SysAppBar(title: Text(l10n.zeppOsMoreFeatures)),
+      appBar: SysAppBar(secondary: true, title: Text(l10n.zeppOsMoreFeatures)),
       body: PageContainer(
         padding: const EdgeInsets.symmetric(
           horizontal: StyleConstants.pagePadding,

@@ -173,6 +173,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           StatefulShellBranch(
             routes: [
               GoRoute(
+                path: '/queue',
+                builder: (context, state) => const QueuePage(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
                 path: '/plugins',
                 builder: (context, state) => const PluginsPage(),
                 routes: [
@@ -182,14 +190,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                         PluginDetailPage(pluginId: state.pathParameters['id']!),
                   ),
                 ],
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/queue',
-                builder: (context, state) => const QueuePage(),
               ),
             ],
           ),

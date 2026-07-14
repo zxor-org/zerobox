@@ -77,9 +77,15 @@ class ZeroBoxDaemonClient implements ZeroBoxCommandBus {
     final info = result.value;
     if (info is! Map ||
         info['running'] != true ||
-        info['platform'] != Platform.operatingSystem ||
-        info['protocolVersion'] != zeroBoxProtocolVersion) {
+        info['platform'] != Platform.operatingSystem) {
       throw StateError('The endpoint is not a compatible ZeroBox daemon');
+    }
+    if (info['protocolVersion'] != zeroBoxProtocolVersion) {
+      await execute(
+        const ZeroBoxCommand(method: 'daemon.stop'),
+        timeout: const Duration(seconds: 2),
+      );
+      throw StateError('The ZeroBox daemon protocol version is outdated');
     }
   }
 

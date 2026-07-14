@@ -6,7 +6,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:mp_audio_stream/mp_audio_stream.dart';
+import 'package:flutter_soloud/flutter_soloud.dart';
 import 'package:zerobox/src/app/widgets/page_container.dart';
 import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
@@ -22,7 +22,7 @@ class ZeppOsXiaoAiPage extends ConsumerStatefulWidget {
 }
 
 class _ZeppOsXiaoAiPageState extends ConsumerState<ZeppOsXiaoAiPage> {
-  final _audio = getAudioStream();
+  final _audio = SoLoud.instance;
   final _replyController = TextEditingController();
   final _opusFrames = <Uint8List>[];
   final _opusDurations = <int>[];
@@ -30,6 +30,7 @@ class _ZeppOsXiaoAiPageState extends ConsumerState<ZeppOsXiaoAiPage> {
   final _waveform = <double>[];
   StreamSubscription<Uint8List>? _frameSubscription;
   WasmOpusDecoder? _decoder;
+  AudioSource? _audioSource;
   bool _playback = true;
   bool _continuousCapture = false;
   int _assistantEndpoint = 0x0010;
@@ -50,22 +51,39 @@ class _ZeppOsXiaoAiPageState extends ConsumerState<ZeppOsXiaoAiPage> {
   }
 
   Future<void> _initializeAudio() async {
+    WasmOpusDecoder? decoder;
     try {
-      final decoder = await WasmOpusDecoder.create();
+      decoder = await WasmOpusDecoder.create();
       if (!mounted) {
         decoder.dispose();
         return;
       }
-      _decoder = decoder;
-      _audio.init(
-        channels: 1,
-        sampleRate: 44100,
-        bufferMilliSec: 1000,
-        waitingBufferMilliSec: 80,
+      await _audio.init(channels: Channels.mono);
+      if (!mounted) {
+        decoder.dispose();
+        _audio.deinit();
+        return;
+      }
+      final source = _audio.setBufferStream(
+        maxBufferSizeDuration: const Duration(seconds: 5),
+        bufferingType: BufferingType.released,
+        bufferingTimeNeeds: 0.08,
+        sampleRate: 16000,
+        channels: Channels.mono,
+        format: BufferType.f32le,
       );
-      _audio.resume();
-      if (mounted) setState(() => _ready = true);
+      _audio.play(source);
+      if (!mounted) {
+        decoder.dispose();
+        _audio.deinit();
+        return;
+      }
+      _decoder = decoder;
+      _audioSource = source;
+      setState(() => _ready = true);
     } catch (error) {
+      decoder?.dispose();
+      if (_audio.isInitialized) _audio.deinit();
       if (mounted) setState(() => _error = error.toString());
     }
   }
@@ -91,8 +109,12 @@ class _ZeppOsXiaoAiPageState extends ConsumerState<ZeppOsXiaoAiPage> {
       _opusFrames.add(Uint8List.fromList(frame));
       _opusDurations.add(pcm.length * 3);
       _pcmBytes.add(bytes.buffer.asUint8List());
-      if (_playback && pcm.isNotEmpty) {
-        _audio.push(_resample16kTo44100(pcm));
+      final audioSource = _audioSource;
+      if (_playback && pcm.isNotEmpty && audioSource != null) {
+        _audio.addAudioDataStream(
+          audioSource,
+          pcm.buffer.asUint8List(pcm.offsetInBytes, pcm.lengthInBytes),
+        );
       }
       if (!mounted) return;
       setState(() {
@@ -217,7 +239,7 @@ class _ZeppOsXiaoAiPageState extends ConsumerState<ZeppOsXiaoAiPage> {
     unawaited(_frameSubscription?.cancel());
     _replyController.dispose();
     _decoder?.dispose();
-    _audio.uninit();
+    if (_audio.isInitialized) _audio.deinit();
     super.dispose();
   }
 
@@ -227,7 +249,7 @@ class _ZeppOsXiaoAiPageState extends ConsumerState<ZeppOsXiaoAiPage> {
     final colors = Theme.of(context).colorScheme;
     final assistantName = _assistantEndpoint == 0x004a ? 'Zepp Flow' : '小爱同学';
     return Scaffold(
-      appBar: SysAppBar(title: Text('语音实验室 · $assistantName')),
+      appBar: SysAppBar(secondary: true, title: Text('语音实验室 · $assistantName')),
       body: PageContainer(
         padding: const EdgeInsets.symmetric(
           horizontal: StyleConstants.pagePadding,
@@ -543,19 +565,6 @@ class _AudioWaveformPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _AudioWaveformPainter oldDelegate) => true;
-}
-
-Float32List _resample16kTo44100(Float32List input) {
-  if (input.isEmpty) return Float32List(0);
-  final output = Float32List((input.length * 44100 / 16000).round());
-  for (var i = 0; i < output.length; i += 1) {
-    final source = i * 16000 / 44100;
-    final left = source.floor().clamp(0, input.length - 1);
-    final right = min(left + 1, input.length - 1);
-    final fraction = source - left;
-    output[i] = input[left] * (1 - fraction) + input[right] * fraction;
-  }
-  return output;
 }
 
 Uint8List _wavFile(Uint8List pcm) {

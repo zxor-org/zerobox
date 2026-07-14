@@ -39,6 +39,7 @@ class _CreatorEditorShellState extends State<CreatorEditorShell> {
 
     return Scaffold(
       appBar: SysAppBar(
+        secondary: true,
         title: Text('${l10n.newResource} · ${titles[_currentStep]}'),
         leading: IconButton(
           icon: const Icon(Icons.close),

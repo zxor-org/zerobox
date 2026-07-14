@@ -63,6 +63,13 @@ class ApplicationHost implements ZeroBoxCommandBus {
     };
   }
 
+  Future<void> cancelActiveOperation() async {
+    final controller = core;
+    if (controller is ActiveOperationController) {
+      await (controller as ActiveOperationController).cancelActiveOperation();
+    }
+  }
+
   Future<void> _onTaskCompleted(DaemonTask task, CommandResult result) async {
     if (task.command.method != 'resource.download' ||
         task.command.params['queueInstall'] != true) {

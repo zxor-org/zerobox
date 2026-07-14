@@ -265,6 +265,7 @@ class _ZeppOsAppSideDebugPageState
     final events = _filteredEvents.take(300).toList();
     return Scaffold(
       appBar: SysAppBar(
+        secondary: true,
         title: const Text('App-side 调试'),
         actions: [
           IconButton(

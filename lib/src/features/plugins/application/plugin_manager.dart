@@ -26,19 +26,7 @@ class PluginManager {
     _interconnectSubscription = deviceManager.interconnectMessages.listen((
       message,
     ) {
-      final payload = utf8.decode(message.payload, allowMalformed: true);
-      _log.info(
-        'dispatching interconnect message from ${message.pkgName} '
-        '(${message.payload.length} bytes) to ${_runtimes.length} plugins',
-      );
-      for (final entry in _runtimes.entries) {
-        unawaited(
-          entry.value.dispatchEvent(
-            'onQAICMessage_${message.pkgName}',
-            payload,
-          ),
-        );
-      }
+      _queueInterconnectDispatch(message.pkgName, message.payload);
     });
   }
 
@@ -55,6 +43,8 @@ class PluginManager {
   final _virtualFiles = <String, _PluginFile>{};
   final _hostRequests = <String, Completer<Map<String, Object?>>>{};
   final _providers = <String, _PluginProvider>{};
+  Future<void> _interconnectDispatchTail = Future<void>.value();
+  Future<void> _interconnectSendTail = Future<void>.value();
   final _dio = Dio();
   final _installer = ResourceInstallService();
   late final Future<PluginStorage> _storage = createPluginStorage();
@@ -446,7 +436,8 @@ class PluginManager {
         : null;
     _virtualFiles[fileId] = _PluginFile(name: name, bytes: bytes, text: text);
     return jsonEncode({
-      'path': fileId,
+      'path': name,
+      'file_id': fileId,
       'size': bytes.length,
       'text_len': text?.runes.length ?? bytes.length,
     });
@@ -614,19 +605,51 @@ class PluginManager {
       'plugin $pluginId sending interconnect message to $packageName '
       '(${payload.length} bytes)',
     );
-    try {
-      await deviceManager.sendInterconnectMessage(packageName, payload);
-      _log.info(
-        'plugin $pluginId interconnect message queued for $packageName',
-      );
-    } catch (error, stackTrace) {
-      _log.warning(
-        'plugin $pluginId failed to send interconnect message to $packageName',
-        error,
-        stackTrace,
-      );
-      rethrow;
-    }
+    final send = _interconnectSendTail.catchError((_) {}).then((_) async {
+      try {
+        await deviceManager.sendInterconnectMessage(packageName, payload);
+        _log.info(
+          'plugin $pluginId interconnect message queued for $packageName',
+        );
+      } catch (error, stackTrace) {
+        _log.warning(
+          'plugin $pluginId failed to send interconnect message to '
+          '$packageName',
+          error,
+          stackTrace,
+        );
+        rethrow;
+      }
+    });
+    _interconnectSendTail = send;
+    await send;
+  }
+
+  void _queueInterconnectDispatch(String packageName, Uint8List bytes) {
+    final payload = utf8.decode(bytes, allowMalformed: true);
+    _interconnectDispatchTail = _interconnectDispatchTail
+        .catchError((_) {})
+        .then((_) async {
+          _log.info(
+            'dispatching interconnect message from $packageName '
+            '(${bytes.length} bytes) to ${_runtimes.length} plugins',
+          );
+          for (final entry in _runtimes.entries.toList(growable: false)) {
+            try {
+              await entry.value.dispatchEvent(
+                'onQAICMessage_$packageName',
+                payload,
+              );
+            } catch (error, stackTrace) {
+              _log.warning(
+                'plugin ${entry.key} failed to handle interconnect message '
+                'from $packageName',
+                error,
+                stackTrace,
+              );
+            }
+          }
+        });
   }
 
   Future<Map<String, Object?>> _networkFetch(List<Object?> arguments) async {

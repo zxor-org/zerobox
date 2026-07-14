@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +15,7 @@ class SysAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.actions,
     this.leading,
     this.bottom,
+    this.secondary = false,
   });
 
   final Widget? title;
@@ -21,6 +24,7 @@ class SysAppBar extends StatelessWidget implements PreferredSizeWidget {
   final List<Widget>? actions;
   final Widget? leading;
   final PreferredSizeWidget? bottom;
+  final bool secondary;
 
   @override
   Widget build(BuildContext context) {
@@ -32,28 +36,38 @@ class SysAppBar extends StatelessWidget implements PreferredSizeWidget {
     final customClose =
         desktop && defaultTargetPlatform != TargetPlatform.macOS;
     final macOS = desktop && defaultTargetPlatform == TargetPlatform.macOS;
-    final avoidMacOSWindowControls =
+    final compactMacOS =
         macOS && !useWideLayout(MediaQuery.sizeOf(context).width);
-    final resolvedLeading = avoidMacOSWindowControls
-        ? Row(
-            children: [
-              const SizedBox(width: 36),
-              SizedBox(
-                width: 48,
-                child:
-                    leading ??
-                    (Navigator.canPop(context) ? const BackButton() : null),
-              ),
-            ],
+    final macOSSecondary = compactMacOS && secondary;
+    final resolvedLeading = macOSSecondary
+        ? Padding(
+            padding: const EdgeInsets.only(left: 12, top: 20),
+            child:
+                leading ??
+                (Navigator.canPop(context) ? const BackButton() : null),
           )
         : leading;
+    final resolvedTitle = title;
+    final resolvedActions = compactMacOS
+        ? actions
+              ?.map(
+                (action) => Transform.translate(
+                  offset: const Offset(0, -16),
+                  child: action,
+                ),
+              )
+              .toList(growable: false)
+        : actions;
     final appBar = AppBar(
-      title: title,
+      title: resolvedTitle,
       leading: resolvedLeading,
-      leadingWidth: avoidMacOSWindowControls ? 84 : null,
-      automaticallyImplyLeading: !avoidMacOSWindowControls,
+      leadingWidth: macOSSecondary ? 68 : null,
+      titleSpacing: macOSSecondary ? 16 : null,
+      centerTitle: macOSSecondary ? false : null,
+      toolbarHeight: compactMacOS ? 72 : null,
+      automaticallyImplyLeading: !macOSSecondary,
       actions: [
-        ...?actions,
+        ...?resolvedActions,
         if (customClose) CloseButton(onPressed: () => windowManager.close()),
         if (desktop) const SizedBox(width: 4),
       ],
@@ -80,6 +94,17 @@ class SysAppBar extends StatelessWidget implements PreferredSizeWidget {
   }
 
   @override
-  Size get preferredSize =>
-      Size.fromHeight(kToolbarHeight + (bottom?.preferredSize.height ?? 0));
+  Size get preferredSize => Size.fromHeight(
+    (_usesCompactMacOSLayout ? 72 : kToolbarHeight) +
+        (bottom?.preferredSize.height ?? 0),
+  );
+
+  bool get _usesCompactMacOSLayout {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.macOS) return false;
+    final views = ui.PlatformDispatcher.instance.views;
+    if (views.isEmpty) return false;
+    final view = views.first;
+    final logicalWidth = view.physicalSize.width / view.devicePixelRatio;
+    return !useWideLayout(logicalWidth);
+  }
 }

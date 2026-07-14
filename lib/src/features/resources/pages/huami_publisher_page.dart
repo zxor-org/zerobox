@@ -19,7 +19,10 @@ class HuamiPublisherPage extends ConsumerWidget {
     final name = publisherName.trim();
     final resources = ref.watch(huamiPublisherResourcesProvider(name));
     return Scaffold(
-      appBar: SysAppBar(title: Text(name.isEmpty ? '@' : '@$name')),
+      appBar: SysAppBar(
+        secondary: true,
+        title: Text(name.isEmpty ? '@' : '@$name'),
+      ),
       body: resources.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) =>

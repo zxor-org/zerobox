@@ -19,6 +19,11 @@
   "pluginApiLevel": "API level",
   "pluginWebsite": "Website",
   "pluginPermissions": "Permissions",
+  "pluginInstallConfirmTitle": "Confirm plugin installation",
+  "pluginUpdateConfirmTitle": "Confirm plugin update",
+  "pluginDeclaredPermissions": "This plugin declares the following permissions:",
+  "pluginNoPermissions": "No permissions declared",
+  "pluginUpToDate": "Installed and up to date",
   "pluginUninstallTitle": "Uninstall plugin",
   "pluginUninstallMessage": "The plugin's data will also be removed",
   "settingsTab": "Settings",
@@ -157,6 +162,29 @@
   "authkeyPrompt": "Enter device auth key",
   "authkeyPlaceholder": "Auth key",
   "connectFailed": "Connection failed",
+  "deviceConnectingTo": "Connecting to {deviceName}…",
+  "@deviceConnectingTo": {
+    "placeholders": {
+      "deviceName": {
+        "type": "String"
+      }
+    }
+  },
+  "deviceConnectionPreparing": "Preparing connection…",
+  "deviceConnectionEstablishing": "Establishing {transport} connection…",
+  "@deviceConnectionEstablishing": {
+    "placeholders": {
+      "transport": {
+        "type": "String"
+      }
+    }
+  },
+  "deviceConnectionInitializing": "Initializing device protocol…",
+  "deviceConnectionAuthenticating": "Authenticating device…",
+  "deviceConnectionFetchingStatus": "Reading device information…",
+  "deviceTransportBle": "BLE",
+  "deviceTransportSpp": "SPP",
+  "deviceCompatibilityUnknown": "Unrecognized device",
   "webSerialTitle": "Web Serial",
   "webSerialHint": "On the web, ZeroBox connects to devices via Web Serial. Saved devices stay in this browser.",
   "webSerialConnectDialogTitle": "Connect via Web Serial",

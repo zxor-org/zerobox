@@ -27,7 +27,7 @@ class ResourceDetailPage extends ConsumerWidget {
     final l10n = AppLocalizations.of(context)!;
     final detail = ref.watch(communityResourceDetailProvider(resource.ref));
     return Scaffold(
-      appBar: SysAppBar(title: Text(resource.name)),
+      appBar: SysAppBar(secondary: true, title: Text(resource.name)),
       body: detail.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) =>

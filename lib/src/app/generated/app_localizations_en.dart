@@ -67,6 +67,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pluginPermissions => 'Permissions';
 
   @override
+  String get pluginInstallConfirmTitle => 'Confirm plugin installation';
+
+  @override
+  String get pluginUpdateConfirmTitle => 'Confirm plugin update';
+
+  @override
+  String get pluginDeclaredPermissions =>
+      'This plugin declares the following permissions:';
+
+  @override
+  String get pluginNoPermissions => 'No permissions declared';
+
+  @override
+  String get pluginUpToDate => 'Installed and up to date';
+
+  @override
   String get pluginUninstallTitle => 'Uninstall plugin';
 
   @override
@@ -485,6 +501,37 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get connectFailed => 'Connection failed';
+
+  @override
+  String deviceConnectingTo(String deviceName) {
+    return 'Connecting to $deviceName…';
+  }
+
+  @override
+  String get deviceConnectionPreparing => 'Preparing connection…';
+
+  @override
+  String deviceConnectionEstablishing(String transport) {
+    return 'Establishing $transport connection…';
+  }
+
+  @override
+  String get deviceConnectionInitializing => 'Initializing device protocol…';
+
+  @override
+  String get deviceConnectionAuthenticating => 'Authenticating device…';
+
+  @override
+  String get deviceConnectionFetchingStatus => 'Reading device information…';
+
+  @override
+  String get deviceTransportBle => 'BLE';
+
+  @override
+  String get deviceTransportSpp => 'SPP';
+
+  @override
+  String get deviceCompatibilityUnknown => 'Unrecognized device';
 
   @override
   String get webSerialTitle => 'Web Serial';

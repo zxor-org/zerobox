@@ -86,6 +86,9 @@ class DeviceManagerState {
     this.scannedDevices = const [],
     this.scanning = false,
     this.connecting = false,
+    this.connectionTargetAddr,
+    this.connectionTargetName,
+    this.connectionPhase,
     this.connectStatus = 0,
     this.protocolState = ProtocolState.disconnected,
     this.battery,
@@ -104,6 +107,9 @@ class DeviceManagerState {
   final List<BTDeviceInfo> scannedDevices;
   final bool scanning;
   final bool connecting;
+  final String? connectionTargetAddr;
+  final String? connectionTargetName;
+  final DeviceConnectionPhase? connectionPhase;
   final int connectStatus;
   final ProtocolState protocolState;
   final BatteryStatus? battery;
@@ -122,6 +128,9 @@ class DeviceManagerState {
     List<BTDeviceInfo>? scannedDevices,
     bool? scanning,
     bool? connecting,
+    String? connectionTargetAddr,
+    String? connectionTargetName,
+    DeviceConnectionPhase? connectionPhase,
     int? connectStatus,
     ProtocolState? protocolState,
     BatteryStatus? battery,
@@ -137,6 +146,8 @@ class DeviceManagerState {
     bool clearBattery = false,
     bool clearSystemInfo = false,
     bool clearError = false,
+    bool clearConnectionTarget = false,
+    bool clearConnectionPhase = false,
   }) {
     return DeviceManagerState(
       currentDevice: clearCurrentDevice
@@ -146,6 +157,15 @@ class DeviceManagerState {
       scannedDevices: scannedDevices ?? this.scannedDevices,
       scanning: scanning ?? this.scanning,
       connecting: connecting ?? this.connecting,
+      connectionTargetAddr: clearConnectionTarget
+          ? null
+          : (connectionTargetAddr ?? this.connectionTargetAddr),
+      connectionTargetName: clearConnectionTarget
+          ? null
+          : (connectionTargetName ?? this.connectionTargetName),
+      connectionPhase: clearConnectionPhase
+          ? null
+          : (connectionPhase ?? this.connectionPhase),
       connectStatus: connectStatus ?? this.connectStatus,
       protocolState: protocolState ?? this.protocolState,
       battery: clearBattery ? null : (battery ?? this.battery),
@@ -159,6 +179,18 @@ class DeviceManagerState {
       error: clearError ? null : (error ?? this.error),
     );
   }
+}
+
+enum DeviceConnectionPhase {
+  preparing,
+  connectingTransport,
+  initializingProtocol,
+  authenticating,
+  fetchingDeviceStatus,
+}
+
+class _DeviceConnectCancelled implements Exception {
+  const _DeviceConnectCancelled();
 }
 
 abstract class DeviceManager extends Notifier<DeviceManagerState> {
@@ -191,6 +223,7 @@ abstract class DeviceManager extends Notifier<DeviceManagerState> {
     String connectType = 'ble',
   });
   Future<void> disconnect();
+  Future<void> cancelConnect();
   Future<void> removeDevice(String addr);
   Future<void> refreshBattery();
   Future<void> refreshDeviceData();
@@ -295,8 +328,10 @@ class LocalDeviceManager extends DeviceManager {
   }
 
   static final _log = getLogger('DeviceManager');
-  static const _connectMaxAttempts = 1;
-  static const _connectRetryDelay = Duration(milliseconds: 300);
+  static const _defaultConnectMaxAttempts = 1;
+  static const _macOsSppConnectMaxAttempts = 2;
+  static const _defaultConnectRetryDelay = Duration(milliseconds: 300);
+  static const _macOsSppConnectRetryDelay = Duration(seconds: 4);
   static const _sppFailedConnectSettleDelay = Duration(milliseconds: 500);
   static const _zeppOsBleServiceUuid = '00001530-0000-3512-2118-0009af100700';
 
@@ -310,6 +345,7 @@ class LocalDeviceManager extends DeviceManager {
   BluetoothConnection? _bluetoothConnection;
   DeviceEntity? _currentEntity;
   final _scannedProfiles = <String, DeviceProfile>{};
+  var _connectGeneration = 0;
 
   static const String _keyPairedDevices = 'paired_devices';
   static const String _keyAutoReconnect = 'auto_reconnect';
@@ -421,10 +457,22 @@ class LocalDeviceManager extends DeviceManager {
   }
 
   void _onBluetoothEndpoint(BluetoothEndpoint endpoint) {
+    final endpointName = endpoint.name.trim();
+    if (endpointName.isEmpty || endpointName == 'Unknown device') return;
+
     final savedAddrs = state.pairedDevices.map((d) => d.addr).toSet();
     if (savedAddrs.contains(endpoint.address)) return;
 
     final resolvedProfile = _resolveEndpointProfile(endpoint);
+    if (resolvedProfile.id != DeviceRegistry.unknown.id &&
+        endpoint.connectType != resolvedProfile.preferredConnectType) {
+      _log.fine(
+        'scan ignore ${endpoint.connectType.name} endpoint '
+        '${endpoint.address} for ${resolvedProfile.id}; expected '
+        '${resolvedProfile.preferredConnectType.name}',
+      );
+      return;
+    }
     // A discovered endpoint must retain its real transport. Previously a
     // ZeppOS Classic/RFCOMM result was relabelled with the profile's preferred
     // BLE transport, causing its Classic address to be passed to GATT. BTBR is
@@ -438,7 +486,7 @@ class LocalDeviceManager extends DeviceManager {
       return;
     }
     _scannedProfiles[endpoint.address] = resolvedProfile;
-    final rawDisplayName = xiaomiDisplayNameForIdentity(name: endpoint.name);
+    final rawDisplayName = xiaomiDisplayNameForIdentity(name: endpointName);
     final displayName = _scanDisplayName(endpoint, rawDisplayName);
     final existingIndex = state.scannedDevices.indexWhere(
       (d) => d.addr == endpoint.address,
@@ -458,7 +506,7 @@ class LocalDeviceManager extends DeviceManager {
         addr: endpoint.address,
         connectType: endpoint.connectType.name,
       );
-      state = state.copyWith(scannedDevices: updated);
+      state = state.copyWith(scannedDevices: _sortScannedDevices(updated));
       return;
     }
     _log.fine(
@@ -466,15 +514,30 @@ class LocalDeviceManager extends DeviceManager {
       'via ${endpoint.connectType.name}',
     );
     state = state.copyWith(
-      scannedDevices: [
+      scannedDevices: _sortScannedDevices([
         ...state.scannedDevices,
         BTDeviceInfo(
           name: displayName,
           addr: endpoint.address,
           connectType: endpoint.connectType.name,
         ),
-      ],
+      ]),
     );
+  }
+
+  List<BTDeviceInfo> _sortScannedDevices(List<BTDeviceInfo> devices) {
+    final sorted = List<BTDeviceInfo>.from(devices);
+    sorted.sort((left, right) {
+      final leftKnown =
+          DeviceRegistry.resolveIdentity(name: left.name).id !=
+          DeviceRegistry.unknown.id;
+      final rightKnown =
+          DeviceRegistry.resolveIdentity(name: right.name).id !=
+          DeviceRegistry.unknown.id;
+      if (leftKnown != rightKnown) return leftKnown ? -1 : 1;
+      return left.name.toLowerCase().compareTo(right.name.toLowerCase());
+    });
+    return sorted;
   }
 
   DeviceProfile _resolveEndpointProfile(BluetoothEndpoint endpoint) {
@@ -525,13 +588,24 @@ class LocalDeviceManager extends DeviceManager {
     String name,
     DeviceProfile profile,
     ConnectType connectType,
+    int generation,
   ) async {
     Exception? lastError;
+    final isMacOsSpp =
+        defaultTargetPlatform == TargetPlatform.macOS &&
+        connectType == ConnectType.spp;
+    final maxAttempts = isMacOsSpp
+        ? _macOsSppConnectMaxAttempts
+        : _defaultConnectMaxAttempts;
+    final retryDelay = isMacOsSpp
+        ? _macOsSppConnectRetryDelay
+        : _defaultConnectRetryDelay;
 
-    for (var attempt = 1; attempt <= _connectMaxAttempts; attempt++) {
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      _throwIfConnectCancelled(generation);
       _log.info(
         '${connectType.name.toUpperCase()} connect attempt '
-        '$attempt/$_connectMaxAttempts to $addr',
+        '$attempt/$maxAttempts to $addr',
       );
       try {
         final connection = await _bluetooth.connect(
@@ -564,15 +638,22 @@ class LocalDeviceManager extends DeviceManager {
         await _resetBluetoothAfterFailedConnect(connectType);
       }
 
-      if (attempt < _connectMaxAttempts) {
-        await Future.delayed(_connectRetryDelay);
+      if (attempt < maxAttempts) {
+        await Future.delayed(retryDelay);
+        _throwIfConnectCancelled(generation);
       }
     }
 
     throw lastError ??
         Exception(
-          '${connectType.name} connect failed after $_connectMaxAttempts attempts',
+          '${connectType.name} connect failed after $maxAttempts attempts',
         );
+  }
+
+  void _throwIfConnectCancelled(int generation) {
+    if (generation != _connectGeneration) {
+      throw const _DeviceConnectCancelled();
+    }
   }
 
   Future<void> _resetBluetoothAfterFailedConnect(
@@ -599,6 +680,7 @@ class LocalDeviceManager extends DeviceManager {
     DeviceKind kind = DeviceKind.xiaomi,
     String connectType = 'ble',
   }) async {
+    final generation = ++_connectGeneration;
     final existingDevice = state.pairedDevices
         .where((d) => d.addr == addr)
         .firstOrNull;
@@ -637,22 +719,36 @@ class LocalDeviceManager extends DeviceManager {
     _log.info('connecting to $displayName @ $addr via $effectiveConnectType');
     state = state.copyWith(
       connecting: true,
+      connectionTargetAddr: addr,
+      connectionTargetName: displayName,
+      connectionPhase: DeviceConnectionPhase.preparing,
       connectStatus: 1,
       protocolState: ProtocolState.connecting,
       clearError: true,
     );
     try {
       await stopBluetoothScan();
+      _throwIfConnectCancelled(generation);
       await _cleanupConnection();
+      _throwIfConnectCancelled(generation);
 
       final transportType = effectiveConnectType == ConnectType.spp.name
           ? ConnectType.spp
           : ConnectType.ble;
+      state = state.copyWith(
+        connectionPhase: DeviceConnectionPhase.connectingTransport,
+      );
       _bluetoothConnection = await _connectBluetoothWithRetry(
         addr,
         displayName,
         profile,
         transportType,
+        generation,
+      );
+      _throwIfConnectCancelled(generation);
+      state = state.copyWith(
+        connectionPhase: DeviceConnectionPhase.initializingProtocol,
+        protocolState: ProtocolState.connected,
       );
 
       if (transportType == ConnectType.ble &&
@@ -669,12 +765,14 @@ class LocalDeviceManager extends DeviceManager {
             ? SppTransport.zeppBtbrBluetooth(_bluetoothConnection!)
             : SppTransport.xiaomiBluetooth(_bluetoothConnection!);
         await sppTransport.start();
+        _throwIfConnectCancelled(generation);
         transport = sppTransport;
       } else {
         final bleTransport = effectiveKind == DeviceKind.zepp
             ? BleTransport.zeppBluetooth(_bluetoothConnection!)
             : BleTransport.xiaomiBluetooth(_bluetoothConnection!);
         await bleTransport.start();
+        _throwIfConnectCancelled(generation);
         transport = bleTransport;
       }
 
@@ -694,9 +792,14 @@ class LocalDeviceManager extends DeviceManager {
             'ZeppOS BTBR transport is discovered but channel/session auth is not implemented yet',
           );
         }
+        state = state.copyWith(
+          connectionPhase: DeviceConnectionPhase.authenticating,
+          protocolState: ProtocolState.authenticating,
+        );
         final authSystem = entity.system<ZeppOsAuthSystem>()!;
         _log.info('starting ZeppOS authentication');
         await authSystem.authenticate(authKey);
+        _throwIfConnectCancelled(generation);
         _log.info('ZeppOS authentication succeeded');
       } else {
         final component = entity.get<XiaomiDeviceComponent>()!;
@@ -705,12 +808,18 @@ class LocalDeviceManager extends DeviceManager {
               spp: effectiveConnectType.toLowerCase() == ConnectType.spp.name,
             )
             .timeout(const Duration(seconds: 10));
+        _throwIfConnectCancelled(generation);
 
+        state = state.copyWith(
+          connectionPhase: DeviceConnectionPhase.authenticating,
+          protocolState: ProtocolState.authenticating,
+        );
         final authSystem = entity.system<XiaomiAuthSystem>()!;
         _log.info('starting authentication');
         await authSystem
             .authenticate(authKey)
             .timeout(const Duration(seconds: 10));
+        _throwIfConnectCancelled(generation);
         _log.info('authentication succeeded');
       }
 
@@ -734,20 +843,37 @@ class LocalDeviceManager extends DeviceManager {
       state = state.copyWith(
         currentDevice: connected,
         pairedDevices: updatedPaired,
+        connectionPhase: DeviceConnectionPhase.fetchingDeviceStatus,
+        protocolState: ProtocolState.ready,
+      );
+      try {
+        await refreshBattery();
+      } catch (e, st) {
+        _log.warning('initial battery refresh failed', e, st);
+      }
+      _throwIfConnectCancelled(generation);
+      state = state.copyWith(
         connecting: false,
         connectStatus: 2,
-        protocolState: ProtocolState.ready,
+        clearConnectionPhase: true,
       );
       await _savePairedDevices();
       _startBatteryRefreshLoop();
       unawaited(_loadInitialDeviceData(entity));
+    } on _DeviceConnectCancelled {
+      _log.info('connect to $addr cancelled');
     } catch (e, st) {
+      if (generation != _connectGeneration) {
+        _log.info('connect to $addr cancelled after error: $e');
+        return;
+      }
       _log.severe('connect to $addr failed', e, st);
       state = state.copyWith(
         connecting: false,
         connectStatus: 3,
         protocolState: ProtocolState.error,
         error: e.toString(),
+        clearConnectionPhase: true,
       );
       await _cleanupConnection();
     }
@@ -980,6 +1106,10 @@ class LocalDeviceManager extends DeviceManager {
   }
 
   void _onDisconnected() {
+    if (state.connecting) {
+      _log.fine('ignoring disconnect state transition during connect attempt');
+      return;
+    }
     final current = state.currentDevice;
     if (current == null) {
       state = state.copyWith(
@@ -1013,6 +1143,7 @@ class LocalDeviceManager extends DeviceManager {
 
   @override
   Future<void> disconnect() async {
+    _connectGeneration += 1;
     final current = state.currentDevice;
     if (current == null) {
       await _cleanupConnection();
@@ -1023,6 +1154,8 @@ class LocalDeviceManager extends DeviceManager {
         clearBattery: true,
         clearSystemInfo: true,
         clearError: true,
+        clearConnectionTarget: true,
+        clearConnectionPhase: true,
       );
       return;
     }
@@ -1040,8 +1173,16 @@ class LocalDeviceManager extends DeviceManager {
       clearBattery: true,
       clearSystemInfo: true,
       clearError: true,
+      clearConnectionTarget: true,
+      clearConnectionPhase: true,
     );
     await _savePairedDevices();
+  }
+
+  @override
+  Future<void> cancelConnect() async {
+    if (!state.connecting) return;
+    await disconnect();
   }
 
   Future<void> _cleanupConnection() async {

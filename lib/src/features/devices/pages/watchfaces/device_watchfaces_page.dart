@@ -49,6 +49,7 @@ class _DeviceWatchfacesPageState extends ConsumerState<DeviceWatchfacesPage> {
 
     return Scaffold(
       appBar: SysAppBar(
+        secondary: true,
         title: Text(l10n.watchfaceManagementTitle),
         actions: [
           IconButton(

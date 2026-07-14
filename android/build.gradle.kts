@@ -58,18 +58,6 @@ subprojects {
             }
         }
     }
-    if (name == "mp_audio_stream") {
-        afterEvaluate {
-            extensions.findByType<com.android.build.api.dsl.LibraryExtension>()?.apply {
-                // These published plugins still target API 31/33, but their
-                // current AndroidX dependencies require compileSdk 34+.
-                compileSdk = 34
-                defaultConfig {
-                    minSdk = 21
-                }
-            }
-        }
-    }
     if (name == "app" || name == "file_picker" || name == "quickjs_engine") {
         tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
             compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)

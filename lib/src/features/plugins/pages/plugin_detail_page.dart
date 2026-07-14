@@ -246,6 +246,7 @@ class _PluginDetailPageState extends ConsumerState<PluginDetailPage>
     if (widget.embedded) return content;
     return Scaffold(
       appBar: SysAppBar(
+        secondary: true,
         title: Text(plugin?['name']?.toString() ?? l10n.pluginDetails),
       ),
       body: PageContainer(
@@ -458,7 +459,7 @@ class _PluginNodePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: SysAppBar(title: Text(title)),
+      appBar: SysAppBar(secondary: true, title: Text(title)),
       body: PageContainer(
         child: _PluginFeatureView(nodes: nodes, onInvoke: onInvoke),
       ),

@@ -129,8 +129,17 @@ class ZeroBoxDaemonServer {
           continue;
         }
         if (command.method == 'plugin.open' ||
-            command.method == 'plugin.invoke') {
+            command.method == 'plugin.invoke' ||
+            command.method == 'device.connect') {
           unawaited(_executeAndWrite(client, id, command));
+          continue;
+        }
+        if (command.method == 'device.connect.cancel') {
+          await host.cancelActiveOperation();
+          _write(client, {
+            'id': id,
+            ...const CommandResult.success({'cancelled': true}).toJson(),
+          });
           continue;
         }
         final result = switch (command.method) {

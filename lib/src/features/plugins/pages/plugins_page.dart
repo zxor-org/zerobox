@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -9,8 +10,11 @@ import 'package:zerobox/src/app/generated/app_localizations.dart';
 import 'package:zerobox/src/app/widgets/page_container.dart';
 import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
 import 'package:zerobox/src/commands/command_protocol.dart';
+import 'package:zerobox/src/core/network/dio_provider.dart';
 import 'package:zerobox/src/core/utils/layout.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
+import 'package:zerobox/src/features/plugins/application/abv1_plugin_store.dart';
+import 'package:zerobox/src/features/plugins/domain/plugin_package.dart';
 import 'package:zerobox/src/host/application_host_provider.dart';
 
 import 'plugin_detail_page.dart';
@@ -27,6 +31,10 @@ class _PluginsPageState extends ConsumerState<PluginsPage> {
   var _loading = true;
   var _query = '';
   var _section = 0;
+  var _marketPlugins = <StorePlugin>[];
+  var _marketLoading = false;
+  Object? _marketError;
+  final _installing = <String>{};
   String? _selectedPluginId;
 
   @override
@@ -71,6 +79,17 @@ class _PluginsPageState extends ConsumerState<PluginsPage> {
       return;
     }
     try {
+      final package = const AbPluginPackageReader().read(bytes);
+      final updating = _plugins.any(
+        (plugin) => plugin['name']?.toString() == package.manifest.name,
+      );
+      if (!await _confirmPluginInstall(
+        name: package.manifest.name,
+        permissions: package.manifest.permissions,
+        updating: updating,
+      )) {
+        return;
+      }
       await _execute(
         ZeroBoxCommand(
           method: 'plugin.install',
@@ -82,6 +101,144 @@ class _PluginsPageState extends ConsumerState<PluginsPage> {
       if (mounted) _showError(error);
     }
   }
+
+  Future<void> _loadMarket({bool force = false}) async {
+    if (_marketLoading || (!force && _marketPlugins.isNotEmpty)) return;
+    setState(() {
+      _marketLoading = true;
+      _marketError = null;
+    });
+    try {
+      final plugins = await AbV1PluginStore(ref.read(appDioProvider)).load();
+      if (mounted) {
+        setState(() => _marketPlugins = plugins);
+        unawaited(_loadMarketIcons(plugins));
+      }
+    } catch (error) {
+      if (mounted) setState(() => _marketError = error);
+    } finally {
+      if (mounted) setState(() => _marketLoading = false);
+    }
+  }
+
+  Future<void> _loadMarketIcons(List<StorePlugin> plugins) async {
+    final store = AbV1PluginStore(ref.read(appDioProvider));
+    final icons = await Future.wait(plugins.map(store.loadIcon));
+    if (!mounted) return;
+    setState(() {
+      final byKey = <String, Uint8List?>{
+        for (var index = 0; index < plugins.length; index++)
+          _marketPluginKey(plugins[index]): icons[index],
+      };
+      _marketPlugins = _marketPlugins
+          .map(
+            (plugin) =>
+                plugin.copyWith(iconBytes: byKey[_marketPluginKey(plugin)]),
+          )
+          .toList(growable: false);
+    });
+  }
+
+  Future<void> _installMarketPlugin(StorePlugin plugin) async {
+    final installedVersion = _plugins
+        .where((installed) => installed['name']?.toString() == plugin.name)
+        .map((installed) => installed['version']?.toString())
+        .firstOrNull;
+    final updating = installedVersion != null;
+    if (!await _confirmPluginInstall(
+      name: plugin.name,
+      permissions: plugin.permissions,
+      updating: updating,
+    )) {
+      return;
+    }
+    final key = _marketPluginKey(plugin);
+    setState(() => _installing.add(key));
+    try {
+      final bytes = await AbV1PluginStore(
+        ref.read(appDioProvider),
+      ).download(plugin);
+      await _execute(
+        ZeroBoxCommand(
+          method: 'plugin.install',
+          params: {
+            'bytes': base64Encode(bytes),
+            'fileName': '${plugin.name}.abp',
+          },
+        ),
+      );
+      await _load();
+    } catch (error) {
+      if (mounted) _showError(error);
+    } finally {
+      if (mounted) setState(() => _installing.remove(key));
+    }
+  }
+
+  Future<bool> _confirmPluginInstall({
+    required String name,
+    required List<String> permissions,
+    required bool updating,
+  }) async {
+    final l10n = AppLocalizations.of(context)!;
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(
+              updating
+                  ? l10n.pluginUpdateConfirmTitle
+                  : l10n.pluginInstallConfirmTitle,
+            ),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name, style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 16),
+                  Text(l10n.pluginDeclaredPermissions),
+                  const SizedBox(height: 8),
+                  if (permissions.isEmpty)
+                    Text(
+                      l10n.pluginNoPermissions,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    )
+                  else
+                    ...permissions.map(
+                      (permission) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 3),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.circle, size: 7),
+                            const SizedBox(width: 8),
+                            Expanded(child: Text(permission)),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(l10n.cancel),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(updating ? l10n.update : l10n.install),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  String _marketPluginKey(StorePlugin plugin) =>
+      '${plugin.repositoryUrl}|${plugin.folder}';
 
   @override
   Widget build(BuildContext context) {
@@ -100,6 +257,17 @@ class _PluginsPageState extends ConsumerState<PluginsPage> {
                       value?.toString().toLowerCase().contains(query) ?? false,
                 );
               })
+              .toList(growable: false);
+    final visibleMarketPlugins = query.isEmpty
+        ? _marketPlugins
+        : _marketPlugins
+              .where(
+                (plugin) => [
+                  plugin.name,
+                  plugin.description,
+                  plugin.author,
+                ].any((value) => value.toLowerCase().contains(query)),
+              )
               .toList(growable: false);
     return Scaffold(
       appBar: SysAppBar(
@@ -124,13 +292,27 @@ class _PluginsPageState extends ConsumerState<PluginsPage> {
             section: _section,
             loading: _loading,
             plugins: visiblePlugins,
+            marketPlugins: visibleMarketPlugins,
+            marketLoading: _marketLoading,
+            marketError: _marketError,
+            installedVersions: {
+              for (final plugin in _plugins)
+                if (plugin['name'] != null && plugin['version'] != null)
+                  plugin['name'].toString(): plugin['version'].toString(),
+            },
+            installing: _installing,
             selectedPluginId: wide ? _selectedPluginId : null,
             emptyText: l10n.pluginEmpty,
             marketUnavailableText: l10n.pluginMarketUnavailable,
             installedLabel: l10n.pluginInstalled,
             marketLabel: l10n.pluginMarket,
             onQueryChanged: (value) => setState(() => _query = value),
-            onSectionChanged: (value) => setState(() => _section = value),
+            onSectionChanged: (value) {
+              setState(() => _section = value);
+              if (value == 1) _loadMarket();
+            },
+            onRefreshMarket: () => _loadMarket(force: true),
+            onInstall: _installMarketPlugin,
             onOpen: (id) {
               if (wide) {
                 setState(() => _selectedPluginId = id);
@@ -195,6 +377,11 @@ class _PluginCatalog extends StatelessWidget {
     required this.section,
     required this.loading,
     required this.plugins,
+    required this.marketPlugins,
+    required this.marketLoading,
+    required this.marketError,
+    required this.installedVersions,
+    required this.installing,
     required this.selectedPluginId,
     required this.emptyText,
     required this.marketUnavailableText,
@@ -202,12 +389,19 @@ class _PluginCatalog extends StatelessWidget {
     required this.marketLabel,
     required this.onQueryChanged,
     required this.onSectionChanged,
+    required this.onRefreshMarket,
+    required this.onInstall,
     required this.onOpen,
   });
 
   final int section;
   final bool loading;
   final List<Map<String, Object?>> plugins;
+  final List<StorePlugin> marketPlugins;
+  final bool marketLoading;
+  final Object? marketError;
+  final Map<String, String> installedVersions;
+  final Set<String> installing;
   final String? selectedPluginId;
   final String emptyText;
   final String marketUnavailableText;
@@ -215,6 +409,8 @@ class _PluginCatalog extends StatelessWidget {
   final String marketLabel;
   final ValueChanged<String> onQueryChanged;
   final ValueChanged<int> onSectionChanged;
+  final VoidCallback onRefreshMarket;
+  final ValueChanged<StorePlugin> onInstall;
   final ValueChanged<String> onOpen;
 
   @override
@@ -255,7 +451,16 @@ class _PluginCatalog extends StatelessWidget {
                   onOpen: onOpen,
                   emptyText: emptyText,
                 )
-              : _PluginMarketPlaceholder(text: marketUnavailableText),
+              : _PluginMarket(
+                  loading: marketLoading,
+                  error: marketError,
+                  plugins: marketPlugins,
+                  installedVersions: installedVersions,
+                  installing: installing,
+                  emptyText: marketUnavailableText,
+                  onRefresh: onRefreshMarket,
+                  onInstall: onInstall,
+                ),
         ),
       ],
     );
@@ -392,25 +597,143 @@ class _PluginSelectionPlaceholder extends StatelessWidget {
   }
 }
 
-class _PluginMarketPlaceholder extends StatelessWidget {
-  const _PluginMarketPlaceholder({required this.text});
-  final String text;
+class _PluginMarket extends StatelessWidget {
+  const _PluginMarket({
+    required this.loading,
+    required this.error,
+    required this.plugins,
+    required this.installedVersions,
+    required this.installing,
+    required this.emptyText,
+    required this.onRefresh,
+    required this.onInstall,
+  });
+
+  final bool loading;
+  final Object? error;
+  final List<StorePlugin> plugins;
+  final Map<String, String> installedVersions;
+  final Set<String> installing;
+  final String emptyText;
+  final VoidCallback onRefresh;
+  final ValueChanged<StorePlugin> onInstall;
 
   @override
-  Widget build(BuildContext context) => Center(
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          Icons.storefront_outlined,
-          size: 56,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
+  Widget build(BuildContext context) {
+    if (loading && plugins.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (error != null && plugins.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(error.toString(), textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: onRefresh,
+              icon: const Icon(Icons.refresh),
+              label: Text(AppLocalizations.of(context)!.refresh),
+            ),
+          ],
         ),
-        const SizedBox(height: 12),
-        Text(text),
-      ],
-    ),
-  );
+      );
+    }
+    if (plugins.isEmpty) return Center(child: Text(emptyText));
+    return RefreshIndicator(
+      onRefresh: () async => onRefresh(),
+      child: ListView.separated(
+        padding: const EdgeInsets.only(bottom: 16),
+        itemCount: plugins.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 8),
+        itemBuilder: (context, index) {
+          final plugin = plugins[index];
+          final key = '${plugin.repositoryUrl}|${plugin.folder}';
+          final isInstalling = installing.contains(key);
+          final installedVersion = installedVersions[plugin.name];
+          final updateAvailable =
+              installedVersion != null &&
+              comparePluginVersions(plugin.version, installedVersion) > 0;
+          final installed = installedVersion != null && !updateAvailable;
+          return Card(
+            elevation: 0,
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: plugin.iconBytes == null
+                        ? const SizedBox(
+                            width: 56,
+                            height: 56,
+                            child: Icon(Icons.extension_outlined),
+                          )
+                        : Image.memory(
+                            plugin.iconBytes!,
+                            width: 56,
+                            height: 56,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => const SizedBox(
+                              width: 56,
+                              height: 56,
+                              child: Icon(Icons.extension_outlined),
+                            ),
+                          ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          plugin.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                        Text(
+                          '${plugin.author} · ${plugin.version}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  isInstalling
+                      ? IconButton.filledTonal(
+                          onPressed: null,
+                          icon: const SizedBox.square(
+                            dimension: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : IconButton.filledTonal(
+                          onPressed: installed ? null : () => onInstall(plugin),
+                          icon: Icon(
+                            installed
+                                ? Icons.check_rounded
+                                : updateAvailable
+                                ? Icons.upgrade_rounded
+                                : Icons.add_rounded,
+                          ),
+                          tooltip: installed
+                              ? AppLocalizations.of(context)!.pluginUpToDate
+                              : updateAvailable
+                              ? AppLocalizations.of(context)!.update
+                              : AppLocalizations.of(context)!.install,
+                        ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
 }
 
 class PluginIcon extends _PluginIcon {

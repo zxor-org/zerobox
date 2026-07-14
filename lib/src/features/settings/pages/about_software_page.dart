@@ -19,7 +19,10 @@ class AboutSoftwarePage extends StatelessWidget {
     final l10n = AppLocalizations.of(context)!;
 
     return Scaffold(
-      appBar: SysAppBar(title: Text(l10n.settingsAboutSoftware)),
+      appBar: SysAppBar(
+        secondary: true,
+        title: Text(l10n.settingsAboutSoftware),
+      ),
       body: SingleChildScrollView(
         child: PageContainer(
           maxWidth: 1000,

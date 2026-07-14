@@ -212,6 +212,36 @@ abstract class AppLocalizations {
   /// **'Permissions'**
   String get pluginPermissions;
 
+  /// No description provided for @pluginInstallConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm plugin installation'**
+  String get pluginInstallConfirmTitle;
+
+  /// No description provided for @pluginUpdateConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm plugin update'**
+  String get pluginUpdateConfirmTitle;
+
+  /// No description provided for @pluginDeclaredPermissions.
+  ///
+  /// In en, this message translates to:
+  /// **'This plugin declares the following permissions:'**
+  String get pluginDeclaredPermissions;
+
+  /// No description provided for @pluginNoPermissions.
+  ///
+  /// In en, this message translates to:
+  /// **'No permissions declared'**
+  String get pluginNoPermissions;
+
+  /// No description provided for @pluginUpToDate.
+  ///
+  /// In en, this message translates to:
+  /// **'Installed and up to date'**
+  String get pluginUpToDate;
+
   /// No description provided for @pluginUninstallTitle.
   ///
   /// In en, this message translates to:
@@ -1009,6 +1039,60 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Connection failed'**
   String get connectFailed;
+
+  /// No description provided for @deviceConnectingTo.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting to {deviceName}…'**
+  String deviceConnectingTo(String deviceName);
+
+  /// No description provided for @deviceConnectionPreparing.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing connection…'**
+  String get deviceConnectionPreparing;
+
+  /// No description provided for @deviceConnectionEstablishing.
+  ///
+  /// In en, this message translates to:
+  /// **'Establishing {transport} connection…'**
+  String deviceConnectionEstablishing(String transport);
+
+  /// No description provided for @deviceConnectionInitializing.
+  ///
+  /// In en, this message translates to:
+  /// **'Initializing device protocol…'**
+  String get deviceConnectionInitializing;
+
+  /// No description provided for @deviceConnectionAuthenticating.
+  ///
+  /// In en, this message translates to:
+  /// **'Authenticating device…'**
+  String get deviceConnectionAuthenticating;
+
+  /// No description provided for @deviceConnectionFetchingStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading device information…'**
+  String get deviceConnectionFetchingStatus;
+
+  /// No description provided for @deviceTransportBle.
+  ///
+  /// In en, this message translates to:
+  /// **'BLE'**
+  String get deviceTransportBle;
+
+  /// No description provided for @deviceTransportSpp.
+  ///
+  /// In en, this message translates to:
+  /// **'SPP'**
+  String get deviceTransportSpp;
+
+  /// No description provided for @deviceCompatibilityUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Unrecognized device'**
+  String get deviceCompatibilityUnknown;
 
   /// No description provided for @webSerialTitle.
   ///

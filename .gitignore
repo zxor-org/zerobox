@@ -132,6 +132,12 @@ app.*.symbols
 # FVM Version Cache
 .fvm/
 
+# Downloaded wasm_run Apple framework cache
+packages/wasm_run_flutter/ios/Frameworks/*.xcframework/
+packages/wasm_run_flutter/ios/Frameworks/wasm_run-*.zip
+packages/wasm_run_flutter/macos/Frameworks/*.xcframework/
+packages/wasm_run_flutter/macos/Frameworks/wasm_run-*.zip
+
 # AI Agent Dir
 .agents/
 .codex/

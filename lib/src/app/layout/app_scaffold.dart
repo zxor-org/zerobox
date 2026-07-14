@@ -50,11 +50,6 @@ class AppScaffold extends ConsumerWidget {
             label: l10n.devicesTab,
           ),
           NavigationDestination(
-            selectedIcon: const Icon(Icons.extension),
-            icon: const Icon(Icons.extension_outlined),
-            label: l10n.pluginsTab,
-          ),
-          NavigationDestination(
             selectedIcon: const Icon(Icons.format_list_bulleted),
             icon: badgeCount > 0
                 ? Badge(
@@ -63,6 +58,11 @@ class AppScaffold extends ConsumerWidget {
                   )
                 : const Icon(Icons.format_list_bulleted),
             label: l10n.settingsQueue,
+          ),
+          NavigationDestination(
+            selectedIcon: const Icon(Icons.extension),
+            icon: const Icon(Icons.extension_outlined),
+            label: l10n.pluginsTab,
           ),
           NavigationDestination(
             selectedIcon: const Icon(Icons.settings),
@@ -143,11 +143,6 @@ class AppScaffold extends ConsumerWidget {
         label: Text(l10n.devicesTab),
       ),
       NavigationRailDestination(
-        selectedIcon: const Icon(Icons.extension),
-        icon: const Icon(Icons.extension_outlined),
-        label: Text(l10n.pluginsTab),
-      ),
-      NavigationRailDestination(
         selectedIcon: const Icon(Icons.format_list_bulleted),
         icon: badgeCount > 0
             ? Badge(
@@ -156,6 +151,11 @@ class AppScaffold extends ConsumerWidget {
               )
             : const Icon(Icons.format_list_bulleted),
         label: Text(l10n.settingsQueue),
+      ),
+      NavigationRailDestination(
+        selectedIcon: const Icon(Icons.extension),
+        icon: const Icon(Icons.extension_outlined),
+        label: Text(l10n.pluginsTab),
       ),
       NavigationRailDestination(
         selectedIcon: const Icon(Icons.settings),

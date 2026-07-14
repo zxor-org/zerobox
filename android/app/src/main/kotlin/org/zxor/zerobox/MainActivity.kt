@@ -218,7 +218,7 @@ class MainActivity : FlutterActivity() {
         mainHandler.post {
             zeppSettingsDialog?.dismiss()
             val dialog = Dialog(this)
-            dialog.setTitle(call.argument<String>("title") ?: "应用设置")
+            dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
             val webView = WebView(this)
             webView.settings.javaScriptEnabled = true
             webView.settings.domStorageEnabled = false
@@ -242,8 +242,13 @@ class MainActivity : FlutterActivity() {
                     mainHandler.post { zeppSettingsChannel?.invokeMethod(type, args) }
                 }
             }, "ZeppSettingsBridge")
-            dialog.setContentView(webView)
-            dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            dialog.setContentView(
+                webView,
+                ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                ),
+            )
             dialog.setOnDismissListener {
                 zeppSettingsChannel?.invokeMethod("closed", mapOf("appId" to appId))
                 webView.removeJavascriptInterface("ZeppSettingsBridge")
@@ -259,6 +264,7 @@ class MainActivity : FlutterActivity() {
             zeppSettingsAppId = appId
             webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
             dialog.show()
+            dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
             dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             result.success(null)
         }

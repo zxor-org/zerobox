@@ -251,7 +251,7 @@ class _InstallLocalPageState extends ConsumerState<InstallLocalPage> {
     };
 
     return Scaffold(
-      appBar: SysAppBar(title: Text(title)),
+      appBar: SysAppBar(secondary: true, title: Text(title)),
       body: PageContainer(
         padding: EdgeInsets.zero,
         child: ListView(

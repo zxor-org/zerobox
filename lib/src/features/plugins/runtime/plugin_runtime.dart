@@ -28,11 +28,16 @@ const abV1PluginBootstrap = r'''
   const lifecycle = [];
   const events = Object.create(null);
   const timers = Object.create(null);
+  const virtualFiles = Object.create(null);
   let nextCallback = 0;
   let nextTimer = 0;
 
   function host(method, args = []) {
     return sendMessage('ZeroBoxHost', JSON.stringify({method, args}));
+  }
+
+  function resolveVirtualFile(path) {
+    return virtualFiles[path] || path;
   }
 
   globalThis.console = {
@@ -93,7 +98,7 @@ const abV1PluginBootstrap = r'''
     event: {
       addEventListener: (name, fn) => {
         host('permission.require', ['event']);
-        (events[name] ??= []).push(fn);
+        events[name] = fn;
       },
       removeEventListener: (name) => {
         host('permission.require', ['event']);
@@ -105,9 +110,9 @@ const abV1PluginBootstrap = r'''
       },
     },
     installer: {
-      addThirdPartyAppToQueue: (value) => host('installer.addThirdPartyAppToQueue', [value]),
-      addWatchFaceToQueue: (value) => host('installer.addWatchFaceToQueue', [value]),
-      addFirmwareToQueue: (value) => host('installer.addFirmwareToQueue', [value]),
+      addThirdPartyAppToQueue: (value) => host('installer.addThirdPartyAppToQueue', [resolveVirtualFile(value)]),
+      addWatchFaceToQueue: (value) => host('installer.addWatchFaceToQueue', [resolveVirtualFile(value)]),
+      addFirmwareToQueue: (value) => host('installer.addFirmwareToQueue', [resolveVirtualFile(value)]),
     },
     interconnect: {
       sendQAICMessage: (packageName, data) =>
@@ -144,9 +149,21 @@ const abV1PluginBootstrap = r'''
       openPageWithUrl: (url) => host('ui.openPageWithUrl', [url]),
     },
     filesystem: {
-      pickFile: (options) => host('filesystem.pickFile', [options]),
-      readFile: (id, options) => host('filesystem.readFile', [id, options]),
-      unloadFile: (id) => host('filesystem.unloadFile', [id]),
+      pickFile: async (options) => {
+        const raw = await host('filesystem.pickFile', [options]);
+        if (raw == null) return raw;
+        const result = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (!result || typeof result !== 'object') return raw;
+        if (result.file_id && result.path) virtualFiles[result.path] = result.file_id;
+        delete result.file_id;
+        return JSON.stringify(result);
+      },
+      readFile: (id, options) => host('filesystem.readFile', [resolveVirtualFile(id), options]),
+      unloadFile: (id) => {
+        const handle = resolveVirtualFile(id);
+        delete virtualFiles[id];
+        return host('filesystem.unloadFile', [handle]);
+      },
     },
   };
   Object.defineProperty(globalThis, 'AstroBox', {
@@ -183,8 +200,8 @@ const abV1PluginBootstrap = r'''
     return await fn(...args);
   };
   globalThis.__zbDispatchEvent = async (name, payload) => {
-    const listeners = events[name] ?? [];
-    for (const fn of listeners) await fn(payload);
+    const listener = events[name];
+    if (typeof listener === 'function') await listener(payload);
   };
   globalThis.__zbFireTimer = async (id) => {
     const timer = timers[id];

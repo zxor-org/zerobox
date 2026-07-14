@@ -59,6 +59,7 @@ class _DeviceAppsPageState extends ConsumerState<DeviceAppsPage> {
 
     return Scaffold(
       appBar: SysAppBar(
+        secondary: true,
         title: Text(l10n.appManagementTitle),
         actions: [
           IconButton(

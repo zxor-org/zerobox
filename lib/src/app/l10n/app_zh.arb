@@ -19,6 +19,11 @@
   "pluginApiLevel": "API 级别",
   "pluginWebsite": "网站",
   "pluginPermissions": "权限",
+  "pluginInstallConfirmTitle": "插件安装确认",
+  "pluginUpdateConfirmTitle": "插件更新确认",
+  "pluginDeclaredPermissions": "此插件声明了以下权限：",
+  "pluginNoPermissions": "未声明任何权限",
+  "pluginUpToDate": "已安装且为最新版本",
   "pluginUninstallTitle": "卸载插件",
   "pluginUninstallMessage": "插件数据也将被删除",
   "settingsTab": "设置",
@@ -157,6 +162,29 @@
   "authkeyPrompt": "输入设备认证密钥",
   "authkeyPlaceholder": "认证密钥",
   "connectFailed": "连接失败",
+  "deviceConnectingTo": "正在连接 {deviceName}…",
+  "@deviceConnectingTo": {
+    "placeholders": {
+      "deviceName": {
+        "type": "String"
+      }
+    }
+  },
+  "deviceConnectionPreparing": "正在准备连接…",
+  "deviceConnectionEstablishing": "正在建立 {transport} 连接…",
+  "@deviceConnectionEstablishing": {
+    "placeholders": {
+      "transport": {
+        "type": "String"
+      }
+    }
+  },
+  "deviceConnectionInitializing": "正在初始化设备协议…",
+  "deviceConnectionAuthenticating": "正在认证设备…",
+  "deviceConnectionFetchingStatus": "正在读取设备信息…",
+  "deviceTransportBle": "BLE",
+  "deviceTransportSpp": "SPP",
+  "deviceCompatibilityUnknown": "未识别设备",
   "webSerialTitle": "Web Serial",
   "webSerialHint": "在网页端，ZeroBox 通过 Web Serial 连接设备，已保存的设备会保留在当前浏览器中",
   "webSerialConnectDialogTitle": "通过 Web Serial 连接",

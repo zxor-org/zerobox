@@ -67,7 +67,7 @@ class _BandBbsAccountPageState extends ConsumerState<BandBbsAccountPage> {
     final l10n = AppLocalizations.of(context)!;
     final account = ref.watch(hostAccountsProvider).bandbbs;
     return Scaffold(
-      appBar: SysAppBar(title: Text(l10n.bandBbsAccountTitle)),
+      appBar: SysAppBar(secondary: true, title: Text(l10n.bandBbsAccountTitle)),
       body: SingleChildScrollView(
         child: PageContainer(
           padding: const EdgeInsets.all(StyleConstants.pagePadding),

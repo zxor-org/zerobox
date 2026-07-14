@@ -73,7 +73,7 @@ class AcknowledgementsPage extends StatelessWidget {
     final items = _items(l10n);
 
     return Scaffold(
-      appBar: SysAppBar(title: Text(l10n.acknowledgements)),
+      appBar: SysAppBar(secondary: true, title: Text(l10n.acknowledgements)),
       body: PageContainer(
         padding: EdgeInsets.zero,
         child: ListView.builder(

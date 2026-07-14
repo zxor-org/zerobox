@@ -33,7 +33,7 @@ class _ZeppOsAppSettingsPageState extends State<ZeppOsAppSettingsPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: const SysAppBar(title: Text('应用设置')),
+    appBar: const SysAppBar(secondary: true, title: Text('应用设置')),
     body: PageContainer(
       padding: const EdgeInsets.symmetric(
         horizontal: StyleConstants.pagePadding,

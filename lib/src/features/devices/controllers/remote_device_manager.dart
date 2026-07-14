@@ -19,6 +19,8 @@ class HostDeviceManager extends DeviceManager {
 
   StreamSubscription<CommandEvent>? _eventSubscription;
   bool _disposed = false;
+  var _connectGeneration = 0;
+  String? _pendingConnectionAddr;
 
   @override
   DeviceManagerState build() {
@@ -93,6 +95,13 @@ class HostDeviceManager extends DeviceManager {
 
   void _applyState(Map<String, Object?> raw) {
     if (_disposed) return;
+    final rawConnectionTarget = raw['connectionTargetAddr']?.toString();
+    final pendingConnectionAddr = _pendingConnectionAddr;
+    if (pendingConnectionAddr != null &&
+        state.connecting &&
+        rawConnectionTarget != pendingConnectionAddr) {
+      return;
+    }
     final current = raw['currentDevice'];
     final battery = raw['battery'];
     final systemInfo = raw['systemInfo'];
@@ -104,6 +113,11 @@ class HostDeviceManager extends DeviceManager {
       scannedDevices: _modelList(raw['scannedDevices'], BTDeviceInfo.fromJson),
       scanning: raw['scanning'] == true,
       connecting: raw['connecting'] == true,
+      connectionTargetAddr: rawConnectionTarget,
+      connectionTargetName: raw['connectionTargetName']?.toString(),
+      connectionPhase: DeviceConnectionPhase.values
+          .where((value) => value.name == raw['connectionPhase']?.toString())
+          .firstOrNull,
       connectStatus: (raw['connectStatus'] as num?)?.toInt() ?? 0,
       protocolState: ProtocolState.values.firstWhere(
         (value) => value.name == raw['protocolState']?.toString(),
@@ -184,11 +198,7 @@ class HostDeviceManager extends DeviceManager {
     DeviceKind kind = DeviceKind.xiaomi,
     String connectType = 'ble',
   }) async {
-    state = state.copyWith(
-      connecting: true,
-      protocolState: ProtocolState.connecting,
-      clearError: true,
-    );
+    final generation = ++_connectGeneration;
     try {
       await importSharedDevice(
         MiWearState(
@@ -199,11 +209,25 @@ class HostDeviceManager extends DeviceManager {
           disconnected: true,
         ),
       );
+      if (generation != _connectGeneration) return;
+      _pendingConnectionAddr = addr;
+      state = state.copyWith(
+        connecting: true,
+        connectionTargetAddr: addr,
+        connectionTargetName: name,
+        connectionPhase: DeviceConnectionPhase.preparing,
+        protocolState: ProtocolState.connecting,
+        clearError: true,
+      );
       await _execute(
         ZeroBoxCommand(method: 'device.connect', params: {'device': addr}),
       );
+      if (generation != _connectGeneration) return;
       await _refreshSnapshot();
+      if (generation == _connectGeneration) _pendingConnectionAddr = null;
     } catch (error, stackTrace) {
+      if (generation != _connectGeneration) return;
+      _pendingConnectionAddr = null;
       _log.severe('remote connect to $addr failed', error, stackTrace);
       if (!_disposed) {
         state = state.copyWith(
@@ -218,7 +242,18 @@ class HostDeviceManager extends DeviceManager {
 
   @override
   Future<void> disconnect() async {
+    _connectGeneration += 1;
+    _pendingConnectionAddr = null;
     await _execute(const ZeroBoxCommand(method: 'device.disconnect'));
+    await _refreshSnapshot();
+  }
+
+  @override
+  Future<void> cancelConnect() async {
+    if (!state.connecting) return;
+    _connectGeneration += 1;
+    _pendingConnectionAddr = null;
+    await _execute(const ZeroBoxCommand(method: 'device.connect.cancel'));
     await _refreshSnapshot();
   }
 

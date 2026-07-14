@@ -14,6 +14,7 @@ import 'package:zerobox/src/core/models/bt_models.dart';
 import 'package:zerobox/src/core/models/device.dart';
 import 'package:zerobox/src/core/utils/layout.dart';
 import 'package:zerobox/src/device/core/connect_type.dart';
+import 'package:zerobox/src/device/core/device_profile.dart';
 import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
 import 'package:zerobox/src/features/devices/services/device_share_link.dart';
 import 'package:zerobox/src/features/devices/providers/pending_shared_device_provider.dart';
@@ -95,8 +96,14 @@ class _DeviceSwitchPageState extends ConsumerState<DeviceSwitchPage> {
     ref.listen<DeviceManagerState>(deviceManagerProvider, (previous, next) {
       final wasConnecting = previous?.connecting ?? false;
       final isReady = next.protocolState == proto.ProtocolState.ready;
+      final connectedTarget = next.connectionTargetAddr;
       final justBecameReady =
-          isReady && (previous?.protocolState != proto.ProtocolState.ready);
+          isReady &&
+          wasConnecting &&
+          !next.connecting &&
+          connectedTarget != null &&
+          previous?.connectionTargetAddr == connectedTarget &&
+          next.currentDevice?.addr == connectedTarget;
       if (wasConnecting && justBecameReady) {
         ScaffoldMessenger.of(
           context,
@@ -112,7 +119,7 @@ class _DeviceSwitchPageState extends ConsumerState<DeviceSwitchPage> {
     });
 
     return Scaffold(
-      appBar: SysAppBar(title: Text(l10n.switchDeviceTitle)),
+      appBar: SysAppBar(secondary: true, title: Text(l10n.switchDeviceTitle)),
       body: !kIsWeb
           ? _buildLayout(context, ref, state, currentAddr)
           : _buildWebLayout(context, state, currentAddr),
@@ -712,6 +719,7 @@ class _DeviceCard extends ConsumerStatefulWidget {
 
 class _DeviceCardState extends ConsumerState<_DeviceCard> {
   bool _showInput = false;
+  bool _showConnectionError = false;
   late final TextEditingController _authController;
 
   @override
@@ -726,6 +734,7 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
     if (oldWidget.device.addr != widget.device.addr ||
         oldWidget.saved != widget.saved) {
       _showInput = false;
+      _showConnectionError = false;
       _authController.text = widget.device.authkey ?? '';
     } else if (oldWidget.device.authkey != widget.device.authkey &&
         !_showInput) {
@@ -740,18 +749,26 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
   }
 
   Future<void> _connect() async {
+    final authKey = _authController.text;
+    setState(() {
+      _showInput = false;
+      _showConnectionError = false;
+    });
     await ref
         .read(deviceManagerProvider.notifier)
         .connect(
           widget.device.addr,
           widget.device.name,
-          _authController.text,
+          authKey,
           connectType: widget.device.connectType,
         );
     widget.onComplete?.call();
     if (mounted) {
       final state = ref.read(deviceManagerProvider);
-      if (state.protocolState == proto.ProtocolState.ready) {
+      final connectedThisDevice =
+          state.protocolState == proto.ProtocolState.ready &&
+          state.currentDevice?.addr == widget.device.addr;
+      if (connectedThisDevice) {
         if (context.canPop()) {
           context.pop();
         }
@@ -764,6 +781,31 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
     final l10n = AppLocalizations.of(context)!;
     final colorScheme = Theme.of(context).colorScheme;
     final state = ref.watch(deviceManagerProvider);
+    final profile = DeviceRegistry.resolveIdentity(
+      name: widget.device.name,
+      codename: widget.device.codename,
+    );
+    final isUnrecognized =
+        !widget.saved && profile.id == DeviceRegistry.unknown.id;
+    final transportLabel = widget.device.connectType.toLowerCase() == 'spp'
+        ? l10n.deviceTransportSpp
+        : l10n.deviceTransportBle;
+    final isConnectionTarget = state.connectionTargetAddr == widget.device.addr;
+    final isConnectingThisDevice = state.connecting && isConnectionTarget;
+
+    ref.listen<DeviceManagerState>(deviceManagerProvider, (previous, next) {
+      final failedThisDevice =
+          (previous?.connecting ?? false) &&
+          !next.connecting &&
+          next.connectStatus == 3 &&
+          next.connectionTargetAddr == widget.device.addr;
+      if (failedThisDevice && mounted) {
+        setState(() {
+          _showInput = true;
+          _showConnectionError = true;
+        });
+      }
+    });
 
     return Card(
       elevation: 0,
@@ -787,15 +829,22 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  SvgPicture.asset(
-                    widget.device.illustrationAsset(),
-                    width: 32,
-                    height: 32,
-                    colorFilter: ColorFilter.mode(
-                      colorScheme.onSurface,
-                      BlendMode.srcIn,
+                  if (isUnrecognized)
+                    Icon(
+                      Icons.warning_rounded,
+                      size: 32,
+                      color: colorScheme.onSurfaceVariant,
+                    )
+                  else
+                    SvgPicture.asset(
+                      widget.device.illustrationAsset(),
+                      width: 32,
+                      height: 32,
+                      colorFilter: ColorFilter.mode(
+                        colorScheme.onSurface,
+                        BlendMode.srcIn,
+                      ),
                     ),
-                  ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -811,7 +860,10 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
                           ),
                         ),
                         Text(
-                          widget.device.addr,
+                          isUnrecognized
+                              ? '${widget.device.addr} · $transportLabel · '
+                                    '${l10n.deviceCompatibilityUnknown}'
+                              : '${widget.device.addr} · $transportLabel',
                           style: TextStyle(
                             fontSize: 12,
                             color: colorScheme.onSurfaceVariant,
@@ -821,7 +873,26 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
                       ],
                     ),
                   ),
-                  if (widget.saved)
+                  if (isConnectingThisDevice)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        const SizedBox(width: 4),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          tooltip: l10n.cancel,
+                          onPressed: () => ref
+                              .read(deviceManagerProvider.notifier)
+                              .cancelConnect(),
+                        ),
+                      ],
+                    )
+                  else if (widget.saved)
                     PopupMenuButton<String>(
                       onSelected: (value) async {
                         final manager = ref.read(
@@ -882,24 +953,56 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
           ),
           AnimatedSize(
             duration: const Duration(milliseconds: 200),
-            child: _showInput
+            child: _showInput || isConnectingThisDevice
                 ? Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                    child: TextField(
-                      controller: _authController,
-                      enabled: !state.connecting && !widget.connected,
-                      decoration: InputDecoration(
-                        isDense: true,
-                        labelText: l10n.authkeyPrompt,
-                        hintText: l10n.authkeyPlaceholder,
-                        errorText: state.connectStatus == 3
-                            ? l10n.connectFailed
-                            : null,
-                        suffixIcon: IconButton(
-                          icon: const Icon(Icons.send),
-                          onPressed: state.connecting ? null : _connect,
-                        ),
-                      ),
+                    padding: isConnectingThisDevice && !_showInput
+                        ? const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          )
+                        : const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (_showInput)
+                          TextField(
+                            controller: _authController,
+                            enabled: !state.connecting && !widget.connected,
+                            decoration: InputDecoration(
+                              isDense: true,
+                              labelText: l10n.authkeyPrompt,
+                              hintText: l10n.authkeyPlaceholder,
+                              errorText: _showConnectionError
+                                  ? l10n.connectFailed
+                                  : null,
+                              errorBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(20),
+                                borderSide: BorderSide(
+                                  color: colorScheme.error,
+                                  width: 2,
+                                ),
+                              ),
+                              focusedErrorBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(20),
+                                borderSide: BorderSide(
+                                  color: colorScheme.error,
+                                  width: 2,
+                                ),
+                              ),
+                              suffixIcon: IconButton(
+                                icon: const Icon(Icons.send),
+                                onPressed: state.connecting ? null : _connect,
+                              ),
+                            ),
+                          ),
+                        if (isConnectingThisDevice)
+                          Text(
+                            _connectionPhaseLabel(l10n, state),
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: colorScheme.onSurfaceVariant),
+                          ),
+                      ],
                     ),
                   )
                 : const SizedBox.shrink(),
@@ -907,6 +1010,27 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
         ],
       ),
     );
+  }
+
+  String _connectionPhaseLabel(
+    AppLocalizations l10n,
+    DeviceManagerState state,
+  ) {
+    final deviceName = state.connectionTargetName ?? widget.device.name;
+    return switch (state.connectionPhase) {
+      DeviceConnectionPhase.preparing => l10n.deviceConnectionPreparing,
+      DeviceConnectionPhase.connectingTransport =>
+        l10n.deviceConnectionEstablishing(
+          widget.device.connectType.toUpperCase(),
+        ),
+      DeviceConnectionPhase.initializingProtocol =>
+        l10n.deviceConnectionInitializing,
+      DeviceConnectionPhase.authenticating =>
+        l10n.deviceConnectionAuthenticating,
+      DeviceConnectionPhase.fetchingDeviceStatus =>
+        l10n.deviceConnectionFetchingStatus,
+      null => l10n.deviceConnectingTo(deviceName),
+    };
   }
 
   Future<void> _showQrDialog(BuildContext context, MiWearState device) async {
