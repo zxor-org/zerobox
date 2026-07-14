@@ -21,6 +21,57 @@ class AppLocalizationsZh extends AppLocalizations {
   String get devicesTab => '设备';
 
   @override
+  String get pluginsTab => '插件';
+
+  @override
+  String get pluginImport => '导入插件';
+
+  @override
+  String get pluginInstalled => '已安装';
+
+  @override
+  String get pluginMarket => '插件市场';
+
+  @override
+  String get pluginMarketUnavailable => '插件市场暂未接入';
+
+  @override
+  String get pluginEmpty => '尚未安装插件';
+
+  @override
+  String get pluginSelectHint => '选择一个插件查看功能';
+
+  @override
+  String get pluginFeatures => '功能';
+
+  @override
+  String get pluginDetails => '详情';
+
+  @override
+  String get pluginNoFeatures => '此插件没有可用功能';
+
+  @override
+  String get pluginAuthor => '作者';
+
+  @override
+  String get pluginVersion => '版本';
+
+  @override
+  String get pluginApiLevel => 'API 级别';
+
+  @override
+  String get pluginWebsite => '网站';
+
+  @override
+  String get pluginPermissions => '权限';
+
+  @override
+  String get pluginUninstallTitle => '卸载插件';
+
+  @override
+  String get pluginUninstallMessage => '插件数据也将被删除';
+
+  @override
   String get settingsTab => '设置';
 
   @override

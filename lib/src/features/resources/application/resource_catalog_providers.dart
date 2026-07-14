@@ -43,6 +43,9 @@ final localCommunityCatalogProviderForSource =
           dio: dio,
           auth: ref.read(huamiAuthProvider.notifier),
         ),
+        _ => throw StateError(
+          'Plugin community catalogs are only available through the command bus',
+        ),
       };
     });
 
@@ -65,6 +68,31 @@ final communityCatalogProvider = Provider<CommunityResourceCatalog>((ref) {
 final communityCatalogDevicesProvider =
     FutureProvider.autoDispose<List<CommunityResourceDevice>>((ref) {
       return ref.watch(communityCatalogProvider).getDevices();
+    });
+
+final communitySourcesProvider =
+    StreamProvider.autoDispose<List<CommunitySourceId>>((ref) async* {
+      final host = ref.watch(applicationHostProvider);
+      Future<List<CommunitySourceId>> load() async {
+        final result = await host.execute(
+          const ZeroBoxCommand(method: 'resource.sources'),
+        );
+        if (!result.ok) throw StateError(result.error!.message);
+        return (result.value as List? ?? const [])
+            .whereType<Map>()
+            .map((row) => communitySourceIdByName(row['id']?.toString() ?? ''))
+            .nonNulls
+            .toList(growable: false);
+      }
+
+      yield await load();
+      await for (final event in host.events) {
+        if (event.event == 'plugin.provider' ||
+            event.event == 'plugin.state' ||
+            event.event == 'host.connected') {
+          yield await load();
+        }
+      }
     });
 
 final communityResourceDetailProvider = FutureProvider.autoDispose

@@ -10,6 +10,7 @@ import 'package:zerobox/src/features/devices/pages/devices_page.dart';
 import 'package:zerobox/src/features/devices/pages/info/device_info_page.dart';
 import 'package:zerobox/src/features/devices/pages/install/install_local_page.dart';
 import 'package:zerobox/src/features/devices/pages/more/zeppos_more_features_page.dart';
+import 'package:zerobox/src/features/devices/pages/more/zeppos_xiao_ai_page.dart';
 import 'package:zerobox/src/features/devices/pages/switch/device_switch_page.dart';
 import 'package:zerobox/src/features/devices/pages/watchfaces/device_watchfaces_page.dart';
 import 'package:zerobox/src/features/devices/providers/pending_shared_device_provider.dart';
@@ -24,6 +25,8 @@ import 'package:zerobox/src/features/settings/pages/acknowledgements_page.dart';
 import 'package:zerobox/src/features/settings/pages/about_software_page.dart';
 import 'package:zerobox/src/features/settings/pages/settings_page.dart';
 import 'package:zerobox/src/features/settings/pages/bandbbs_account_page.dart';
+import 'package:zerobox/src/features/plugins/pages/plugin_detail_page.dart';
+import 'package:zerobox/src/features/plugins/pages/plugins_page.dart';
 
 final rootNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -143,8 +146,28 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                   ),
                   GoRoute(
                     path: 'zeppos-more',
+                    builder: (context, state) => const ZeppOsMoreFeaturesPage(),
+                    routes: [
+                      GoRoute(
+                        path: 'xiao-ai',
+                        builder: (context, state) => const ZeppOsXiaoAiPage(),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/plugins',
+                builder: (context, state) => const PluginsPage(),
+                routes: [
+                  GoRoute(
+                    path: ':id',
                     builder: (context, state) =>
-                        const ZeppOsMoreFeaturesPage(),
+                        PluginDetailPage(pluginId: state.pathParameters['id']!),
                   ),
                 ],
               ),

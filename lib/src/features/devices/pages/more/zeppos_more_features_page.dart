@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:zerobox/src/app/generated/app_localizations.dart';
 import 'package:zerobox/src/app/widgets/page_container.dart';
 import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
@@ -30,9 +32,9 @@ class _ZeppOsMoreFeaturesPageState
       if (mounted) setState(() => _finding = finding);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -65,6 +67,19 @@ class _ZeppOsMoreFeaturesPageState
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.record_voice_over),
+                      title: const Text('小爱同学'),
+                      subtitle: const Text('捕获 Opus 帧并实时解码播放'),
+                      trailing: const Icon(Icons.chevron_right),
+                      enabled: ready,
+                      onTap: ready
+                          ? () => context.push('/devices/zeppos-more/xiao-ai')
+                          : null,
+                    ),
+                    const Divider(),
+                    const SizedBox(height: 12),
                     Row(
                       children: [
                         Icon(
@@ -121,12 +136,115 @@ class _ZeppOsMoreFeaturesPageState
                               label: Text(l10n.zeppOsFindDeviceStart),
                             ),
                     ),
+                    const SizedBox(height: 24),
+                    const Divider(),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.bluetooth_searching,
+                          color: colorScheme.primary,
+                          size: 28,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            '实时 Zepp OS 消息',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: state.zeppOsMessages.isEmpty
+                              ? null
+                              : () => ref
+                                    .read(deviceManagerProvider.notifier)
+                                    .clearZeppOsMessages(),
+                          tooltip: '清空消息',
+                          icon: const Icon(Icons.delete_sweep_outlined),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '显示现有分包层已经解码的设备上行 endpoint 消息，'
+                      '最多保留最近 200 条。',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _ZeppOsMessageList(messages: state.zeppOsMessages),
                   ],
                 ),
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ZeppOsMessageList extends StatelessWidget {
+  const _ZeppOsMessageList({required this.messages});
+
+  final List<ZeppOsMessageRecord> messages;
+
+  @override
+  Widget build(BuildContext context) {
+    if (messages.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 32),
+          child: Text('暂无设备消息'),
+        ),
+      );
+    }
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 420),
+      child: ListView.separated(
+        shrinkWrap: true,
+        reverse: true,
+        itemCount: messages.length,
+        separatorBuilder: (_, _) => const Divider(height: 1),
+        itemBuilder: (context, reverseIndex) {
+          final message = messages[messages.length - 1 - reverseIndex];
+          final endpoint = message.endpoint
+              .toRadixString(16)
+              .padLeft(4, '0')
+              .toUpperCase();
+          final hex = message.payload
+              .map(
+                (byte) => byte.toRadixString(16).padLeft(2, '0').toUpperCase(),
+              )
+              .join(' ');
+          final text = message.payload
+              .map(
+                (byte) =>
+                    byte >= 32 && byte <= 126 ? String.fromCharCode(byte) : '.',
+              )
+              .join();
+          final isoTime = message.timestamp.toLocal().toIso8601String();
+          final time = isoTime.length >= 23
+              ? isoTime.substring(11, 23)
+              : isoTime;
+          final copyText =
+              '$time EP 0x$endpoint (${message.payload.length} bytes)\n'
+              '$hex\n$text';
+          return ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              '$time  ·  0x$endpoint  ·  ${message.payload.length} bytes',
+            ),
+            subtitle: SelectableText('$hex\n$text', maxLines: 4),
+            trailing: IconButton(
+              tooltip: '复制消息',
+              onPressed: () => Clipboard.setData(ClipboardData(text: copyText)),
+              icon: const Icon(Icons.copy_outlined),
+            ),
+          );
+        },
       ),
     );
   }

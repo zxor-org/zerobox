@@ -6,6 +6,7 @@ import 'dart:math';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zerobox/src/command_bus/local_command_bus.dart';
 import 'package:zerobox/src/commands/command_protocol.dart';
+import 'package:zerobox/src/core/logging/logging_service.dart';
 import 'package:zerobox/src/daemon/daemon_endpoint.dart';
 import 'package:zerobox/src/host/application_host.dart';
 
@@ -22,6 +23,7 @@ class ZeroBoxDaemonServer {
   RandomAccessFile? _windowsLock;
   final DateTime startedAt = DateTime.now();
   Socket? _activeOperationClient;
+  static final _log = getLogger('DaemonServer');
 
   Future<void> run() async {
     final runtimeDirectory = Directory(daemonRuntimeDirectory);
@@ -126,6 +128,11 @@ class ZeroBoxDaemonServer {
           );
           continue;
         }
+        if (command.method == 'plugin.open' ||
+            command.method == 'plugin.invoke') {
+          unawaited(_executeAndWrite(client, id, command));
+          continue;
+        }
         final result = switch (command.method) {
           'daemon.info' => CommandResult.success(_daemonInfo()),
           _ => await _executeForClient(client, command),
@@ -154,6 +161,15 @@ class ZeroBoxDaemonServer {
     }
   }
 
+  Future<void> _executeAndWrite(
+    Socket client,
+    String id,
+    ZeroBoxCommand command,
+  ) async {
+    final result = await _executeForClient(client, command);
+    _write(client, {'id': id, ...result.toJson()});
+  }
+
   Map<String, Object?> _daemonInfo() => {
     'running': true,
     'pid': pid,
@@ -169,14 +185,21 @@ class ZeroBoxDaemonServer {
   };
 
   void _broadcastEvent(CommandEvent event) {
-    final message = {'type': 'event', ...event.toJson()};
+    if (event.event == 'plugin.hostRequest') {
+      _log.info(
+        'broadcasting plugin host request '
+        '${event.data['requestId']} to ${_clients.length} clients',
+      );
+    }
+    final message = {'messageType': 'event', ...event.toJson()};
     final broadcast =
         event.event == 'device.state' ||
         event.event == 'account.state' ||
         event.event == 'settings.state' ||
         event.event == 'log' ||
         event.event == 'task' ||
-        event.event == 'task.removed';
+        event.event == 'task.removed' ||
+        event.event.startsWith('plugin.');
     if (!broadcast && _activeOperationClient != null) {
       _write(_activeOperationClient!, message);
       return;

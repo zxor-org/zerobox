@@ -558,9 +558,15 @@ class _CommunitySourceMenu extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final source = ref.watch(selectedCommunitySourceProvider);
+    final loadedSources = ref.watch(communitySourcesProvider).value;
+    final sourceById = <String, CommunitySourceId>{
+      for (final candidate in loadedSources ?? CommunitySourceId.values)
+        candidate.storageKey: candidate,
+      source.storageKey: source,
+    };
     final l10n = AppLocalizations.of(context)!;
     return MenuAnchor(
-      menuChildren: CommunitySourceId.values
+      menuChildren: sourceById.values
           .map(
             (candidate) => MenuItemButton(
               trailingIcon: candidate == source
@@ -1049,6 +1055,7 @@ String _communitySourceLabel(AppLocalizations l10n, CommunitySourceId source) =>
       CommunitySourceId.astroboxRepo => l10n.communitySourceAstroBoxRepo,
       CommunitySourceId.bandbbs => l10n.communitySourceBandBbs,
       CommunitySourceId.huamiAppStore => l10n.communitySourceHuamiAppStore,
+      _ => source.displayName,
     };
 
 class _ResourceGrid extends StatelessWidget {

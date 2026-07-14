@@ -24,6 +24,10 @@ class CommandResourceCatalog implements CommunityResourceCatalog {
     ),
     CommunitySourceId.bandbbs || CommunitySourceId.huamiAppStore =>
       const CommunityCatalogCapabilities(serverSort: true),
+    _ => const CommunityCatalogCapabilities(
+      serverSort: true,
+      typeFilter: false,
+    ),
   };
 
   @override

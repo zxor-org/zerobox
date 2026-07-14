@@ -1,0 +1,14 @@
+{
+  "name": "zerobox-web-plugin-runtime",
+  "private": true,
+  "scripts": {
+    "build": "esbuild entry.js --bundle --format=iife --platform=browser --target=es2022 --minify --outfile=../../web/zerobox_plugin_runtime.js"
+  },
+  "dependencies": {
+    "@jitl/quickjs-singlefile-browser-release-sync": "0.32.0",
+    "quickjs-emscripten": "0.32.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
+}

@@ -29,8 +29,10 @@ import 'package:zerobox/src/device/xiaomi/xiaomi_device_factory.dart';
 import 'package:zerobox/src/device/zeppos/systems/zeppos_auth_system.dart';
 import 'package:zerobox/src/device/zeppos/systems/zeppos_apps_system.dart';
 import 'package:zerobox/src/device/zeppos/systems/zeppos_battery_system.dart';
+import 'package:zerobox/src/device/zeppos/systems/zeppos_device_info_system.dart';
 import 'package:zerobox/src/device/zeppos/systems/zeppos_find_device_system.dart';
 import 'package:zerobox/src/device/zeppos/systems/zeppos_services_system.dart';
+import 'package:zerobox/src/device/zeppos/systems/zeppos_xiao_ai_system.dart';
 import 'package:zerobox/src/device/zeppos/zeppos_device_catalog.dart';
 import 'package:zerobox/src/device/zeppos/zeppos_device_factory.dart';
 import 'package:zerobox/src/features/accounts/models/mi_account_models.dart';
@@ -39,6 +41,39 @@ import 'package:zerobox/src/protocols/common/device_protocol.dart'
 import 'package:zerobox/src/protocols/generated/xiaomi/wear.pb.dart' as pb;
 import 'package:zerobox/src/protocols/generated/xiaomi/wear_watch_face.pb.dart'
     as pb_watchface;
+
+class ZeppOsMessageRecord {
+  const ZeppOsMessageRecord({
+    required this.timestamp,
+    required this.endpoint,
+    required this.payload,
+  });
+
+  final DateTime timestamp;
+  final int endpoint;
+  final List<int> payload;
+
+  Map<String, Object?> toJson() => {
+    'timestamp': timestamp.toIso8601String(),
+    'endpoint': endpoint,
+    'payload': payload,
+  };
+
+  factory ZeppOsMessageRecord.fromJson(Map<String, dynamic> json) {
+    return ZeppOsMessageRecord(
+      timestamp:
+          DateTime.tryParse(json['timestamp']?.toString() ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+      endpoint: (json['endpoint'] as num?)?.toInt() ?? 0,
+      payload:
+          (json['payload'] as List?)
+              ?.whereType<num>()
+              .map((value) => value.toInt() & 0xff)
+              .toList(growable: false) ??
+          const [],
+    );
+  }
+}
 
 class DeviceManagerState {
   const DeviceManagerState({
@@ -53,6 +88,10 @@ class DeviceManagerState {
     this.systemInfo,
     this.apps = const [],
     this.watchfaces = const [],
+    this.zeppOsMessages = const [],
+    this.xiaoAiActive = false,
+    this.xiaoAiFrameCount = 0,
+    this.xiaoAiCapabilities = const {},
     this.error,
   });
 
@@ -67,6 +106,10 @@ class DeviceManagerState {
   final SystemInfo? systemInfo;
   final List<AppInfo> apps;
   final List<WatchfaceInfo> watchfaces;
+  final List<ZeppOsMessageRecord> zeppOsMessages;
+  final bool xiaoAiActive;
+  final int xiaoAiFrameCount;
+  final Map<String, Object?> xiaoAiCapabilities;
   final String? error;
 
   DeviceManagerState copyWith({
@@ -81,6 +124,10 @@ class DeviceManagerState {
     SystemInfo? systemInfo,
     List<AppInfo>? apps,
     List<WatchfaceInfo>? watchfaces,
+    List<ZeppOsMessageRecord>? zeppOsMessages,
+    bool? xiaoAiActive,
+    int? xiaoAiFrameCount,
+    Map<String, Object?>? xiaoAiCapabilities,
     String? error,
     bool clearCurrentDevice = false,
     bool clearBattery = false,
@@ -101,6 +148,10 @@ class DeviceManagerState {
       systemInfo: clearSystemInfo ? null : (systemInfo ?? this.systemInfo),
       apps: apps ?? this.apps,
       watchfaces: watchfaces ?? this.watchfaces,
+      zeppOsMessages: zeppOsMessages ?? this.zeppOsMessages,
+      xiaoAiActive: xiaoAiActive ?? this.xiaoAiActive,
+      xiaoAiFrameCount: xiaoAiFrameCount ?? this.xiaoAiFrameCount,
+      xiaoAiCapabilities: xiaoAiCapabilities ?? this.xiaoAiCapabilities,
       error: clearError ? null : (error ?? this.error),
     );
   }
@@ -108,6 +159,23 @@ class DeviceManagerState {
 
 abstract class DeviceManager extends Notifier<DeviceManagerState> {
   static const errorBluetoothUnavailable = 'bluetooth_unavailable';
+  final _xiaoAiOpusFrames = StreamController<Uint8List>.broadcast();
+  final _interconnectMessages =
+      StreamController<InterconnectMessage>.broadcast();
+
+  Stream<Uint8List> get xiaoAiOpusFrames => _xiaoAiOpusFrames.stream;
+  Stream<InterconnectMessage> get interconnectMessages =>
+      _interconnectMessages.stream;
+
+  @protected
+  void emitXiaoAiOpusFrame(Uint8List frame) {
+    _xiaoAiOpusFrames.add(frame);
+  }
+
+  @protected
+  void emitInterconnectMessage(InterconnectMessage message) {
+    _interconnectMessages.add(message);
+  }
 
   Future<void> startBluetoothScan({ConnectType connectType = ConnectType.ble});
   Future<void> stopBluetoothScan();
@@ -123,11 +191,17 @@ abstract class DeviceManager extends Notifier<DeviceManagerState> {
   Future<void> refreshBattery();
   Future<void> refreshDeviceData();
   Future<void> setFindingZeppOsDevice(bool finding);
+  Future<void> sendXiaoAiReply(String text);
+  Future<void> setXiaoAiContinuousCapture(bool enabled);
+  Future<void> setXiaoAiEndpoint(int endpoint);
+  void clearZeppOsMessages();
   Future<void> fetchSystemInfo();
   Future<void> fetchStorageInfo();
   Future<void> fetchApps();
   Future<void> fetchWatchfaces();
   Future<void> openApp(AppInfo app, {String page = ''});
+  Future<void> sendRaw(Uint8List payload);
+  Future<void> sendInterconnectMessage(String packageName, Uint8List payload);
   Future<void> uninstallApp(AppInfo app);
   Future<void> uninstallWatchface(WatchfaceInfo watchface);
   Future<void> setWatchface(WatchfaceInfo watchface);
@@ -164,6 +238,8 @@ class LocalDeviceManager extends DeviceManager {
 
     ref.onDispose(() {
       _log.info('DeviceManager disposed');
+      unawaited(_xiaoAiOpusFrames.close());
+      unawaited(_interconnectMessages.close());
       _scanTimer?.cancel();
       _batteryRefreshTimer?.cancel();
       _scanSubscription?.cancel();
@@ -846,6 +922,33 @@ class LocalDeviceManager extends DeviceManager {
       case WatchfaceListUpdated(:final watchfaces):
         _log.info('event: watchface list ${watchfaces.length}');
         state = state.copyWith(watchfaces: watchfaces);
+      case ZeppOsEndpointMessageReceived(:final endpoint, :final payload):
+        final messages = [
+          ...state.zeppOsMessages,
+          ZeppOsMessageRecord(
+            timestamp: DateTime.now(),
+            endpoint: endpoint,
+            payload: List<int>.unmodifiable(payload),
+          ),
+        ];
+        state = state.copyWith(
+          zeppOsMessages: messages.length > 200
+              ? messages.sublist(messages.length - 200)
+              : messages,
+        );
+      case XiaoAiSessionStarted(:final capabilities):
+        state = state.copyWith(
+          xiaoAiActive: true,
+          xiaoAiFrameCount: 0,
+          xiaoAiCapabilities: Map<String, Object?>.unmodifiable(capabilities),
+        );
+      case XiaoAiSessionEnded _:
+        state = state.copyWith(xiaoAiActive: false);
+      case XiaoAiOpusFrameReceived(:final frame):
+        state = state.copyWith(xiaoAiFrameCount: state.xiaoAiFrameCount + 1);
+        emitXiaoAiOpusFrame(Uint8List.fromList(frame));
+      case InterconnectMessage _:
+        emitInterconnectMessage(event);
       case InstallProgress _:
         // Progress is consumed via callback in install UI.
         break;
@@ -1030,12 +1133,77 @@ class LocalDeviceManager extends DeviceManager {
   }
 
   @override
+  Future<void> sendXiaoAiReply(String text) async {
+    final entity = _currentEntity;
+    if (entity == null || state.protocolState != ProtocolState.ready) {
+      throw ProtocolException('Device not ready');
+    }
+    final system = entity.system<ZeppOsXiaoAiSystem>();
+    if (system == null) {
+      throw UnsupportedError('XiaoAI is only available for ZeppOS');
+    }
+    await system.sendTextReply(text);
+  }
+
+  @override
+  Future<void> setXiaoAiContinuousCapture(bool enabled) async {
+    final entity = _currentEntity;
+    if (entity == null || state.protocolState != ProtocolState.ready) {
+      throw ProtocolException('Device not ready');
+    }
+    final system = entity.system<ZeppOsXiaoAiSystem>();
+    if (system == null) {
+      throw UnsupportedError('XiaoAI is only available for ZeppOS');
+    }
+    system.setContinuousCapture(enabled);
+  }
+
+  @override
+  Future<void> setXiaoAiEndpoint(int endpoint) async {
+    final entity = _currentEntity;
+    if (entity == null || state.protocolState != ProtocolState.ready) {
+      throw ProtocolException('Device not ready');
+    }
+    final system = entity.system<ZeppOsXiaoAiSystem>();
+    if (system == null) {
+      throw UnsupportedError('Assistant is only available for ZeppOS');
+    }
+    system.selectEndpoint(endpoint);
+  }
+
+  @override
+  void clearZeppOsMessages() {
+    state = state.copyWith(zeppOsMessages: const []);
+  }
+
+  @override
   Future<void> fetchSystemInfo() async {
     final entity = _currentEntity;
     if (entity == null || state.protocolState != ProtocolState.ready) {
       throw ProtocolException('Device not ready');
     }
-    final infoSystem = entity.system<XiaomiInfoSystem>()!;
+    final zeppInfoSystem = entity.system<ZeppOsDeviceInfoSystem>();
+    if (zeppInfoSystem != null) {
+      final servicesSystem = entity.system<ZeppOsServicesSystem>();
+      if (servicesSystem == null) {
+        throw StateError('Zepp OS services discovery is unavailable');
+      }
+      final services = await servicesSystem.fetchSupportedServices();
+      if (!services.containsKey(ZeppOsDeviceInfoSystem.endpoint)) {
+        throw UnsupportedError(
+          'This Zepp OS device does not advertise Device Info',
+        );
+      }
+      zeppInfoSystem.encrypted =
+          services[ZeppOsDeviceInfoSystem.endpoint] ?? false;
+      final info = await zeppInfoSystem.fetchDeviceInfo();
+      state = state.copyWith(systemInfo: info);
+      return;
+    }
+    final infoSystem = entity.system<XiaomiInfoSystem>();
+    if (infoSystem == null) {
+      throw UnsupportedError('Device information is unavailable');
+    }
     final info = await _fetchDeviceInfoWithEuiccFallback(infoSystem);
     state = state.copyWith(systemInfo: info);
   }
@@ -1046,7 +1214,10 @@ class LocalDeviceManager extends DeviceManager {
     if (entity == null || state.protocolState != ProtocolState.ready) {
       throw ProtocolException('Device not ready');
     }
-    final infoSystem = entity.system<XiaomiInfoSystem>()!;
+    final infoSystem = entity.system<XiaomiInfoSystem>();
+    if (infoSystem == null) {
+      return;
+    }
     final info = await infoSystem.fetchStorageInfo();
     final currentInfo = state.systemInfo;
     state = state.copyWith(
@@ -1136,6 +1307,51 @@ class LocalDeviceManager extends DeviceManager {
       );
     }
     await thirdpartySystem.launchApp(_thirdpartyAppInfo(app), page);
+  }
+
+  @override
+  Future<void> sendInterconnectMessage(
+    String packageName,
+    Uint8List payload,
+  ) async {
+    final entity = _currentEntity;
+    if (entity == null || state.protocolState != ProtocolState.ready) {
+      throw ProtocolException('Device not ready');
+    }
+    var app = state.apps.cast<AppInfo?>().firstWhere(
+      (candidate) => candidate?.packageName == packageName,
+      orElse: () => null,
+    );
+    if (app == null) {
+      await fetchApps();
+      app = state.apps.cast<AppInfo?>().firstWhere(
+        (candidate) => candidate?.packageName == packageName,
+        orElse: () => null,
+      );
+    }
+    if (app == null) {
+      throw StateError('Quick app is not installed: $packageName');
+    }
+    final system = entity.system<XiaomiThirdpartyAppSystem>();
+    if (system == null) {
+      throw UnsupportedError(
+        'Interconnect messaging is only available for Xiaomi wearables',
+      );
+    }
+    _log.info(
+      'sending interconnect message to $packageName (${payload.length} bytes)',
+    );
+    await system.sendPhoneMessage(packageName, payload);
+    _log.info('interconnect message queued for $packageName');
+  }
+
+  @override
+  Future<void> sendRaw(Uint8List payload) async {
+    final entity = _currentEntity;
+    if (entity == null || state.protocolState != ProtocolState.ready) {
+      throw ProtocolException('Device not ready');
+    }
+    await entity.transport.send(payload);
   }
 
   @override

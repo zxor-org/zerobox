@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,6 +19,8 @@ import 'package:zerobox/src/features/accounts/services/huami_auth_service.dart';
 import 'package:zerobox/src/features/accounts/services/mi_account_service.dart';
 import 'package:zerobox/src/features/accounts/models/mi_account_models.dart';
 import 'package:zerobox/src/features/resources/services/resource_install_service.dart';
+import 'package:zerobox/src/features/plugins/application/plugin_community_catalog.dart';
+import 'package:zerobox/src/features/plugins/application/plugin_manager.dart';
 import 'package:zerobox/src/features/resources/application/resource_catalog_providers.dart';
 import 'package:zerobox/src/features/resources/domain/community_resource.dart';
 import 'package:zerobox/src/features/resources/domain/community_resource_codec.dart';
@@ -42,6 +43,20 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
     _logSubscription = zeroBoxLogStream.listen(
       (line) => _events.add(CommandEvent('log', data: {'message': line})),
     );
+    _xiaoAiSubscription = _manager.xiaoAiOpusFrames.listen(
+      (frame) => _events.add(
+        CommandEvent(
+          'device.zeppos.xiaoai.opus',
+          data: {'frame': frame.toList(growable: false)},
+        ),
+      ),
+    );
+    _pluginManager = PluginManager(
+      deviceManager: _manager,
+      readDeviceState: () => _state,
+      emitEvent: _events.add,
+    );
+    unawaited(_pluginManager.initialize());
   }
 
   final ProviderContainer container;
@@ -49,8 +64,10 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
   late final ProviderSubscription<DeviceManagerState>
   _deviceManagerSubscription;
   late final StreamSubscription<String> _logSubscription;
+  late final StreamSubscription<Uint8List> _xiaoAiSubscription;
   bool _activeCommandCancelled = false;
   Future<void> _commandTail = Future<void>.value();
+  late final PluginManager _pluginManager;
 
   DeviceManager get _manager => container.read(deviceManagerProvider.notifier);
   DeviceManagerState get _state => container.read(deviceManagerProvider);
@@ -60,6 +77,20 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
 
   @override
   Future<CommandResult> execute(ZeroBoxCommand command) async {
+    if (command.method == 'plugin.host.respond') {
+      try {
+        await _pluginManager.respondToHostRequest(
+          command.params['requestId']?.toString() ?? '',
+          (command.params['response'] as Map?)?.cast<String, Object?>() ??
+              const {},
+        );
+        return const CommandResult.success({'accepted': true});
+      } catch (error, stackTrace) {
+        return CommandResult.failure(
+          CommandError('internal', error.toString(), details: '$stackTrace'),
+        );
+      }
+    }
     final previous = _commandTail;
     final turn = Completer<void>();
     _commandTail = turn.future;
@@ -129,6 +160,18 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
     'device.zeppos.find' => _setFindingZeppOsDevice(
       command.params['finding'] == true,
     ),
+    'device.zeppos.messages.clear' => Future.value(_clearZeppOsMessages()),
+    'device.zeppos.xiaoai.reply' => _sendXiaoAiReply(
+      command.params['text']?.toString(),
+    ),
+    'device.zeppos.xiaoai.continuous' => _setXiaoAiContinuousCapture(
+      command.params['enabled'] == true,
+    ),
+    'device.zeppos.xiaoai.endpoint' => _setXiaoAiEndpoint(
+      (command.params['endpoint'] as num?)?.toInt(),
+    ),
+    'device.interconnect.send' => _sendInterconnectMessage(command.params),
+    'device.raw.send' => _sendRaw(command.params),
     'device.remove' => _removeDevice(command.params['device']?.toString()),
     'device.import' => _importDevice(command.params),
     'app.list' => _listApps(),
@@ -146,13 +189,7 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
       () => _settingsSet(command.params),
       () => _settingsList(),
     ),
-    'resource.sources' => Future.value(
-      CommunitySourceId.values
-          .map(
-            (source) => {'id': source.storageKey, 'name': source.displayName},
-          )
-          .toList(growable: false),
-    ),
+    'resource.sources' => _resourceSources(),
     'resource.list' || 'resource.search' => _resourceList(command.params),
     'resource.info' => _resourceInfo(command.params),
     'resource.devices' => _resourceDevices(command.params),
@@ -190,6 +227,29 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
       () => _accountList(),
     ),
     'logs.recent' => Future.value(recentZeroBoxLogs),
+    'plugin.list' => _pluginManager.list(
+      includeIcons: command.params['includeIcons'] != false,
+    ),
+    'plugin.install' => _installPlugin(command.params),
+    'plugin.get' => _pluginManager.get(command.params['id']?.toString() ?? ''),
+    'plugin.open' => _pluginManager.open(
+      command.params['id']?.toString() ?? '',
+    ),
+    'plugin.invoke' => _pluginManager.invoke(
+      command.params['id']?.toString() ?? '',
+      command.params['callback']?.toString() ?? '',
+      command.params['value']?.toString(),
+    ),
+    'plugin.remove' => _removePlugin(command.params),
+    'plugin.provider.list' => _pluginManager.providers(),
+    'plugin.provider.call' => _pluginManager.callProvider(
+      command.params['provider']?.toString() ?? '',
+      command.params['operation']?.toString() ?? '',
+      (command.params['arguments'] as List?)
+              ?.map((value) => value.toString())
+              .toList(growable: false) ??
+          const [],
+    ),
     'install.local' => _installLocal(command.params),
     _ => throw CommandFailure(
       'unknown_command',
@@ -205,6 +265,75 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
     final result = await operation();
     _events.add(CommandEvent(event, data: {'state': snapshot()}));
     return result;
+  }
+
+  Future<Object?> _installPlugin(Map<String, Object?> params) async {
+    final raw = params['bytes'];
+    final bytes = switch (raw) {
+      Uint8List value => value,
+      List value => Uint8List.fromList(
+        value.whereType<num>().map((item) => item.toInt() & 0xff).toList(),
+      ),
+      String value => base64Decode(value),
+      _ => throw const CommandFailure('usage', 'Plugin bytes are required'),
+    };
+    return _pluginManager.install(
+      bytes,
+      includeIcon: params['includeIcon'] != false,
+    );
+  }
+
+  Future<Object?> _removePlugin(Map<String, Object?> params) async {
+    final id = params['id']?.toString() ?? '';
+    final removedSources = (await _pluginManager.providers())
+        .where((provider) => provider['pluginId']?.toString() == id)
+        .map(
+          (provider) => CommunitySourceId.plugin(
+            provider['name']?.toString() ?? '',
+          ).storageKey,
+        )
+        .toSet();
+    await _pluginManager.remove(id);
+    final prefs = SharedPrefsService.instance;
+    if (removedSources.contains(prefs.getString('community_source'))) {
+      await prefs.setString(
+        'community_source',
+        CommunitySourceId.astroboxRepo.storageKey,
+      );
+      container.invalidate(appSettingsProvider);
+      _events.add(
+        CommandEvent('settings.state', data: {'state': _settingsList()}),
+      );
+    }
+    return {'removed': id};
+  }
+
+  Future<Object?> _sendInterconnectMessage(Map<String, Object?> params) async {
+    final packageName = params['package']?.toString() ?? '';
+    final payload = (params['payload'] as List?)
+        ?.whereType<num>()
+        .map((value) => value.toInt() & 0xff)
+        .toList(growable: false);
+    if (packageName.isEmpty || payload == null) {
+      throw const CommandFailure('usage', 'package and payload are required');
+    }
+    await _manager.sendInterconnectMessage(
+      packageName,
+      Uint8List.fromList(payload),
+    );
+    return {'sent': true};
+  }
+
+  Future<Object?> _sendRaw(Map<String, Object?> params) async {
+    final payload = (params['payload'] as List?)
+        ?.whereType<num>()
+        .map((value) => value.toInt() & 0xff)
+        .toList(growable: false);
+    if (payload == null) {
+      throw const CommandFailure('usage', 'payload is required');
+    }
+    await _manager.sendRaw(Uint8List.fromList(payload));
+    return {'sent': true};
   }
 
   Map<String, Object?> _status() {
@@ -233,6 +362,12 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
     if (state.systemInfo != null) 'systemInfo': state.systemInfo!.toJson(),
     'apps': state.apps.map((item) => item.toJson()).toList(),
     'watchfaces': state.watchfaces.map((item) => item.toJson()).toList(),
+    'zeppOsMessages': state.zeppOsMessages
+        .map((item) => item.toJson())
+        .toList(growable: false),
+    'xiaoAiActive': state.xiaoAiActive,
+    'xiaoAiFrameCount': state.xiaoAiFrameCount,
+    'xiaoAiCapabilities': state.xiaoAiCapabilities,
     if (state.error != null) 'error': state.error,
   };
 
@@ -410,6 +545,35 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
     await _ensureConnected(null);
     await _manager.setFindingZeppOsDevice(finding);
     return {'finding': finding};
+  }
+
+  Object _clearZeppOsMessages() {
+    _manager.clearZeppOsMessages();
+    return const {'cleared': true};
+  }
+
+  Future<Object?> _sendXiaoAiReply(String? text) async {
+    await _ensureConnected(null);
+    if (text == null || text.trim().isEmpty) {
+      throw const CommandFailure('invalid_argument', 'Reply cannot be empty');
+    }
+    await _manager.sendXiaoAiReply(text);
+    return const {'sent': true};
+  }
+
+  Future<Object?> _setXiaoAiContinuousCapture(bool enabled) async {
+    await _ensureConnected(null);
+    await _manager.setXiaoAiContinuousCapture(enabled);
+    return {'enabled': enabled};
+  }
+
+  Future<Object?> _setXiaoAiEndpoint(int? endpoint) async {
+    await _ensureConnected(null);
+    if (endpoint == null) {
+      throw const CommandFailure('invalid_argument', 'Endpoint is required');
+    }
+    await _manager.setXiaoAiEndpoint(endpoint);
+    return {'endpoint': endpoint};
   }
 
   Future<Object?> _listApps() async {
@@ -640,9 +804,7 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
   Future<Object?> _resourceList(Map<String, Object?> params) async {
     _reloadPersistedAccounts();
     final source = _source(params['source']?.toString());
-    final catalog = container.read(
-      localCommunityCatalogProviderForSource(source),
-    );
+    final catalog = _resourceCatalog(source);
     final type = _resourceType(params['type']?.toString(), required: false);
     final devices = params['devices'];
     final selectedDevices = devices is List
@@ -677,9 +839,7 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
   Future<Object?> _resourceDevices(Map<String, Object?> params) async {
     _reloadPersistedAccounts();
     final source = _source(params['source']?.toString());
-    final catalog = container.read(
-      localCommunityCatalogProviderForSource(source),
-    );
+    final catalog = _resourceCatalog(source);
     final devices = await catalog.getDevices();
     return devices
         .map(
@@ -695,9 +855,7 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
   Future<Object?> _resourceProbe(Map<String, Object?> params) async {
     _reloadPersistedAccounts();
     final source = _source(params['source']?.toString());
-    final catalog = container.read(
-      localCommunityCatalogProviderForSource(source),
-    );
+    final catalog = _resourceCatalog(source);
     final raw = (params['file'] as Map).cast<String, Object?>();
     return catalog.probeDownloadSize(communityResourceFileFromJson(raw));
   }
@@ -737,9 +895,7 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
   Future<Object?> _resourceInfo(Map<String, Object?> params) async {
     _reloadPersistedAccounts();
     final ref = _resourceRef(params);
-    final catalog = container.read(
-      localCommunityCatalogProviderForSource(ref.source),
-    );
+    final catalog = _resourceCatalog(ref.source);
     final detail = await catalog.getDetail(ref);
     _throwIfCancelled();
     return _resourceDetailJson(detail);
@@ -751,9 +907,7 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
   }) async {
     _reloadPersistedAccounts();
     final ref = _resourceRef(params);
-    final catalog = container.read(
-      localCommunityCatalogProviderForSource(ref.source),
-    );
+    final catalog = _resourceCatalog(ref.source);
     final detail = await catalog.getDetail(ref);
     if (detail.files.isEmpty) {
       throw CommandFailure(
@@ -834,6 +988,31 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
       throw CommandFailure('usage', 'Unknown resource source: $normalized');
     }
     return source;
+  }
+
+  Future<List<Map<String, Object?>>> _resourceSources() async {
+    final pluginProviders = await _pluginManager.providers();
+    return [
+      ...CommunitySourceId.values.map(
+        (source) => {'id': source.storageKey, 'name': source.displayName},
+      ),
+      ...pluginProviders.map((provider) {
+        final name = provider['name']?.toString() ?? '';
+        final source = CommunitySourceId.plugin(name);
+        return {
+          'id': source.storageKey,
+          'name': source.displayName,
+          'pluginId': provider['pluginId'],
+        };
+      }),
+    ];
+  }
+
+  CommunityResourceCatalog _resourceCatalog(CommunitySourceId source) {
+    if (source.isPlugin) {
+      return PluginCommunityCatalog(manager: _pluginManager, sourceId: source);
+    }
+    return container.read(localCommunityCatalogProviderForSource(source));
   }
 
   CommunityResourceType? _resourceType(
@@ -1097,8 +1276,10 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
 
   @override
   Future<void> close() async {
+    await _pluginManager.close();
     _deviceManagerSubscription.close();
     await _logSubscription.cancel();
+    await _xiaoAiSubscription.cancel();
     await _events.close();
   }
 }

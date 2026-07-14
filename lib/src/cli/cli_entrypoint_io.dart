@@ -334,6 +334,30 @@ Future<ZeroBoxCommand> _toCommand(CliInvocation invocation) async {
     'queue.pause' => const ZeroBoxCommand(method: 'queue.pause'),
     'queue.clear' => const ZeroBoxCommand(method: 'queue.clear'),
     'logs.show' || 'logs.watch' => const ZeroBoxCommand(method: 'logs.recent'),
+    'plugin.list' => const ZeroBoxCommand(
+      method: 'plugin.list',
+      params: {'includeIcons': false},
+    ),
+    'plugin.install' => _pluginInstallCommand(invocation),
+    'plugin.open' => ZeroBoxCommand(
+      method: 'plugin.open',
+      params: {'id': invocation.requiredArgument('plugin ID')},
+    ),
+    'plugin.invoke' => ZeroBoxCommand(
+      method: 'plugin.invoke',
+      params: {
+        'id': invocation.requiredArgument('plugin ID'),
+        'callback':
+            invocation.arguments.elementAtOrNull(1) ??
+            (throw const CliUsageException('Missing callback ID')),
+        if (invocation.arguments.length > 2)
+          'value': invocation.arguments.skip(2).join(' '),
+      },
+    ),
+    'plugin.remove' => ZeroBoxCommand(
+      method: 'plugin.remove',
+      params: {'id': invocation.requiredArgument('plugin ID')},
+    ),
     'install.quickapp' ||
     'install.miniprogram' ||
     'install.watchface' ||
@@ -349,6 +373,20 @@ Future<ZeroBoxCommand> _toCommand(CliInvocation invocation) async {
     ),
     _ => throw CliUsageException('Unknown command: $name'),
   };
+}
+
+Future<ZeroBoxCommand> _pluginInstallCommand(CliInvocation invocation) async {
+  final path = invocation.requiredArgument('ABP path');
+  final file = File(path);
+  if (!await file.exists()) throw CliUsageException('File not found: $path');
+  return ZeroBoxCommand(
+    method: 'plugin.install',
+    params: {
+      'bytes': base64Encode(await file.readAsBytes()),
+      'fileName': file.uri.pathSegments.last,
+      'includeIcon': false,
+    },
+  );
 }
 
 Future<ZeroBoxCommand> _accountLoginCommand(CliInvocation invocation) async {
@@ -443,6 +481,7 @@ Commands:
   account list|status|login|logout
   queue list|get|wait|watch|cancel|remove|retry|start|pause|clear
   logs show|watch
+  plugin list|install|open|invoke|remove
 
 Options:
   --json          Emit machine-readable JSON/JSONL

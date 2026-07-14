@@ -126,10 +126,10 @@ class ZeroBoxDaemonClient implements ZeroBoxCommandBus {
   void _handleLine(String line) {
     try {
       final value = jsonDecode(line) as Map<String, dynamic>;
-      if (value['type'] == 'event') {
+      if (value['messageType'] == 'event') {
         final event = value['event']?.toString() ?? 'unknown';
         final data = Map<String, Object?>.from(value)
-          ..remove('type')
+          ..remove('messageType')
           ..remove('event');
         _events.add(CommandEvent(event, data: data));
         return;

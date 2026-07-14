@@ -80,11 +80,6 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
           title: Text(l10n.devicesTab),
           actions: [
             IconButton(
-              icon: const Icon(Icons.radar),
-              onPressed: () => context.push('/devices/switch'),
-              tooltip: l10n.scan,
-            ),
-            IconButton(
               icon: const Icon(Icons.refresh),
               onPressed: state.connecting || device == null
                   ? null

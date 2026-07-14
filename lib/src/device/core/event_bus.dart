@@ -108,6 +108,41 @@ final class InterconnectMessage extends DeviceEvent {
   final Uint8List payload;
 }
 
+final class ZeppOsEndpointMessageReceived extends DeviceEvent {
+  const ZeppOsEndpointMessageReceived({
+    required super.deviceId,
+    required this.endpoint,
+    required this.payload,
+  });
+
+  final int endpoint;
+  final Uint8List payload;
+}
+
+final class XiaoAiSessionStarted extends DeviceEvent {
+  const XiaoAiSessionStarted({
+    required super.deviceId,
+    required this.capabilities,
+  });
+
+  final Map<String, Object?> capabilities;
+}
+
+final class XiaoAiSessionEnded extends DeviceEvent {
+  const XiaoAiSessionEnded({required super.deviceId});
+}
+
+final class XiaoAiOpusFrameReceived extends DeviceEvent {
+  const XiaoAiOpusFrameReceived({
+    required super.deviceId,
+    required this.sequence,
+    required this.frame,
+  });
+
+  final int sequence;
+  final Uint8List frame;
+}
+
 class DeviceEventBus {
   DeviceEventBus();
 

@@ -12,6 +12,7 @@ const zeroBoxDaemonCapabilities = <String>[
   'settings',
   'tasks',
   'logs',
+  'plugins',
 ];
 
 class ZeroBoxCommand {

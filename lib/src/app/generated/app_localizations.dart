@@ -122,6 +122,108 @@ abstract class AppLocalizations {
   /// **'Devices'**
   String get devicesTab;
 
+  /// No description provided for @pluginsTab.
+  ///
+  /// In en, this message translates to:
+  /// **'Plugins'**
+  String get pluginsTab;
+
+  /// No description provided for @pluginImport.
+  ///
+  /// In en, this message translates to:
+  /// **'Import plugin'**
+  String get pluginImport;
+
+  /// No description provided for @pluginInstalled.
+  ///
+  /// In en, this message translates to:
+  /// **'Installed'**
+  String get pluginInstalled;
+
+  /// No description provided for @pluginMarket.
+  ///
+  /// In en, this message translates to:
+  /// **'Plugin market'**
+  String get pluginMarket;
+
+  /// No description provided for @pluginMarketUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'The plugin market is not available yet'**
+  String get pluginMarketUnavailable;
+
+  /// No description provided for @pluginEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No plugins installed'**
+  String get pluginEmpty;
+
+  /// No description provided for @pluginSelectHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Select a plugin to view its features'**
+  String get pluginSelectHint;
+
+  /// No description provided for @pluginFeatures.
+  ///
+  /// In en, this message translates to:
+  /// **'Features'**
+  String get pluginFeatures;
+
+  /// No description provided for @pluginDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Details'**
+  String get pluginDetails;
+
+  /// No description provided for @pluginNoFeatures.
+  ///
+  /// In en, this message translates to:
+  /// **'This plugin has no available features'**
+  String get pluginNoFeatures;
+
+  /// No description provided for @pluginAuthor.
+  ///
+  /// In en, this message translates to:
+  /// **'Author'**
+  String get pluginAuthor;
+
+  /// No description provided for @pluginVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'Version'**
+  String get pluginVersion;
+
+  /// No description provided for @pluginApiLevel.
+  ///
+  /// In en, this message translates to:
+  /// **'API level'**
+  String get pluginApiLevel;
+
+  /// No description provided for @pluginWebsite.
+  ///
+  /// In en, this message translates to:
+  /// **'Website'**
+  String get pluginWebsite;
+
+  /// No description provided for @pluginPermissions.
+  ///
+  /// In en, this message translates to:
+  /// **'Permissions'**
+  String get pluginPermissions;
+
+  /// No description provided for @pluginUninstallTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Uninstall plugin'**
+  String get pluginUninstallTitle;
+
+  /// No description provided for @pluginUninstallMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'The plugin\'s data will also be removed'**
+  String get pluginUninstallMessage;
+
   /// No description provided for @settingsTab.
   ///
   /// In en, this message translates to:

@@ -50,6 +50,11 @@ class AppScaffold extends ConsumerWidget {
             label: l10n.devicesTab,
           ),
           NavigationDestination(
+            selectedIcon: const Icon(Icons.extension),
+            icon: const Icon(Icons.extension_outlined),
+            label: l10n.pluginsTab,
+          ),
+          NavigationDestination(
             selectedIcon: const Icon(Icons.format_list_bulleted),
             icon: badgeCount > 0
                 ? Badge(
@@ -138,6 +143,11 @@ class AppScaffold extends ConsumerWidget {
         label: Text(l10n.devicesTab),
       ),
       NavigationRailDestination(
+        selectedIcon: const Icon(Icons.extension),
+        icon: const Icon(Icons.extension_outlined),
+        label: Text(l10n.pluginsTab),
+      ),
+      NavigationRailDestination(
         selectedIcon: const Icon(Icons.format_list_bulleted),
         icon: badgeCount > 0
             ? Badge(
@@ -213,8 +223,8 @@ class _WideNavigationRail extends StatelessWidget {
                 backgroundColor: color,
                 groupAlignment: 0,
                 labelType: NavigationRailLabelType.selected,
-                destinations: destinations.take(3).toList(growable: false),
-                selectedIndex: selectedIndex < 3 ? selectedIndex : null,
+                destinations: destinations.take(4).toList(growable: false),
+                selectedIndex: selectedIndex < 4 ? selectedIndex : null,
                 onDestinationSelected: onDestinationSelected,
               ),
             ),
@@ -228,9 +238,9 @@ class _WideNavigationRail extends StatelessWidget {
                   backgroundColor: color,
                   groupAlignment: 0,
                   labelType: NavigationRailLabelType.selected,
-                  destinations: [destinations[3]],
-                  selectedIndex: selectedIndex == 3 ? 0 : null,
-                  onDestinationSelected: (_) => onDestinationSelected(3),
+                  destinations: [destinations[4]],
+                  selectedIndex: selectedIndex == 4 ? 0 : null,
+                  onDestinationSelected: (_) => onDestinationSelected(4),
                 ),
               ),
             ),

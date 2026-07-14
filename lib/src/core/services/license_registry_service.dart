@@ -26,6 +26,14 @@ class LicenseRegistryService {
     ),
     (package: 'Gadgetbridge', asset: 'assets/licenses/gadgetbridge.txt'),
     (package: 'Kazumi', asset: 'assets/licenses/kazumi.txt'),
+    (
+      package: 'opus-decoder / libopus',
+      asset: 'assets/licenses/opus_decoder.txt',
+    ),
+    (
+      package: 'quickjs-emscripten / QuickJS',
+      asset: 'assets/licenses/quickjs_emscripten.txt',
+    ),
   ];
 
   static Future<void> registerThirdPartyLicenses() async {

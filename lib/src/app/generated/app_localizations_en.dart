@@ -21,6 +21,59 @@ class AppLocalizationsEn extends AppLocalizations {
   String get devicesTab => 'Devices';
 
   @override
+  String get pluginsTab => 'Plugins';
+
+  @override
+  String get pluginImport => 'Import plugin';
+
+  @override
+  String get pluginInstalled => 'Installed';
+
+  @override
+  String get pluginMarket => 'Plugin market';
+
+  @override
+  String get pluginMarketUnavailable =>
+      'The plugin market is not available yet';
+
+  @override
+  String get pluginEmpty => 'No plugins installed';
+
+  @override
+  String get pluginSelectHint => 'Select a plugin to view its features';
+
+  @override
+  String get pluginFeatures => 'Features';
+
+  @override
+  String get pluginDetails => 'Details';
+
+  @override
+  String get pluginNoFeatures => 'This plugin has no available features';
+
+  @override
+  String get pluginAuthor => 'Author';
+
+  @override
+  String get pluginVersion => 'Version';
+
+  @override
+  String get pluginApiLevel => 'API level';
+
+  @override
+  String get pluginWebsite => 'Website';
+
+  @override
+  String get pluginPermissions => 'Permissions';
+
+  @override
+  String get pluginUninstallTitle => 'Uninstall plugin';
+
+  @override
+  String get pluginUninstallMessage =>
+      'The plugin\'s data will also be removed';
+
+  @override
   String get settingsTab => 'Settings';
 
   @override

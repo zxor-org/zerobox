@@ -10,6 +10,7 @@ const _commandsWithSubcommands = {
   'account',
   'settings',
   'logs',
+  'plugin',
 };
 
 const _booleanOptions = {

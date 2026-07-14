@@ -64,6 +64,11 @@ endif()
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
 
+# Prefer the corrected public shim when the generated plugin registrant includes
+# quickjs_engine's Linux header.
+target_include_directories(${BINARY_NAME} BEFORE PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/include")
+
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)
 
@@ -80,6 +85,15 @@ set_target_properties(${BINARY_NAME}
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
 include(flutter/generated_plugins.cmake)
+
+# quickjs_engine 0.1.1 omits the Linux export macro from its public header
+if(TARGET quickjs_engine_plugin)
+  target_compile_definitions(quickjs_engine_plugin PRIVATE
+    FLUTTER_PLUGIN_EXPORT=)
+  set_target_properties(quickjs_engine_plugin PROPERTIES
+    C_VISIBILITY_PRESET default
+    CXX_VISIBILITY_PRESET default)
+endif()
 
 # tray_manager currently calls the legacy libayatana app-indicator constructor.
 # Keep the third-party deprecation from polluting otherwise clean app builds.

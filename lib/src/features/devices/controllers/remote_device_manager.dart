@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
@@ -33,6 +32,17 @@ class HostDeviceManager extends DeviceManager {
   }
 
   void _handleEvent(CommandEvent event) {
+    if (event.event == 'device.zeppos.xiaoai.opus') {
+      final raw = event.data['frame'];
+      if (raw is List) {
+        emitXiaoAiOpusFrame(
+          Uint8List.fromList(
+            raw.whereType<num>().map((value) => value.toInt() & 0xff).toList(),
+          ),
+        );
+      }
+      return;
+    }
     if (event.event == 'host.disconnected') {
       if (!_disposed) {
         state = state.copyWith(
@@ -106,6 +116,15 @@ class HostDeviceManager extends DeviceManager {
           : null,
       apps: _modelList(raw['apps'], AppInfo.fromJson),
       watchfaces: _modelList(raw['watchfaces'], WatchfaceInfo.fromJson),
+      zeppOsMessages: _modelList(
+        raw['zeppOsMessages'],
+        ZeppOsMessageRecord.fromJson,
+      ),
+      xiaoAiActive: raw['xiaoAiActive'] == true,
+      xiaoAiFrameCount: (raw['xiaoAiFrameCount'] as num?)?.toInt() ?? 0,
+      xiaoAiCapabilities: raw['xiaoAiCapabilities'] is Map
+          ? (raw['xiaoAiCapabilities'] as Map).cast<String, Object?>()
+          : const {},
       error: raw['error']?.toString(),
     );
   }
@@ -231,6 +250,45 @@ class HostDeviceManager extends DeviceManager {
   }
 
   @override
+  Future<void> sendXiaoAiReply(String text) async {
+    await _execute(
+      ZeroBoxCommand(
+        method: 'device.zeppos.xiaoai.reply',
+        params: {'text': text},
+      ),
+    );
+  }
+
+  @override
+  Future<void> setXiaoAiContinuousCapture(bool enabled) async {
+    await _execute(
+      ZeroBoxCommand(
+        method: 'device.zeppos.xiaoai.continuous',
+        params: {'enabled': enabled},
+      ),
+    );
+  }
+
+  @override
+  Future<void> setXiaoAiEndpoint(int endpoint) async {
+    await _execute(
+      ZeroBoxCommand(
+        method: 'device.zeppos.xiaoai.endpoint',
+        params: {'endpoint': endpoint},
+      ),
+    );
+  }
+
+  @override
+  void clearZeppOsMessages() {
+    unawaited(
+      _execute(
+        const ZeroBoxCommand(method: 'device.zeppos.messages.clear'),
+      ).then((_) => _refreshSnapshot()),
+    );
+  }
+
+  @override
   Future<void> fetchSystemInfo() async {
     await _executeState('device.refresh.system');
   }
@@ -258,6 +316,32 @@ class HostDeviceManager extends DeviceManager {
       ZeroBoxCommand(
         method: 'app.launch',
         params: {'package': app.packageName, if (page.isNotEmpty) 'page': page},
+      ),
+    );
+  }
+
+  @override
+  Future<void> sendInterconnectMessage(
+    String packageName,
+    Uint8List payload,
+  ) async {
+    await _execute(
+      ZeroBoxCommand(
+        method: 'device.interconnect.send',
+        params: {
+          'package': packageName,
+          'payload': payload.toList(growable: false),
+        },
+      ),
+    );
+  }
+
+  @override
+  Future<void> sendRaw(Uint8List payload) async {
+    await _execute(
+      ZeroBoxCommand(
+        method: 'device.raw.send',
+        params: {'payload': payload.toList(growable: false)},
       ),
     );
   }

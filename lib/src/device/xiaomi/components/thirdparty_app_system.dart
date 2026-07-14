@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:zerobox/src/core/logging/logging_service.dart';
 import 'package:zerobox/src/device/core/event_bus.dart';
 import 'package:zerobox/src/device/xiaomi/system/xiaomi_system.dart';
 import 'package:zerobox/src/protocols/generated/xiaomi/wear.pb.dart' as pb;
@@ -14,11 +16,23 @@ class ThirdpartyAppInfo {
 }
 
 class XiaomiThirdpartyAppSystem extends XiaomiPbSystem {
-  Future<void> sendPhoneMessage(
-    ThirdpartyAppInfo app,
-    Uint8List payload,
-  ) async {
+  static final _log = getLogger('XiaomiThirdpartyAppSystem');
+
+  final _connectedApps = <String, ThirdpartyAppInfo>{};
+
+  Future<void> sendPhoneMessage(String packageName, Uint8List payload) async {
+    final app = _connectedApps[packageName];
+    if (app == null) {
+      throw StateError(
+        'Quick app has not established an interconnect session: $packageName',
+      );
+    }
+    _log.info(
+      '[${entity.id}] sending interconnect message to $packageName '
+      '(${payload.length} bytes, fingerprint=${app.fingerprint.length} bytes)',
+    );
     await component.sendPbPacket(_buildThirdpartyAppMsgContent(app, payload));
+    _log.info('[${entity.id}] interconnect message queued for $packageName');
   }
 
   Future<void> launchApp(ThirdpartyAppInfo app, String page) async {
@@ -39,16 +53,43 @@ class XiaomiThirdpartyAppSystem extends XiaomiPbSystem {
   }
 
   void _handleBasicInfo(pb_thirdparty.BasicInfo basicInfo) {
-    component.sendPbPacket(
-      _buildThirdpartyAppSyncStatus(
-        basicInfo,
-        pb_thirdparty.PhoneAppStatus_Status.CONNECTED,
-      ),
+    final packageName = basicInfo.packageName;
+    _connectedApps[packageName] = ThirdpartyAppInfo(
+      packageName: packageName,
+      fingerprint: Uint8List.fromList(basicInfo.fingerprint),
+    );
+    _log.info(
+      '[${entity.id}] interconnect session opened by $packageName '
+      '(fingerprint=${basicInfo.fingerprint.length} bytes)',
+    );
+    unawaited(
+      component
+          .sendPbPacket(
+            _buildThirdpartyAppSyncStatus(
+              basicInfo,
+              pb_thirdparty.PhoneAppStatus_Status.CONNECTED,
+            ),
+          )
+          .then(
+            (_) => _log.info(
+              '[${entity.id}] confirmed interconnect session for $packageName',
+            ),
+            onError: (Object error, StackTrace stackTrace) => _log.warning(
+              '[${entity.id}] failed to confirm interconnect session for '
+              '$packageName',
+              error,
+              stackTrace,
+            ),
+          ),
     );
   }
 
   void _handleMessageContent(pb_thirdparty.MessageContent message) {
     final pkgName = message.basicInfo.packageName;
+    _log.info(
+      '[${entity.id}] received interconnect message from $pkgName '
+      '(${message.content.length} bytes)',
+    );
     entity.emit(
       InterconnectMessage(
         deviceId: entity.id,
