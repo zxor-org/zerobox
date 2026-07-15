@@ -188,7 +188,9 @@ class LogWindowChannel {
                            window, nullptr, GetModuleHandle(nullptr), nullptr);
     clear_ = CreateWindowW(L"BUTTON", L"清空",
                            WS_CHILD | WS_VISIBLE | BS_FLAT, 838, 12, 104, 34,
-                           window, reinterpret_cast<HMENU>(kClearButtonId),
+                           window,
+                           reinterpret_cast<HMENU>(
+                               static_cast<INT_PTR>(kClearButtonId)),
                            GetModuleHandle(nullptr), nullptr);
     edit_ = CreateWindowExW(
         WS_EX_CLIENTEDGE, L"EDIT", L"",
