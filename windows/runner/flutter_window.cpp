@@ -5,6 +5,7 @@
 #include "classic_spp_channel.h"
 #include "flutter/generated_plugin_registrant.h"
 #include "mi_account_2fa_channel.h"
+#include "log_window_channel.h"
 #include "zeppos_app_settings_channel.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project,
@@ -34,6 +35,7 @@ bool FlutterWindow::OnCreate() {
                                     GetHandle());
   RegisterZeppOsAppSettingsChannel(flutter_controller_->engine()->messenger(),
                                    GetHandle());
+  RegisterLogWindowChannel(flutter_controller_->engine()->messenger());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   if (show_on_first_frame_) {

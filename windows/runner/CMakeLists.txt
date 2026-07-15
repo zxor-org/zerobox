@@ -9,6 +9,7 @@ project(runner LANGUAGES CXX)
 add_executable(${BINARY_NAME} WIN32
   "classic_spp_channel.cpp"
   "flutter_window.cpp"
+  "log_window_channel.cpp"
   "main.cpp"
   "mi_account_2fa_channel.cpp"
   "zeppos_app_settings_channel.cpp"

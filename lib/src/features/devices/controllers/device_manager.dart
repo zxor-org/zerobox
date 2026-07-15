@@ -1013,7 +1013,8 @@ class LocalDeviceManager extends DeviceManager {
             if (endpoint.connectType != ConnectType.ble) return false;
             final macMatches =
                 expected.isNotEmpty &&
-                endpoint.matchesXiaomiAdvertisedMac(expected);
+                (endpoint.matchesAddress(expected) ||
+                    endpoint.matchesXiaomiAdvertisedMac(expected));
             _log.info(
               'Band 7 Pro scan: name="${endpoint.name}" '
               'id=${endpoint.address} rssi=${endpoint.rssi ?? 'unknown'} '
@@ -1031,10 +1032,7 @@ class LocalDeviceManager extends DeviceManager {
           .timeout(const Duration(seconds: 30));
       await _bluetooth.requestPermissions();
       await _bluetooth.startScan(
-        BluetoothScanOptions.ble(
-          timeout: const Duration(seconds: 30),
-          serviceUuids: const [XiaomiBleV1Session.serviceUuid],
-        ),
+        BluetoothScanOptions.ble(timeout: const Duration(seconds: 30)),
       );
       final endpoint = await selectedDevice;
       _log.info(

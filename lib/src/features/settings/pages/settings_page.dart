@@ -259,7 +259,9 @@ class SettingsPage extends ConsumerWidget {
                 title: Text(l10n.settingsAutoReconnectTitle),
                 description: Text(l10n.settingsAutoReconnectDesc),
               ),
-              if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS)
+              if (!kIsWeb &&
+                  (defaultTargetPlatform == TargetPlatform.macOS ||
+                      defaultTargetPlatform == TargetPlatform.windows))
                 SettingsTile.switchTile(
                   onToggle: (value) async {
                     await ref

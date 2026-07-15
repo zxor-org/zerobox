@@ -21,6 +21,17 @@ class BluetoothEndpoint {
   final List<String> serviceUuids;
   final Map<String, Uint8List> serviceData;
 
+  bool matchesAddress(String value) {
+    String normalize(String address) => address
+        .replaceAll(':', '')
+        .replaceAll('-', '')
+        .replaceAll('{', '')
+        .replaceAll('}', '')
+        .toLowerCase();
+    final expected = normalize(value);
+    return expected.isNotEmpty && normalize(address) == expected;
+  }
+
   bool matchesXiaomiAdvertisedMac(String address) {
     final expected = address
         .replaceAll(':', '')

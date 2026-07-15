@@ -254,16 +254,25 @@ class _DeviceSwitchPageState extends ConsumerState<DeviceSwitchPage> {
     if (address == null || !context.mounted) return;
 
     final manager = ref.read(deviceManagerProvider.notifier);
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
-      // CoreBluetooth hides BLE MAC addresses. The entered address is useful
-      // to the tester, but macOS must first discover the FE95 peripheral and
-      // connect with its generated UUID.
-      await manager.selectAndConnectXiaomiBand7Pro(
-        authKey.trim(),
-        expectedAddress: address.trim(),
-      );
-    } else {
-      await manager.connectXiaomiBand7Pro(address.trim(), authKey.trim());
+    try {
+      if (!kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.macOS ||
+              defaultTargetPlatform == TargetPlatform.windows ||
+              defaultTargetPlatform == TargetPlatform.linux)) {
+        // Desktop BLE backends require a peripheral discovered by the current
+        // process. macOS exposes a CoreBluetooth UUID, while Windows/Linux may
+        // expose a normalized address; in both cases connect with the scan ID.
+        await manager.selectAndConnectXiaomiBand7Pro(
+          authKey.trim(),
+          expectedAddress: address.trim(),
+        );
+      } else {
+        await manager.connectXiaomiBand7Pro(address.trim(), authKey.trim());
+      }
+    } catch (_) {
+      // DeviceManager records the full error and publishes it in state. The
+      // page listener presents that error; do not leak it as an unhandled
+      // asynchronous exception from the button callback.
     }
   }
 
