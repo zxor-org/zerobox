@@ -383,6 +383,16 @@ class HostDeviceManager extends DeviceManager {
   }
 
   @override
+  Future<Uint8List> requestZeppOsScreenshot() async {
+    final result = await _execute(
+      const ZeroBoxCommand(method: 'device.zeppos.screenshot'),
+    );
+    return Uint8List.fromList(
+      (result.value as List).map((value) => (value as num).toInt()).toList(),
+    );
+  }
+
+  @override
   Future<List<int>> listZeppOsAppSides() async {
     final result = await _execute(
       const ZeroBoxCommand(method: 'device.zeppos.appside.list'),

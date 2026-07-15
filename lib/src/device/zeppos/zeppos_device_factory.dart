@@ -14,6 +14,7 @@ import 'package:zerobox/src/device/zeppos/systems/zeppos_battery_system.dart';
 import 'package:zerobox/src/device/zeppos/systems/zeppos_device_info_system.dart';
 import 'package:zerobox/src/device/zeppos/systems/zeppos_find_device_system.dart';
 import 'package:zerobox/src/device/zeppos/systems/zeppos_services_system.dart';
+import 'package:zerobox/src/device/zeppos/systems/zeppos_screenshot_system.dart';
 import 'package:zerobox/src/device/zeppos/systems/zeppos_xiao_ai_system.dart';
 import 'package:zerobox/src/device/zeppos/zeppos_device_component.dart';
 
@@ -49,6 +50,7 @@ class ZeppOsDeviceFactory implements DeviceEntityFactory {
     final servicesSystem = ZeppOsServicesSystem();
     final findDeviceSystem = ZeppOsFindDeviceSystem();
     final xiaoAiSystem = ZeppOsXiaoAiSystem();
+    final screenshotSystem = ZeppOsScreenshotSystem();
     component.onPayload = (payload) {
       entity.emit(
         ZeppOsEndpointMessageReceived(
@@ -61,6 +63,7 @@ class ZeppOsDeviceFactory implements DeviceEntityFactory {
         authSystem.handlePayload(payload.payload);
       } else if (payload.endpoint == ZeppOsAppsSystem.endpoint) {
         appsSystem.handlePayload(payload.payload);
+        screenshotSystem.handlePayload(payload.endpoint, payload.payload);
         unawaited(
           appSideSystem.handlePayload(payload.payload).catchError((
             Object error,
@@ -78,6 +81,8 @@ class ZeppOsDeviceFactory implements DeviceEntityFactory {
       } else if (payload.endpoint == ZeppOsXiaoAiSystem.xiaoAiEndpoint ||
           payload.endpoint == ZeppOsXiaoAiSystem.zeppFlowEndpoint) {
         xiaoAiSystem.handlePayload(payload.endpoint, payload.payload);
+      } else if (payload.endpoint == ZeppOsScreenshotSystem.fileTransferEndpoint) {
+        screenshotSystem.handlePayload(payload.endpoint, payload.payload);
       }
     };
     entity.registerSystem(authSystem);
@@ -89,6 +94,7 @@ class ZeppOsDeviceFactory implements DeviceEntityFactory {
     entity.registerSystem(servicesSystem);
     entity.registerSystem(findDeviceSystem);
     entity.registerSystem(xiaoAiSystem);
+    entity.registerSystem(screenshotSystem);
 
     return entity;
   }

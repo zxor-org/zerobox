@@ -49,7 +49,7 @@ void main() {
       transport.dataWrites.expand((value) => value),
       List.generate(10, (index) => index),
     );
-    expect(transport.dataWriteModes, everyElement(isTrue));
+    expect(transport.dataWriteModes, everyElement(isFalse));
     expect(progress.last, 1);
   });
 }

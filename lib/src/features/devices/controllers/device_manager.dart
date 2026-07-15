@@ -36,6 +36,7 @@ import 'package:zerobox/src/device/zeppos/systems/zeppos_battery_system.dart';
 import 'package:zerobox/src/device/zeppos/systems/zeppos_device_info_system.dart';
 import 'package:zerobox/src/device/zeppos/systems/zeppos_find_device_system.dart';
 import 'package:zerobox/src/device/zeppos/systems/zeppos_services_system.dart';
+import 'package:zerobox/src/device/zeppos/systems/zeppos_screenshot_system.dart';
 import 'package:zerobox/src/device/zeppos/systems/zeppos_xiao_ai_system.dart';
 import 'package:zerobox/src/device/zeppos/zeppos_device_catalog.dart';
 import 'package:zerobox/src/device/zeppos/zeppos_device_factory.dart';
@@ -231,6 +232,7 @@ abstract class DeviceManager extends Notifier<DeviceManagerState> {
   Future<void> sendXiaoAiReply(String text);
   Future<void> setXiaoAiContinuousCapture(bool enabled);
   Future<void> setXiaoAiEndpoint(int endpoint);
+  Future<Uint8List> requestZeppOsScreenshot();
   void clearZeppOsMessages();
   Future<List<int>> listZeppOsAppSides();
   Future<List<int>> observedZeppOsAppSideIds();
@@ -1374,6 +1376,17 @@ class LocalDeviceManager extends DeviceManager {
   @override
   Future<void> sendZeppOsAppSideMessage(int appId, Uint8List payload) =>
       _appSideSystem().sendMessageToWatch(appId, payload);
+
+  @override
+  Future<Uint8List> requestZeppOsScreenshot() async {
+    final entity = _currentEntity;
+    if (entity == null || state.protocolState != ProtocolState.ready) {
+      throw ProtocolException('Device not ready');
+    }
+    final system = entity.system<ZeppOsScreenshotSystem>();
+    if (system == null) throw UnsupportedError('Screenshot service unavailable');
+    return system.requestScreenshot();
+  }
 
   @override
   Future<void> fetchSystemInfo() async {

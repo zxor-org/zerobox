@@ -162,6 +162,7 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
       command.params['finding'] == true,
     ),
     'device.zeppos.messages.clear' => Future.value(_clearZeppOsMessages()),
+    'device.zeppos.screenshot' => _manager.requestZeppOsScreenshot(),
     'device.zeppos.appside.list' => _manager.listZeppOsAppSides(),
     'device.zeppos.appside.observed' => _manager.observedZeppOsAppSideIds(),
     'device.zeppos.appside.sessions' => _appSideSessions(),

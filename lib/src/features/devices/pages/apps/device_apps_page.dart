@@ -8,7 +8,7 @@ import 'package:zerobox/src/core/constants/style_constants.dart';
 import 'package:zerobox/src/core/models/bt_models.dart';
 import 'package:zerobox/src/device/zeppos/app_side/zeppos_app_side_storage.dart';
 import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
-import 'package:zerobox/src/features/devices/services/zeppos_app_settings_service.dart';
+import 'package:zerobox/src/features/devices/pages/more/zeppos_setting_viewer_page.dart';
 import 'package:zerobox/src/protocols/common/device_protocol.dart' as proto;
 
 class DeviceAppsPage extends ConsumerStatefulWidget {
@@ -144,8 +144,9 @@ class _AppActions extends StatelessWidget {
                     await manager.uninstallApp(app);
                     onRefresh();
                   case 'settings':
-                    await ZeppOsAppSettingsService.instance.open(
-                      appId!,
+                    await showZeppOsAppSettings(
+                      context,
+                      appId: appId!,
                       title: app.appName,
                     );
                 }

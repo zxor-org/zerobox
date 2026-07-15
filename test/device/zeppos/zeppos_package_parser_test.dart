@@ -165,6 +165,23 @@ void main() {
     expect(package.type, ZeppOsPackageType.firmware);
     expect(package.firmwareType, 0x00);
   });
+
+  test('rejects an app package without a valid appId', () {
+    final bytes = _zip({
+      'app.json': utf8.encode(
+        jsonEncode({
+          'app': {
+            'appId': 'not-an-id',
+            'appName': 'Unsafe App',
+            'appType': 'app',
+            'version': {'name': '1.0.0'},
+          },
+        }),
+      ),
+    });
+
+    expect(() => parser.parse(bytes), throwsFormatException);
+  });
 }
 
 Uint8List _appZip(String name) => _zip({

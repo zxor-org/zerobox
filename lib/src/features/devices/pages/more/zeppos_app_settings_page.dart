@@ -7,6 +7,7 @@ import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
 import 'package:zerobox/src/device/zeppos/app_side/zeppos_app_side_storage.dart';
 import 'package:zerobox/src/features/devices/services/zeppos_app_settings_service.dart';
+import 'package:zerobox/src/features/devices/pages/more/zeppos_setting_viewer_page.dart';
 
 class ZeppOsAppSettingsPage extends StatefulWidget {
   const ZeppOsAppSettingsPage({super.key});
@@ -68,8 +69,9 @@ class _ZeppOsAppSettingsPageState extends State<ZeppOsAppSettingsPage> {
 
   Future<void> _open(_Item item) async {
     try {
-      await ZeppOsAppSettingsService.instance.open(
-        item.appId,
+      await showZeppOsAppSettings(
+        context,
+        appId: item.appId,
         title: item.name ?? _formatId(item.appId),
       );
     } catch (error) {

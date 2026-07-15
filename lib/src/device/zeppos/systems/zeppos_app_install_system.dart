@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:zerobox/src/device/core/ble_requirement.dart';
+import 'package:zerobox/src/device/core/ble_transport.dart';
 import 'package:zerobox/src/device/core/system.dart';
 import 'package:zerobox/src/device/core/transport.dart';
 import 'package:zerobox/src/device/zeppos/install/zeppos_package_parser.dart';
@@ -45,7 +46,22 @@ class ZeppOsAppInstallSystem extends System {
       );
     }
     _installing = true;
+    final bleTransport = transport is BleTransport ? transport : null;
     try {
+      if (bleTransport != null) {
+        // Gadgetbridge requests 247 after authentication when high MTU is
+        // enabled, but does not require it for application installation.
+        // Some devices (including some Mi Band 7 stacks) remain at MTU 23.
+        await bleTransport.requestMtu(247);
+      }
+      bleTransport?.beginExclusiveCharacteristicWrites([
+        _control.characteristicUuid,
+        _data.characteristicUuid,
+      ]);
+      // Gadgetbridge disables the regular Zepp OS 2021 notification stream
+      // for the entire firmware operation. Otherwise app/service traffic can
+      // interrupt the firmware-control and firmware-data transaction.
+      await bleTransport?.suspendProtocolNotifications();
       _controlSubscription ??= await transport.subscribeToCharacteristic(
         _control,
         (data) => _notifications.add(Uint8List.fromList(data)),
@@ -102,7 +118,11 @@ class ZeppOsAppInstallSystem extends System {
           await transport.sendToCharacteristic(
             Uint8List.sublistView(package.bytes, packetOffset, packetEnd),
             _data,
-            withResponse: true,
+            // Gadgetbridge preserves the firmware-data characteristic's
+            // native write type. Forcing acknowledged writes here makes
+            // dual-mode 0x1532 characteristics use ATT write requests,
+            // which can stall long transfers until the watch watchdog resets.
+            withResponse: false,
           );
         }
         final progress = await progressFuture;
@@ -134,7 +154,12 @@ class ZeppOsAppInstallSystem extends System {
       );
       onProgress?.call(1);
     } finally {
-      _installing = false;
+      try {
+        await bleTransport?.resumeProtocolNotifications();
+      } finally {
+        bleTransport?.endExclusiveCharacteristicWrites();
+        _installing = false;
+      }
     }
   }
 
@@ -153,7 +178,9 @@ class ZeppOsAppInstallSystem extends System {
         (_startTransfer, 0x47) => 'Not enough free space on the Zepp OS device',
         (_sendInfo, 0x22) => 'Zepp OS device battery is too low',
         _ =>
-          'Zepp OS install command 0x${command.toRadixString(16)} failed: $status',
+          'Zepp OS install ${_commandName(command)} '
+          '(0x${command.toRadixString(16)}) was rejected by the device: '
+          'status 0x${status.toRadixString(16)}',
       };
       throw StateError(message);
     }
@@ -174,6 +201,15 @@ class ZeppOsAppInstallSystem extends System {
     bytes[offset] = value & 0xff;
     bytes[offset + 1] = (value >> 8) & 0xff;
   }
+
+  static String _commandName(int command) => switch (command) {
+    _requestParameters => 'parameter request',
+    _sendInfo => 'package metadata',
+    _startTransfer => 'transfer start',
+    _completeTransfer => 'transfer completion',
+    _finalize => 'package finalization',
+    _ => 'command',
+  };
 
   static void _writeUint32Le(Uint8List bytes, int offset, int value) {
     bytes[offset] = value & 0xff;

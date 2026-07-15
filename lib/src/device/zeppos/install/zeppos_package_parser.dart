@@ -149,11 +149,17 @@ class ZeppOsPackageParser {
           'Unsupported Zepp OS appType: $value',
         ),
       };
+      final appId = _appId(app['appId']);
+      if (appId == null) {
+        throw const FormatException(
+          'Zepp OS app package has a missing or invalid appId',
+        );
+      }
       return ZeppOsInstallPackage(
         type: type,
         bytes: bytes,
         crc32: _crc32(bytes),
-        appId: _appId(app['appId']),
+        appId: appId,
         name: app['appName']?.toString(),
         version: (app['version'] as Map?)?['name']?.toString(),
         appSideJs: side.appSideJs,
@@ -224,13 +230,17 @@ class ZeppOsPackageParser {
   }
 
   static int? _appId(Object? value) {
-    if (value is num) return value.toInt();
+    if (value is num) {
+      final id = value.toInt();
+      return id >= 0 && id <= 0xffffffff ? id : null;
+    }
     if (value is! String) return null;
     final normalized = value.trim().toLowerCase();
-    return int.tryParse(
+    final id = int.tryParse(
       normalized.startsWith('0x') ? normalized.substring(2) : normalized,
       radix: normalized.startsWith('0x') ? 16 : 10,
     );
+    return id != null && id >= 0 && id <= 0xffffffff ? id : null;
   }
 
   static Uint8List? _file(Archive archive, List<String> names) {

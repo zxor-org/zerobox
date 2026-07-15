@@ -48,6 +48,7 @@ class ZeppOsDeviceComponent {
     int endpoint,
     Uint8List payload, {
     bool encrypted = false,
+    int? maxWriteLength,
   }) async {
     _writeHandle = (_writeHandle + 1) & 0xff;
     final handle = _writeHandle;
@@ -57,7 +58,10 @@ class ZeppOsDeviceComponent {
     while (offset < wirePayload.length ||
         (wirePayload.isEmpty && count == 0)) {
       final first = count == 0;
-      final maxPayload = _maxChunkPayload(first: first);
+      final maxPayload = _maxChunkPayload(
+        first: first,
+        maxWriteLength: maxWriteLength,
+      );
       final remaining = wirePayload.length - offset;
       final take = wirePayload.isEmpty
           ? 0
@@ -219,8 +223,9 @@ class ZeppOsDeviceComponent {
     }
   }
 
-  int _maxChunkPayload({required bool first}) {
-    return 20 - (first ? 11 : 5);
+  int _maxChunkPayload({required bool first, int? maxWriteLength}) {
+    final packetLength = (maxWriteLength ?? 20).clamp(20, 512).toInt();
+    return packetLength - (first ? 11 : 5);
   }
 
   Uint8List _encryptPayload(Uint8List payload, int handle) {

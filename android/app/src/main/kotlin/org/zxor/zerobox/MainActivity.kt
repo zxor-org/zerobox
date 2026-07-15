@@ -24,6 +24,7 @@ import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -57,7 +58,7 @@ class MainActivity : FlutterActivity() {
     private val connectGeneration = AtomicLong(0)
     private val backgroundTaskIds = mutableSetOf<Int>()
     private var nextBackgroundTaskId = 0
-    private var zeppSettingsDialog: Dialog? = null
+    private var zeppSettingsContainer: ViewGroup? = null
     private var zeppSettingsWebView: WebView? = null
     private var zeppSettingsAppId: Long? = null
     private var zeppSettingsChannel: MethodChannel? = null
@@ -188,6 +189,10 @@ class MainActivity : FlutterActivity() {
             channel.setMethodCallHandler { call, result ->
                 when (call.method) {
                     "open" -> openZeppSettings(call, result)
+                    "close" -> {
+                        closeZeppSettings(notify = false)
+                        result.success(null)
+                    }
                     "settingsChanged" -> {
                         val appId = call.argument<Number>("appId")?.toLong()
                         val settingsJson = call.argument<String>("settingsJson")
@@ -211,14 +216,19 @@ class MainActivity : FlutterActivity() {
     private fun openZeppSettings(call: MethodCall, result: MethodChannel.Result) {
         val appId = call.argument<Number>("appId")?.toLong()
         val html = call.argument<String>("html")
+        val contentTop = call.argument<Number>("contentTop")?.toFloat() ?: 0f
         if (appId == null || html == null) {
             result.error("INVALID_ARGUMENT", "appId and html are required", null)
             return
         }
         mainHandler.post {
-            zeppSettingsDialog?.dismiss()
-            val dialog = Dialog(this)
-            dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+            closeZeppSettings(notify = false)
+            val density = resources.displayMetrics.density
+            val container = FrameLayout(this).apply {
+                isClickable = true
+                isFocusable = true
+                elevation = 1f * density
+            }
             val webView = WebView(this)
             webView.settings.javaScriptEnabled = true
             webView.settings.domStorageEnabled = false
@@ -242,31 +252,42 @@ class MainActivity : FlutterActivity() {
                     mainHandler.post { zeppSettingsChannel?.invokeMethod(type, args) }
                 }
             }, "ZeppSettingsBridge")
-            dialog.setContentView(
+            container.addView(
                 webView,
-                ViewGroup.LayoutParams(
+                FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT,
                 ),
             )
-            dialog.setOnDismissListener {
-                zeppSettingsChannel?.invokeMethod("closed", mapOf("appId" to appId))
-                webView.removeJavascriptInterface("ZeppSettingsBridge")
-                webView.stopLoading()
-                webView.loadUrl("about:blank")
-                webView.destroy()
-                zeppSettingsDialog = null
-                zeppSettingsWebView = null
-                zeppSettingsAppId = null
-            }
-            zeppSettingsDialog = dialog
+            findViewById<ViewGroup>(android.R.id.content).addView(
+                container,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                ).apply { topMargin = (contentTop * density).toInt() },
+            )
+            zeppSettingsContainer = container
             zeppSettingsWebView = webView
             zeppSettingsAppId = appId
             webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
-            dialog.show()
-            dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             result.success(null)
+        }
+    }
+
+    private fun closeZeppSettings(notify: Boolean = true) {
+        val appId = zeppSettingsAppId
+        val webView = zeppSettingsWebView
+        val container = zeppSettingsContainer
+        zeppSettingsContainer = null
+        zeppSettingsWebView = null
+        zeppSettingsAppId = null
+        (container?.parent as? ViewGroup)?.removeView(container)
+        webView?.removeJavascriptInterface("ZeppSettingsBridge")
+        webView?.stopLoading()
+        webView?.loadUrl("about:blank")
+        webView?.destroy()
+        if (notify && appId != null) {
+            zeppSettingsChannel?.invokeMethod("closed", mapOf("appId" to appId))
         }
     }
 
@@ -839,6 +860,7 @@ class MainActivity : FlutterActivity() {
     )
 
     override fun onDestroy() {
+        closeZeppSettings(notify = false)
         stopSppScan()
         sendExecutor.shutdownNow()
         super.onDestroy()
