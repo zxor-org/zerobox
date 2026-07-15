@@ -217,8 +217,12 @@ class _XiaomiBleV1Channel {
       );
     }
 
-    // Gadgetbridge always chunks plaintext authentication messages.
-    final shouldChunk = !encrypted || bytes.length + 6 > _maxWriteSize;
+    // XiaomiCharacteristicV1 bases chunking on the characteristic being an
+    // encrypted channel, not on whether keys are initialized for this packet.
+    // The plaintext nonce/auth handshake therefore uses a single command with
+    // encryption marker 2. Chunking it is ACKed by the watch but ignored.
+    final headerSize = encrypted ? 6 : 4;
+    final shouldChunk = bytes.length + headerSize > _maxWriteSize;
     if (shouldChunk) {
       if (encrypted) {
         final indexed = BytesBuilder()
@@ -258,11 +262,13 @@ class _XiaomiBleV1Channel {
     }
 
     _ack = Completer<int>();
-    final packet = BytesBuilder()
-      ..add(const [0, 0, 2, 1])
-      ..addByte(encryptedIndex & 0xff)
-      ..addByte((encryptedIndex >> 8) & 0xff)
-      ..add(bytes);
+    final packet = BytesBuilder()..add([0, 0, 2, encrypted ? 1 : 2]);
+    if (encrypted) {
+      packet
+        ..addByte(encryptedIndex & 0xff)
+        ..addByte((encryptedIndex >> 8) & 0xff);
+    }
+    packet.add(bytes);
     await _write(packet.toBytes());
     final result = await _takeAck();
     if (result != 0) throw StateError('BLE v1 command rejected: $result');
@@ -302,8 +308,6 @@ class _XiaomiBleV1Channel {
       _incomingEncrypted = value[3] == 1;
       _expectedChunks = value[4] | (value[5] << 8);
       _chunks.clear();
-      // Gadgetbridge sends the start ACK twice for compatibility.
-      await _write(Uint8List.fromList(const [0, 0, 1, 1]));
       await _write(Uint8List.fromList(const [0, 0, 1, 1]));
       return;
     }
