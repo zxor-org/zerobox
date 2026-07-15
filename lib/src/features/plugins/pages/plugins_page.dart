@@ -36,6 +36,7 @@ class _PluginsPageState extends ConsumerState<PluginsPage> {
   Object? _marketError;
   final _installing = <String>{};
   String? _selectedPluginId;
+  var _safeMode = false;
 
   @override
   void initState() {
@@ -46,16 +47,20 @@ class _PluginsPageState extends ConsumerState<PluginsPage> {
   Future<void> _load() async {
     if (mounted) setState(() => _loading = true);
     try {
-      final value = await _execute(const ZeroBoxCommand(method: 'plugin.list'));
+      final values = await Future.wait([
+        _execute(const ZeroBoxCommand(method: 'plugin.list')),
+        _execute(const ZeroBoxCommand(method: 'plugin.safeMode.get')),
+      ]);
       if (!mounted) return;
       setState(() {
-        _plugins = (value as List)
+        _plugins = (values[0] as List)
             .whereType<Map>()
             .map((row) => row.cast<String, Object?>())
             .toList(growable: false);
+        _safeMode = (values[1] as Map?)?['enabled'] == true;
         final ids = _plugins.map((plugin) => plugin['id']?.toString()).toSet();
         if (!ids.contains(_selectedPluginId)) {
-          _selectedPluginId = ids.firstOrNull;
+          _selectedPluginId = null;
         }
       });
     } catch (error) {
@@ -68,7 +73,7 @@ class _PluginsPageState extends ConsumerState<PluginsPage> {
   Future<void> _importPlugin() async {
     final picked = await FilePicker.pickFiles(
       type: FileType.custom,
-      allowedExtensions: const ['abp'],
+      allowedExtensions: const ['zbp', 'abp'],
       withData: true,
     );
     if (picked == null || picked.files.isEmpty) return;
@@ -79,9 +84,12 @@ class _PluginsPageState extends ConsumerState<PluginsPage> {
       return;
     }
     try {
-      final package = const AbPluginPackageReader().read(bytes);
+      final package = const PluginPackageReader().read(
+        bytes,
+        fileName: file.name,
+      );
       final updating = _plugins.any(
-        (plugin) => plugin['name']?.toString() == package.manifest.name,
+        (plugin) => plugin['id']?.toString() == package.manifest.id,
       );
       if (!await _confirmPluginInstall(
         name: package.manifest.name,
@@ -240,6 +248,16 @@ class _PluginsPageState extends ConsumerState<PluginsPage> {
   String _marketPluginKey(StorePlugin plugin) =>
       '${plugin.repositoryUrl}|${plugin.folder}';
 
+  Future<void> _exitSafeMode() async {
+    await _execute(
+      const ZeroBoxCommand(
+        method: 'plugin.safeMode.set',
+        params: {'enabled': false},
+      ),
+    );
+    if (mounted) setState(() => _safeMode = false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -326,29 +344,39 @@ class _PluginsPageState extends ConsumerState<PluginsPage> {
             padding: const EdgeInsets.symmetric(
               horizontal: StyleConstants.pagePadding,
             ),
-            child: Row(
+            child: Column(
               children: [
-                if (wide)
-                  SizedBox(width: 360, child: catalog)
-                else
-                  Expanded(child: catalog),
-                if (wide) ...[
-                  const SizedBox(width: 24),
-                  Expanded(
-                    child: _selectedPluginId == null
-                        ? _PluginSelectionPlaceholder(
-                            text: l10n.pluginSelectHint,
-                          )
-                        : PluginDetailPage(
-                            key: ValueKey(_selectedPluginId),
-                            pluginId: _selectedPluginId!,
-                            embedded: true,
-                            onClose: () =>
-                                setState(() => _selectedPluginId = null),
-                            onRemoved: _load,
-                          ),
-                  ),
+                if (_safeMode) ...[
+                  _PluginSafeModeBanner(onExit: _exitSafeMode),
+                  const SizedBox(height: 12),
                 ],
+                Expanded(
+                  child: Row(
+                    children: [
+                      if (wide)
+                        SizedBox(width: 360, child: catalog)
+                      else
+                        Expanded(child: catalog),
+                      if (wide) ...[
+                        const SizedBox(width: 24),
+                        Expanded(
+                          child: _selectedPluginId == null
+                              ? _PluginSelectionPlaceholder(
+                                  text: l10n.pluginSelectHint,
+                                )
+                              : PluginDetailPage(
+                                  key: ValueKey(_selectedPluginId),
+                                  pluginId: _selectedPluginId!,
+                                  embedded: true,
+                                  onClose: () =>
+                                      setState(() => _selectedPluginId = null),
+                                  onRemoved: _load,
+                                ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
               ],
             ),
           );
@@ -369,6 +397,43 @@ class _PluginsPageState extends ConsumerState<PluginsPage> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(error.toString())));
+  }
+}
+
+class _PluginSafeModeBanner extends StatelessWidget {
+  const _PluginSafeModeBanner({required this.onExit});
+
+  final VoidCallback onExit;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final colors = Theme.of(context).colorScheme;
+    return ColoredBox(
+      color: colors.secondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            Icon(Icons.shield_outlined, color: colors.onSecondaryContainer),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    l10n.pluginSafeModeTitle,
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  Text(l10n.pluginSafeModeDescription),
+                ],
+              ),
+            ),
+            TextButton(onPressed: onExit, child: Text(l10n.pluginSafeModeExit)),
+          ],
+        ),
+      ),
+    );
   }
 }
 

@@ -8,6 +8,7 @@ import 'package:zerobox/src/app/theme/system_accent_color.dart';
 import 'package:zerobox/src/app/generated/app_localizations.dart';
 import 'package:zerobox/src/core/providers/theme_locale_providers.dart';
 import 'package:zerobox/src/features/devices/widgets/device_deep_link_handler.dart';
+import 'package:zerobox/src/features/plugins/widgets/plugin_host_request_handler.dart';
 
 final _desktopAccentColorProvider = FutureProvider<Color?>((ref) {
   final source = ref.watch(
@@ -55,8 +56,10 @@ class ZeroBoxApp extends ConsumerWidget {
           supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: router,
           builder: (context, child) => DesktopWindowHost(
-            child: DeviceDeepLinkHandler(
-              child: child ?? const SizedBox.shrink(),
+            child: PluginHostRequestHandler(
+              child: DeviceDeepLinkHandler(
+                child: child ?? const SizedBox.shrink(),
+              ),
             ),
           ),
         );

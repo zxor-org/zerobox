@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,7 +9,6 @@ import 'package:zerobox/src/app/widgets/page_container.dart';
 import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
 import 'package:zerobox/src/commands/command_protocol.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
-import 'package:zerobox/src/core/logging/logging_service.dart';
 import 'package:zerobox/src/host/application_host_provider.dart';
 import 'package:zerobox/src/features/resources/widgets/community_html_content.dart';
 
@@ -36,10 +34,10 @@ class PluginDetailPage extends ConsumerStatefulWidget {
 
 class _PluginDetailPageState extends ConsumerState<PluginDetailPage>
     with SingleTickerProviderStateMixin {
-  static final _log = getLogger('PluginDetailPage');
-
   late final TabController _tabs;
   StreamSubscription<CommandEvent>? _events;
+  late final ZeroBoxCommandBus _host;
+  Future<void>? _loadFuture;
   Map<String, Object?>? _plugin;
   List<Map<String, Object?>> _nodes = const [];
   Object? _error;
@@ -48,16 +46,28 @@ class _PluginDetailPageState extends ConsumerState<PluginDetailPage>
   void initState() {
     super.initState();
     _tabs = TabController(length: 2, vsync: this);
-    final host = ref.read(applicationHostProvider);
-    _events = host.events.listen(_handleEvent);
-    _load();
+    _host = ref.read(applicationHostProvider);
+    _events = _host.events.listen(_handleEvent);
+    _loadFuture = _load();
   }
 
   @override
   void dispose() {
     _events?.cancel();
     _tabs.dispose();
+    unawaited(_closeAfterLoad());
     super.dispose();
+  }
+
+  Future<void> _closeAfterLoad() async {
+    try {
+      await _loadFuture;
+    } catch (_) {
+      // A failed open does not leave a running plugin to close.
+    }
+    await _host.execute(
+      ZeroBoxCommand(method: 'plugin.close', params: {'id': widget.pluginId}),
+    );
   }
 
   Future<void> _load() async {
@@ -96,59 +106,6 @@ class _PluginDetailPageState extends ConsumerState<PluginDetailPage>
         setState(() => _nodes = nodes);
       }
       return;
-    }
-    if (event.event != 'plugin.hostRequest' ||
-        event.data['pluginId']?.toString() != widget.pluginId) {
-      return;
-    }
-    switch (event.data['type']?.toString()) {
-      case 'pickFile':
-        _log.info(
-          'received file picker request ${event.data['requestId']} '
-          'for ${widget.pluginId}',
-        );
-        unawaited(_answerFileRequest(event.data));
-      case 'openUrl':
-        final uri = Uri.tryParse(event.data['url']?.toString() ?? '');
-        if (uri != null) unawaited(launchUrl(uri));
-    }
-  }
-
-  Future<void> _answerFileRequest(Map<String, Object?> request) async {
-    final requestId = request['requestId']?.toString() ?? '';
-    try {
-      _log.info('opening file picker for request $requestId');
-      final result = await FilePicker.pickFiles(withData: true);
-      final file = result?.files.firstOrNull;
-      _log.info(
-        'file picker request $requestId finished '
-        '(cancelled=${file?.bytes == null})',
-      );
-      await _execute(
-        ZeroBoxCommand(
-          method: 'plugin.host.respond',
-          params: {
-            'requestId': requestId,
-            'response': file?.bytes == null
-                ? const {'cancelled': true}
-                : {
-                    'name': file!.name,
-                    'bytes': file.bytes!.toList(growable: false),
-                  },
-          },
-        ),
-      );
-    } catch (error, stackTrace) {
-      _log.warning('file picker request $requestId failed', error, stackTrace);
-      await _execute(
-        ZeroBoxCommand(
-          method: 'plugin.host.respond',
-          params: {
-            'requestId': requestId,
-            'response': {'cancelled': true, 'error': error.toString()},
-          },
-        ),
-      );
     }
   }
 
@@ -259,7 +216,7 @@ class _PluginDetailPageState extends ConsumerState<PluginDetailPage>
   }
 
   Future<Object?> _execute(ZeroBoxCommand command) async {
-    final result = await ref.read(applicationHostProvider).execute(command);
+    final result = await _host.execute(command);
     if (!result.ok) {
       throw StateError('${result.error!.code}: ${result.error!.message}');
     }

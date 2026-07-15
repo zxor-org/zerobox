@@ -47,6 +47,7 @@ final class WasmScope {
   Future<ScopedWasmInstance> instantiateAsset(
     String assetPath, {
     WasmInstanceConfigurator? configure,
+    WasiConfig? wasiConfig,
   }) async {
     _ensureActive();
     final data = await rootBundle.load(assetPath);
@@ -54,6 +55,7 @@ final class WasmScope {
       data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
       cacheKey: 'asset:$assetPath',
       configure: configure,
+      wasiConfig: wasiConfig,
     );
   }
 
@@ -61,12 +63,13 @@ final class WasmScope {
     Uint8List bytes, {
     String? cacheKey,
     WasmInstanceConfigurator? configure,
+    WasiConfig? wasiConfig,
   }) async {
     _ensureActive();
     final module = await _runtime._compile(bytes, cacheKey: cacheKey);
     _ensureActive();
 
-    final builder = module.builder();
+    final builder = module.builder(wasiConfig: wasiConfig);
     configure?.call(builder);
     final instance = await builder.build();
     if (_disposed) {
@@ -110,6 +113,11 @@ final class ScopedWasmInstance {
     return function;
   }
 
+  WasmFunction? functionOrNull(String name) {
+    _ensureActive();
+    return _instance.getFunction(name);
+  }
+
   WasmMemory memory(String name) {
     _ensureActive();
     final memory = _instance.getMemory(name);
@@ -117,6 +125,10 @@ final class ScopedWasmInstance {
       throw StateError('WASM memory "$name" is not exported');
     }
     return memory;
+  }
+
+  List<Object?> call(String name, [List<Object?> arguments = const []]) {
+    return function(name).call(arguments);
   }
 
   void dispose() {

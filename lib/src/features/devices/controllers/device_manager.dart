@@ -199,10 +199,12 @@ abstract class DeviceManager extends Notifier<DeviceManagerState> {
   final _xiaoAiOpusFrames = StreamController<Uint8List>.broadcast();
   final _interconnectMessages =
       StreamController<InterconnectMessage>.broadcast();
+  final _rawProtocolFrames = StreamController<Uint8List>.broadcast();
 
   Stream<Uint8List> get xiaoAiOpusFrames => _xiaoAiOpusFrames.stream;
   Stream<InterconnectMessage> get interconnectMessages =>
       _interconnectMessages.stream;
+  Stream<Uint8List> get rawProtocolFrames => _rawProtocolFrames.stream;
 
   @protected
   void emitXiaoAiOpusFrame(Uint8List frame) {
@@ -289,6 +291,7 @@ class LocalDeviceManager extends DeviceManager {
       _log.info('DeviceManager disposed');
       unawaited(_xiaoAiOpusFrames.close());
       unawaited(_interconnectMessages.close());
+      unawaited(_rawProtocolFrames.close());
       _scanTimer?.cancel();
       _batteryRefreshTimer?.cancel();
       _scanSubscription?.cancel();
@@ -341,6 +344,7 @@ class LocalDeviceManager extends DeviceManager {
   late DeviceRuntime _runtime;
   StreamSubscription<BluetoothEndpoint>? _scanSubscription;
   StreamSubscription<DeviceEvent>? _eventSubscription;
+  StreamSubscription<Uint8List>? _rawProtocolSubscription;
   Timer? _scanTimer;
   Timer? _batteryRefreshTimer;
   bool _batteryRefreshInProgress = false;
@@ -787,6 +791,10 @@ class LocalDeviceManager extends DeviceManager {
             : XiaomiDeviceFactory(),
       );
       _currentEntity = entity;
+      await _rawProtocolSubscription?.cancel();
+      _rawProtocolSubscription = entity.rawIncomingData.listen(
+        _rawProtocolFrames.add,
+      );
 
       if (effectiveKind == DeviceKind.zepp) {
         if (transportType == ConnectType.spp) {
@@ -1194,6 +1202,8 @@ class LocalDeviceManager extends DeviceManager {
     final entity = _currentEntity;
     _bluetoothConnection = null;
     _currentEntity = null;
+    await _rawProtocolSubscription?.cancel();
+    _rawProtocolSubscription = null;
 
     if (entity != null) {
       _log.info('cleaning up connection to ${entity.id}');

@@ -138,6 +138,11 @@ packages/wasm_run_flutter/ios/Frameworks/wasm_run-*.zip
 packages/wasm_run_flutter/macos/Frameworks/*.xcframework/
 packages/wasm_run_flutter/macos/Frameworks/wasm_run-*.zip
 
+# Downloaded wasm_run Android native library cache
+packages/wasm_run_flutter/android/.cxx/
+packages/wasm_run_flutter/android/src/main/jniLibs/
+packages/wasm_run_flutter/android/wasm_run-*.tar.gz
+
 # AI Agent Dir
 .agents/
 .codex/

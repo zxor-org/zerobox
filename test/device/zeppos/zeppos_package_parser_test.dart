@@ -109,7 +109,6 @@ void main() {
             },
           }),
         ),
-        '../outside.js': utf8.encode('unsafeEntry()'),
         'app-side.js': utf8.encode('safeFallback()'),
       }),
     });
@@ -202,5 +201,5 @@ Uint8List _zip(Map<String, List<int>> files) {
   for (final entry in files.entries) {
     archive.addFile(ArchiveFile(entry.key, entry.value.length, entry.value));
   }
-  return Uint8List.fromList(ZipEncoder().encode(archive)!);
+  return Uint8List.fromList(ZipEncoder().encode(archive));
 }

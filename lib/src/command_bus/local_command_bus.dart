@@ -111,6 +111,14 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
       return CommandResult.failure(
         CommandError(error.code, error.message, details: error.details),
       );
+    } on PluginExecutionException catch (error) {
+      return CommandResult.failure(
+        CommandError(
+          'plugin_error',
+          error.message,
+          details: {'pluginId': error.pluginId, 'pluginName': error.pluginName},
+        ),
+      );
     } catch (error, stackTrace) {
       getLogger(
         'LocalCommandBus',
@@ -247,6 +255,11 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
     'plugin.list' => _pluginManager.list(
       includeIcons: command.params['includeIcons'] != false,
     ),
+    'plugin.failures' => Future.value(_pluginManager.failures()),
+    'plugin.safeMode.get' => Future.value({'enabled': _pluginManager.safeMode}),
+    'plugin.safeMode.set' => _pluginManager.setSafeMode(
+      command.params['enabled'] == true,
+    ),
     'plugin.install' => _installPlugin(command.params),
     'plugin.get' => _pluginManager.get(command.params['id']?.toString() ?? ''),
     'plugin.open' => _pluginManager.open(
@@ -257,15 +270,18 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
       command.params['callback']?.toString() ?? '',
       command.params['value']?.toString(),
     ),
+    'plugin.close' => _pluginManager.closePlugin(
+      command.params['id']?.toString() ?? '',
+    ),
     'plugin.remove' => _removePlugin(command.params),
+    'plugin.data.clear' => _pluginManager.clearData(
+      command.params['id']?.toString() ?? '',
+    ),
     'plugin.provider.list' => _pluginManager.providers(),
     'plugin.provider.call' => _pluginManager.callProvider(
       command.params['provider']?.toString() ?? '',
       command.params['operation']?.toString() ?? '',
-      (command.params['arguments'] as List?)
-              ?.map((value) => value.toString())
-              .toList(growable: false) ??
-          const [],
+      (command.params['arguments'] as List?)?.cast<Object?>() ?? const [],
     ),
     'install.local' => _installLocal(command.params),
     _ => throw CommandFailure(
@@ -296,6 +312,7 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
     };
     return _pluginManager.install(
       bytes,
+      fileName: params['fileName']?.toString(),
       includeIcon: params['includeIcon'] != false,
     );
   }
@@ -1111,11 +1128,11 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
         (source) => {'id': source.storageKey, 'name': source.displayName},
       ),
       ...pluginProviders.map((provider) {
-        final name = provider['name']?.toString() ?? '';
-        final source = CommunitySourceId.plugin(name);
+        final id = provider['id']?.toString() ?? '';
+        final source = CommunitySourceId.plugin(id);
         return {
           'id': source.storageKey,
-          'name': source.displayName,
+          'name': provider['name']?.toString() ?? id,
           'pluginId': provider['pluginId'],
         };
       }),
@@ -1390,6 +1407,13 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
 
   @override
   Future<void> close() async {
+    try {
+      await _manager.disconnect().timeout(const Duration(seconds: 3));
+    } catch (error, stackTrace) {
+      getLogger(
+        'LocalCommandBus',
+      ).warning('Device disconnect during shutdown failed', error, stackTrace);
+    }
     await _pluginManager.close();
     _deviceManagerSubscription.close();
     await _logSubscription.cancel();

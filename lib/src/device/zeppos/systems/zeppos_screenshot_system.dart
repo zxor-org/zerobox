@@ -31,6 +31,7 @@ class ZeppOsScreenshotSystem extends System {
   Completer<int>? _screenshotAck;
   Completer<void>? _fileRequest;
   Completer<Uint8List>? _pendingScreenshot;
+  bool _requestRunning = false;
   _Download? _download;
   StreamSubscription<Uint8List>? _v3Subscription;
   StreamSubscription<Uint8List>? _v3SendSubscription;
@@ -49,78 +50,84 @@ class ZeppOsScreenshotSystem extends System {
   }
 
   Future<Uint8List> requestScreenshot() async {
-    if (_pendingScreenshot != null) {
+    if (_requestRunning) {
       throw StateError('A screenshot request is already running');
     }
-    final servicesSystem = entity.system<ZeppOsServicesSystem>();
-    if (servicesSystem == null) {
-      throw StateError('Zepp OS services system is unavailable');
-    }
-    final services = await servicesSystem.fetchSupportedServices();
-    if (!services.containsKey(appsEndpoint) ||
-        !services.containsKey(fileTransferEndpoint)) {
-      throw UnsupportedError(
-        'The connected Zepp OS device does not advertise the screenshot '
-        'and file-transfer services',
-      );
-    }
-    _appsEncrypted = services[appsEndpoint] ?? false;
-    _fileTransferEncrypted = services[fileTransferEndpoint] ?? false;
-    final version = await _ensureCapabilities();
-    if (version > 3) {
-      throw UnsupportedError(
-        'Zepp OS file transfer v$version screenshots are not supported yet',
-      );
-    }
-    final completer = Completer<Uint8List>();
-    final ack = Completer<int>();
-    final fileRequest = Completer<void>();
-    _pendingScreenshot = completer;
-    _screenshotAck = ack;
-    _fileRequest = fileRequest;
-    final request = Uint8List(20)
-      ..[0] = 0x03
-      ..[1] = 0x01
-      ..[2] = 0x01;
+    _requestRunning = true;
     try {
-      await _component.sendToEndpoint(
-        appsEndpoint,
-        request,
-        encrypted: _appsEncrypted,
-        maxWriteLength: _maxWriteLength,
-      );
-      final status = await Future.any<int>([
-        ack.future,
-        fileRequest.future.then((_) => 0),
-      ]).timeout(
-        const Duration(seconds: 6),
-        onTimeout: () => throw TimeoutException(
-          'The watch neither acknowledged the screenshot command nor '
-              'started a file transfer',
-          const Duration(seconds: 6),
-        ),
-      );
-      if (status != 0) {
-        throw StateError(
-          'The watch rejected the screenshot command with status $status',
+      final servicesSystem = entity.system<ZeppOsServicesSystem>();
+      if (servicesSystem == null) {
+        throw StateError('Zepp OS services system is unavailable');
+      }
+      final services = await servicesSystem.fetchSupportedServices();
+      if (!services.containsKey(appsEndpoint) ||
+          !services.containsKey(fileTransferEndpoint)) {
+        throw UnsupportedError(
+          'The connected Zepp OS device does not advertise the screenshot '
+          'and file-transfer services',
         );
       }
-      return await completer.future.timeout(
-        const Duration(seconds: 20),
-        onTimeout: () => throw TimeoutException(
-          _download == null
-              ? 'The watch accepted no screenshot file transfer request'
-              : 'The watch stopped sending screenshot data '
-                    '(${_download!.progress}/${_download!.length} bytes)',
+      _appsEncrypted = services[appsEndpoint] ?? false;
+      _fileTransferEncrypted = services[fileTransferEndpoint] ?? false;
+      final version = await _ensureCapabilities();
+      if (version > 3) {
+        throw UnsupportedError(
+          'Zepp OS file transfer v$version screenshots are not supported yet',
+        );
+      }
+      final completer = Completer<Uint8List>();
+      final ack = Completer<int>();
+      final fileRequest = Completer<void>();
+      _pendingScreenshot = completer;
+      _screenshotAck = ack;
+      _fileRequest = fileRequest;
+      final request = Uint8List(20)
+        ..[0] = 0x03
+        ..[1] = 0x01
+        ..[2] = 0x01;
+      try {
+        await _component.sendToEndpoint(
+          appsEndpoint,
+          request,
+          encrypted: _appsEncrypted,
+          maxWriteLength: _maxWriteLength,
+        );
+        final status =
+            await Future.any<int>([
+              ack.future,
+              fileRequest.future.then((_) => 0),
+            ]).timeout(
+              const Duration(seconds: 6),
+              onTimeout: () => throw TimeoutException(
+                'The watch neither acknowledged the screenshot command nor '
+                'started a file transfer',
+                const Duration(seconds: 6),
+              ),
+            );
+        if (status != 0) {
+          throw StateError(
+            'The watch rejected the screenshot command with status $status',
+          );
+        }
+        return await completer.future.timeout(
           const Duration(seconds: 20),
-        ),
-      );
+          onTimeout: () => throw TimeoutException(
+            _download == null
+                ? 'The watch accepted no screenshot file transfer request'
+                : 'The watch stopped sending screenshot data '
+                      '(${_download!.progress}/${_download!.length} bytes)',
+            const Duration(seconds: 20),
+          ),
+        );
+      } finally {
+        if (identical(_pendingScreenshot, completer)) _pendingScreenshot = null;
+        if (identical(_screenshotAck, ack)) _screenshotAck = null;
+        if (identical(_fileRequest, fileRequest)) _fileRequest = null;
+        _download = null;
+        _resetV3Chunk();
+      }
     } finally {
-      if (identical(_pendingScreenshot, completer)) _pendingScreenshot = null;
-      if (identical(_screenshotAck, ack)) _screenshotAck = null;
-      if (identical(_fileRequest, fileRequest)) _fileRequest = null;
-      _download = null;
-      _resetV3Chunk();
+      _requestRunning = false;
     }
   }
 
@@ -228,7 +235,15 @@ class ZeppOsScreenshotSystem extends System {
           : Uint8List.fromList([0x04, session, 0, 0, 0, 0, 0]);
       _sendFileReply(response);
     } catch (error, stackTrace) {
-      _pendingScreenshot?.completeError(error, stackTrace);
+      final fileRequest = _fileRequest;
+      if (fileRequest != null && !fileRequest.isCompleted) {
+        fileRequest.completeError(error, stackTrace);
+      } else {
+        final pending = _pendingScreenshot;
+        if (pending != null && !pending.isCompleted) {
+          pending.completeError(error, stackTrace);
+        }
+      }
     }
   }
 

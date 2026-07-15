@@ -255,7 +255,7 @@ class ZeppOsAppSideSystem extends System {
       _addEvent(appId, type: 'error', message: 'settingsStorage 加载失败：$error');
     }
     _addEvent(appId, type: 'start', message: '脚本加载成功（${source.length} 字符）');
-    final runtime = createPluginRuntime();
+    final runtime = createJavaScriptPluginRuntime();
     final session = _AppSideSession(
       appId: appId,
       version: version,
@@ -304,7 +304,10 @@ class ZeppOsAppSideSystem extends System {
         pluginName: 'Zepp OS app-side',
         pluginVersion: '1',
         runtimeVersion: '1',
-        source: '${_appSideBootstrap(jsonEncode(settings))}\n$source',
+        entryBytes: Uint8List.fromList(
+          utf8.encode('${_appSideBootstrap(jsonEncode(settings))}\n$source'),
+        ),
+        bootstrap: '',
         hostCall: (method, arguments) => _hostCall(session, method, arguments),
       );
       await runtime.dispatchEvent('appside.lifecycle.start', '');
@@ -405,8 +408,8 @@ class ZeppOsAppSideSystem extends System {
     String method,
     List<Object?> arguments,
   ) {
-    if (method.startsWith('console.')) {
-      final level = method.substring(8);
+    if (method.startsWith('console.') || method.startsWith('log.')) {
+      final level = method.substring(method.indexOf('.') + 1);
       final message = arguments.join(' ');
       _addEvent(session.appId, type: 'console', message: '$level: $message');
       _log.info('[0x${session.appId.toRadixString(16)}] $level: $message');

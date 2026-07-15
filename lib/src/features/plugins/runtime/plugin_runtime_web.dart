@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:js_interop';
+import 'dart:typed_data';
 
 import 'plugin_runtime.dart';
 
@@ -21,7 +22,7 @@ external JSPromise<JSAny?> _webCreate(
 external JSPromise<JSAny?> _webInvoke(
   JSString id,
   JSString callback,
-  JSArray<JSString> arguments,
+  JSArray<JSAny?> arguments,
 );
 
 @JS('ZeroBoxPluginRuntime.dispatchEvent')
@@ -51,7 +52,8 @@ class _WebPluginRuntime implements PluginRuntime {
     required String pluginName,
     required String pluginVersion,
     required String runtimeVersion,
-    required String source,
+    required Uint8List entryBytes,
+    required String bootstrap,
     required PluginHostCall hostCall,
   }) async {
     await close();
@@ -68,9 +70,9 @@ class _WebPluginRuntime implements PluginRuntime {
     try {
       await _webCreate(
         pluginId.toJS,
-        abV1PluginBootstrap.toJS,
+        bootstrap.toJS,
         globals.toJS,
-        source.toJS,
+        utf8.decode(entryBytes).toJS,
       ).toDart;
     } catch (_) {
       _instances.remove(pluginId);
@@ -125,13 +127,13 @@ class _WebPluginRuntime implements PluginRuntime {
   @override
   Future<Object?> invokeRegistered(
     String callbackId,
-    List<String> arguments,
+    List<Object?> arguments,
   ) async {
     final id = _requiredId;
     final value = await _webInvoke(
       id.toJS,
       callbackId.toJS,
-      arguments.map((value) => value.toJS).toList().toJS,
+      arguments.map((value) => value?.jsify()).toList().toJS,
     ).toDart;
     return value?.dartify();
   }
@@ -192,8 +194,7 @@ class _WebPluginRuntime implements PluginRuntime {
       await _webFireTimer(id.toJS, timerId.toJS).toDart;
     } catch (error) {
       await Future.sync(
-        () =>
-            _hostCall?.call('console.error', ['Timer $timerId failed: $error']),
+        () => _hostCall?.call('log.error', ['Timer $timerId failed: $error']),
       );
     }
   }

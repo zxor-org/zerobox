@@ -1,4 +1,5 @@
 import 'plugin_runtime.dart';
+import 'dart:typed_data';
 
 PluginRuntime createPluginRuntime() => _UnsupportedPluginRuntime();
 
@@ -9,7 +10,8 @@ class _UnsupportedPluginRuntime implements PluginRuntime {
     required String pluginName,
     required String pluginVersion,
     required String runtimeVersion,
-    required String source,
+    required Uint8List entryBytes,
+    required String bootstrap,
     required PluginHostCall hostCall,
   }) async {
     throw UnsupportedError(
@@ -23,7 +25,7 @@ class _UnsupportedPluginRuntime implements PluginRuntime {
   @override
   Future<Object?> invokeRegistered(
     String callbackId,
-    List<String> arguments,
+    List<Object?> arguments,
   ) async => null;
 
   @override

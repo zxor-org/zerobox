@@ -2,17 +2,21 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:charset/charset.dart' as charset;
 import 'package:dio/dio.dart';
-import 'package:enough_convert/enough_convert.dart' as enough;
-import 'package:flutter/foundation.dart';
 import 'package:zerobox/src/commands/command_protocol.dart';
 import 'package:zerobox/src/core/logging/logging_service.dart';
+import 'package:zerobox/src/core/models/bt_models.dart';
 import 'package:zerobox/src/core/services/build_info_service.dart';
+import 'package:zerobox/src/core/services/shared_prefs_service.dart';
 import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
 import 'package:zerobox/src/features/plugins/domain/plugin_package.dart';
+import 'package:zerobox/src/features/plugins/domain/plugin_permission.dart';
+import 'package:zerobox/src/features/plugins/legacy/astrobox_legacy_adapter.dart';
+import 'package:zerobox/src/features/plugins/application/plugin_permission_broker.dart';
+import 'package:zerobox/src/features/plugins/application/plugin_text_file_codec.dart';
 import 'package:zerobox/src/features/plugins/runtime/plugin_runtime.dart';
 import 'package:zerobox/src/features/plugins/runtime/plugin_runtime_factory.dart';
+import 'package:zerobox/src/features/plugins/runtime/plugin_wasm_host.dart';
 import 'package:zerobox/src/features/plugins/storage/plugin_storage.dart';
 import 'package:zerobox/src/features/plugins/storage/plugin_storage_factory.dart';
 import 'package:zerobox/src/features/resources/services/resource_install_service.dart';
@@ -22,36 +26,59 @@ class PluginManager {
     required this.deviceManager,
     required this.readDeviceState,
     required this.emitEvent,
-  }) {
+  }) : _safeMode =
+           SharedPrefsService.instance.getBool(_safeModePreference) ?? false {
     _interconnectSubscription = deviceManager.interconnectMessages.listen((
       message,
     ) {
       _queueInterconnectDispatch(message.pkgName, message.payload);
     });
+    _rawProtocolSubscription = deviceManager.rawProtocolFrames.listen(
+      _queueRawProtocolDispatch,
+    );
   }
 
   static final _log = getLogger('PluginManager');
+  static const _safeModePreference = 'plugins.safe_mode';
+  static const _operationTimeout = Duration(seconds: 15);
 
   final DeviceManager deviceManager;
   final DeviceManagerState Function() readDeviceState;
   final void Function(CommandEvent event) emitEvent;
   final _plugins = <String, InstalledPlugin>{};
-  final _runtimes = <String, PluginRuntime>{};
   final _runtimeStarts = <String, Future<PluginRuntime>>{};
+  final _wasmHosts = <String, PluginWasmHost>{};
   final _uiNodes = <String, List<Map<String, Object?>>>{};
   final _openPages = <String, List<Map<String, Object?>>>{};
-  final _virtualFiles = <String, _PluginFile>{};
   final _hostRequests = <String, Completer<Map<String, Object?>>>{};
   final _providers = <String, _PluginProvider>{};
+  final _failures = <String, PluginExecutionFailure>{};
+  final _interconnectObservers = <String>{};
+  final _rawProtocolObservers = <String>{};
   Future<void> _interconnectDispatchTail = Future<void>.value();
+  Future<void> _rawProtocolDispatchTail = Future<void>.value();
   Future<void> _interconnectSendTail = Future<void>.value();
+  Future<void> _runtimeTransition = Future<void>.value();
   final _dio = Dio();
   final _installer = ResourceInstallService();
   late final Future<PluginStorage> _storage = createPluginStorage();
+  late final PluginPermissionBroker _permissionBroker = PluginPermissionBroker(
+    prompt: _promptPermission,
+    readPersistentGrants: (id) async =>
+        (await _storage).readPermissionGrants(id),
+    writePersistentGrants: (id, grants) async =>
+        (await _storage).writePermissionGrants(id, grants),
+  );
   late final StreamSubscription _interconnectSubscription;
+  late final StreamSubscription _rawProtocolSubscription;
   Future<void>? _initialization;
   var _requestSequence = 0;
   var _closed = false;
+  bool _safeMode;
+  String? _activePluginId;
+  PluginRuntime? _activeRuntime;
+  PluginRuntime? _quickJsRuntime;
+  PluginRuntime? _wasmRuntime;
 
   Future<void> initialize() => _initialization ??= _loadInstalledPlugins();
 
@@ -64,54 +91,46 @@ class PluginManager {
     } catch (error, stackTrace) {
       _log.warning('Unable to load installed plugins', error, stackTrace);
     }
-    Timer.run(_startInstalledPlugins);
   }
 
-  void _startInstalledPlugins() {
-    if (_closed) return;
-    for (final plugin in _plugins.values.toList(growable: false)) {
-      unawaited(
-        _ensureRuntime(plugin.manifest.id).then<void>(
-          (_) {},
-          onError: (Object error, StackTrace stackTrace) => _log.warning(
-            'Unable to start plugin ${plugin.manifest.name}',
-            error,
-            stackTrace,
-          ),
-        ),
-      );
+  bool get safeMode => _safeMode;
+
+  List<Map<String, Object?>> failures() => _failures.values
+      .map((failure) => failure.toJson())
+      .toList(growable: false);
+
+  Future<void> setSafeMode(bool enabled) async {
+    await initialize();
+    if (_safeMode == enabled) return;
+    _safeMode = enabled;
+    await SharedPrefsService.instance.setBool(_safeModePreference, enabled);
+    if (enabled) {
+      await _closeActiveRuntime();
     }
+    emitEvent(CommandEvent('plugin.safeMode', data: {'enabled': enabled}));
   }
 
   Future<List<Map<String, Object?>>> list({bool includeIcons = true}) async {
     await initialize();
     return _plugins.values
-        .map((plugin) => plugin.summaryJson(includeIcon: includeIcons))
+        .map((plugin) => _summary(plugin, includeIcon: includeIcons))
         .toList(growable: false);
   }
 
   Future<Map<String, Object?>> install(
     Uint8List bytes, {
+    String? fileName,
     bool includeIcon = true,
   }) async {
     await initialize();
-    final package = const AbPluginPackageReader().read(bytes);
+    final package = const PluginPackageReader().read(bytes, fileName: fileName);
     final id = package.manifest.id;
     final config = _plugins[id]?.config ?? const <String, Object?>{};
     await _closeRuntime(id);
+    _failures.remove(id);
     final plugin = await (await _storage).install(package, config: config);
     _plugins[id] = plugin;
     _emitState(id);
-    unawaited(
-      _ensureRuntime(id).then<void>(
-        (_) {},
-        onError: (Object error, StackTrace stackTrace) => _log.warning(
-          'Unable to start plugin ${plugin.manifest.name}',
-          error,
-          stackTrace,
-        ),
-      ),
-    );
     return plugin.summaryJson(includeIcon: includeIcon);
   }
 
@@ -119,7 +138,7 @@ class PluginManager {
     await initialize();
     final plugin = _requirePlugin(id);
     return {
-      ...plugin.summaryJson(),
+      ..._summary(plugin),
       'ui': _uiNodes[id] ?? const [],
       if (_openPages[id] != null) 'page': _openPages[id],
     };
@@ -127,8 +146,11 @@ class PluginManager {
 
   Future<List<Map<String, Object?>>> open(String id) async {
     await initialize();
-    await _ensureRuntime(id);
-    return _uiNodes[id] ?? const [];
+    final plugin = _requirePlugin(id);
+    return _runPluginOperation(plugin, 'open', () async {
+      await _ensureRuntime(id);
+      return _uiNodes[id] ?? const [];
+    });
   }
 
   Future<List<Map<String, Object?>>> invoke(
@@ -136,20 +158,47 @@ class PluginManager {
     String callbackId,
     String? value,
   ) async {
-    final runtime = await _ensureRuntime(id);
-    await runtime.invokeCallback(callbackId, value);
-    return _uiNodes[id] ?? const [];
+    final plugin = _requirePlugin(id);
+    return _runPluginOperation(plugin, 'callback', () async {
+      final runtime = await _ensureRuntime(id);
+      await runtime.invokeCallback(callbackId, value);
+      return _uiNodes[id] ?? const [];
+    });
+  }
+
+  Future<void> closePlugin(String id) async {
+    await initialize();
+    _requirePlugin(id);
+    await _runtimeTransition.catchError((_) {});
+    await _closeRuntime(id);
+  }
+
+  Future<void> clearData(String id) async {
+    await initialize();
+    final plugin = _requirePlugin(id);
+    await _closeRuntime(id);
+    await _permissionBroker.clearPlugin(id);
+    await (await _storage).clearPluginData(id);
+    _plugins[id] = plugin.copyWith(config: const {});
+    _failures.remove(id);
+    _uiNodes.remove(id);
+    _openPages.remove(id);
+    _emitState(id);
   }
 
   Future<void> remove(String id) async {
     await initialize();
     _requirePlugin(id);
     await _closeRuntime(id);
+    await _permissionBroker.clearPlugin(id);
     await (await _storage).removePlugin(id);
     _plugins.remove(id);
+    _failures.remove(id);
     _uiNodes.remove(id);
     _openPages.remove(id);
     _providers.removeWhere((_, provider) => provider.pluginId == id);
+    _interconnectObservers.remove(id);
+    _rawProtocolObservers.remove(id);
     _emitState(id);
   }
 
@@ -172,52 +221,76 @@ class PluginManager {
   Future<Object?> callProvider(
     String providerName,
     String operation,
-    List<String> arguments,
+    List<Object?> arguments,
   ) async {
     final provider = _providers[providerName];
     if (provider == null) throw StateError('Plugin provider not found');
-    final runtime = await _ensureRuntime(provider.pluginId);
-    if (operation == 'categories' && provider.getCategories == null) {
-      return '[]';
+    final plugin = _requirePlugin(provider.pluginId);
+    try {
+      return await _runPluginOperation(plugin, 'provider.$operation', () async {
+        final runtime = await _ensureRuntime(provider.pluginId);
+        final activeProvider = _providers[providerName];
+        if (activeProvider == null ||
+            activeProvider.pluginId != plugin.manifest.id) {
+          throw StateError('Plugin did not register provider $providerName');
+        }
+        if (operation == 'categories' && activeProvider.categories == null) {
+          return const <Object?>[];
+        }
+        final callback = switch (operation) {
+          'categories' => activeProvider.categories!,
+          'query' => activeProvider.query,
+          'detail' => activeProvider.detail,
+          'download' => activeProvider.download,
+          _ => throw StateError('Unknown provider operation: $operation'),
+        };
+        return runtime.invokeRegistered(callback, arguments);
+      });
+    } finally {
+      await closePlugin(provider.pluginId);
     }
-    final callback = switch (operation) {
-      'categories' => provider.getCategories!,
-      'page' => provider.getPage,
-      'item' => provider.getItem,
-      'download' => provider.download,
-      _ => throw StateError('Unknown provider operation: $operation'),
-    };
-    return runtime.invokeRegistered(callback, arguments);
   }
 
   Future<List<Map<String, Object?>>> providers() async {
     await initialize();
-    await Future.wait(
-      _plugins.keys.map((id) async {
-        try {
-          await _ensureRuntime(id);
-        } catch (_) {
-          // A broken plugin must not hide providers registered by other plugins
-        }
-      }),
-    );
     return _providers.values
         .map((provider) => provider.toJson())
         .toList(growable: false);
   }
 
-  Uint8List? virtualFileBytes(String path) => _virtualFiles[path]?.bytes;
+  String providerDisplayName(String id) => _providers[id]?.name ?? id;
 
-  String? virtualFileName(String path) => _virtualFiles[path]?.name;
+  Future<Uint8List> readProviderFile(String providerName, String path) async {
+    final provider = _providers[providerName];
+    if (provider == null) throw StateError('Plugin provider not found');
+    return (await _storage).readFile(
+      provider.pluginId,
+      PluginStoragePath.parse(path),
+    );
+  }
 
   Future<PluginRuntime> _ensureRuntime(String id) async {
     await initialize();
     if (_closed) throw StateError('Plugin manager is closed');
+    final plugin = _requirePlugin(id);
+    if (_safeMode) {
+      throw PluginExecutionException(
+        plugin.manifest.id,
+        plugin.manifest.name,
+        'Plugins are disabled in safe mode',
+      );
+    }
+    final failure = _failures[id];
+    if (failure != null) throw PluginExecutionException.fromFailure(failure);
     final pending = _runtimeStarts[id];
     if (pending != null) return pending;
-    final existing = _runtimes[id];
-    if (existing != null) return existing;
-    final start = _startRuntime(id);
+    if (_activePluginId == id && _activeRuntime != null) {
+      return _activeRuntime!;
+    }
+    final start = _runtimeTransition
+        .catchError((_) {})
+        .then((_) => _startRuntime(id));
+    _runtimeTransition = start.then<void>((_) {}, onError: (_, _) {});
     _runtimeStarts[id] = start;
     try {
       return await start;
@@ -230,21 +303,32 @@ class PluginManager {
 
   Future<PluginRuntime> _startRuntime(String id) async {
     final plugin = _requirePlugin(id);
-    final runtime = createPluginRuntime();
-    _runtimes[id] = runtime;
+    await _closeActiveRuntime();
+    _uiNodes.remove(id);
+    _openPages.remove(id);
+    _providers.removeWhere((_, provider) => provider.pluginId == id);
+    final runtime = await _runtimeFor(plugin.manifest.runtime);
+    _activePluginId = id;
+    _activeRuntime = runtime;
     try {
       await runtime.start(
         pluginId: id,
         pluginName: plugin.manifest.name,
         pluginVersion: plugin.manifest.version,
         runtimeVersion: BuildInfoService.appVersion,
-        source: plugin.source,
+        entryBytes: plugin.entryBytes,
+        bootstrap: plugin.manifest.runtime == PluginRuntimeType.legacy
+            ? astroBoxLegacyBootstrap
+            : zeroBoxPluginBootstrap,
         hostCall: (method, arguments) =>
             _handleHostCall(plugin, method, arguments),
       );
       return runtime;
     } catch (_) {
-      if (identical(_runtimes[id], runtime)) _runtimes.remove(id);
+      if (_activePluginId == id) {
+        _activePluginId = null;
+        _activeRuntime = null;
+      }
       _providers.removeWhere((_, provider) => provider.pluginId == id);
       await runtime.close();
       rethrow;
@@ -252,97 +336,235 @@ class PluginManager {
   }
 
   Future<void> _closeRuntime(String id) async {
-    _runtimeStarts.remove(id);
-    await _runtimes.remove(id)?.close();
-    _providers.removeWhere((_, provider) => provider.pluginId == id);
+    if (_activePluginId == id) await _closeActiveRuntime();
+    await _wasmHosts.remove(id)?.dispose();
+    _permissionBroker.endSession(id);
+    _interconnectObservers.remove(id);
+    _rawProtocolObservers.remove(id);
   }
 
-  FutureOr<Object?> _handleHostCall(
+  Future<PluginRuntime> _runtimeFor(PluginRuntimeType type) async {
+    if (type == PluginRuntimeType.wasm) {
+      return _wasmRuntime ??= createPluginRuntime(
+        type,
+        storage: await _storage,
+      );
+    }
+    return _quickJsRuntime ??= createJavaScriptPluginRuntime();
+  }
+
+  Future<void> _closeActiveRuntime() async {
+    final id = _activePluginId;
+    final runtime = _activeRuntime;
+    _activePluginId = null;
+    _activeRuntime = null;
+    if (runtime != null) await runtime.close();
+    if (id == null) return;
+    await _wasmHosts.remove(id)?.dispose();
+    _permissionBroker.endSession(id);
+    _interconnectObservers.remove(id);
+    _rawProtocolObservers.remove(id);
+  }
+
+  Future<Object?> _handleHostCall(
+    InstalledPlugin plugin,
+    String method,
+    List<Object?> arguments,
+  ) async {
+    final id = plugin.manifest.id;
+    if (method == 'runtime.reportError') {
+      final message = arguments.firstOrNull?.toString() ?? 'Unknown error';
+      if (_isTransientHostError(message)) {
+        _log.warning(
+          'Plugin ${plugin.manifest.name} observed a transient host error: '
+          '$message',
+        );
+        return null;
+      }
+      scheduleMicrotask(() {
+        unawaited(
+          _recordFailure(
+            plugin,
+            StateError(message),
+            StackTrace.current,
+            phase: 'runtime',
+          ),
+        );
+      });
+      return null;
+    }
+    final permission = _permissionRequest(plugin, method, arguments);
+    if (permission != null) {
+      await _permissionBroker.authorize(plugin, permission);
+    }
+
+    return switch (method) {
+      'log.debug' || 'log.info' => _pluginLog(id, arguments, 'info'),
+      'log.warning' => _pluginLog(id, arguments, 'warning'),
+      'log.error' => _pluginLog(id, arguments, 'severe'),
+      'storage.get' => _storageGet(id, arguments),
+      'storage.set' => _storageSet(id, arguments),
+      'storage.remove' => _storageRemove(id, arguments),
+      'storage.clear' => _storageClear(id),
+      'file.read' => _readSandboxFile(id, arguments),
+      'file.write' => _writeSandboxFile(id, arguments),
+      'file.list' => _listSandboxDirectory(id, arguments),
+      'file.stat' => _statSandboxPath(id, arguments),
+      'file.mkdir' => _mkdirSandboxPath(id, arguments),
+      'file.copy' => _copySandboxPath(id, arguments),
+      'file.move' => _moveSandboxPath(id, arguments),
+      'file.remove' => _removeSandboxPath(id, arguments),
+      'file.pick' => _pickSandboxFile(id, arguments),
+      'file.unload' => _unloadSandboxFile(id, arguments),
+      'network.fetch' => _networkFetch(arguments),
+      'network.download' => _networkDownload(id, arguments),
+      'interconnect.send' => _sendInterconnect(id, arguments),
+      'interconnect.observe' => _interconnectObservers.add(id),
+      'interconnect.unobserve' => _interconnectObservers.remove(id),
+      'provider.register' => _registerProvider(id, arguments),
+      'provider.unregister' => _unregisterProvider(id, arguments),
+      'device.list' => _deviceList(),
+      'device.info' => _deviceInfo(),
+      'device.connect' => _connectDevice(arguments),
+      'device.disconnect' => deviceManager.disconnect(),
+      'device.apps.list' => _deviceApps(),
+      'device.apps.launch' => _launchPluginApp(arguments),
+      'device.apps.uninstall' => _uninstallPluginApp(arguments),
+      'device.install' => _installSandboxFile(id, arguments),
+      'protocol.send' => _sendProtocol(arguments),
+      'protocol.observe' => _rawProtocolObservers.add(id),
+      'protocol.unobserve' => _rawProtocolObservers.remove(id),
+      'wasm.load' => _wasmLoad(plugin, arguments),
+      'wasm.call' => _wasmCall(plugin, arguments),
+      'wasm.memory.read' => _wasmMemoryRead(plugin, arguments),
+      'wasm.memory.write' => _wasmMemoryWrite(plugin, arguments),
+      'wasm.dispose' => _wasmDispose(plugin, arguments),
+      'ui.update' => _updateSettingsUi(id, arguments),
+      'ui.openPage' => _openPageWithNodes(id, arguments),
+      'ui.openExternal' => _openUrl(id, arguments),
+      _ => throw UnsupportedError('Unsupported ZeroBox Host API: $method'),
+    };
+  }
+
+  PluginPermissionRequest? _permissionRequest(
     InstalledPlugin plugin,
     String method,
     List<Object?> arguments,
   ) {
-    final id = plugin.manifest.id;
-    final permission = _permissionFor(method);
-    if (permission != null) _requirePermission(plugin, permission);
+    final policy = switch (method) {
+      'ui.update' || 'ui.openPage' => ('ui', PluginPermissionRisk.low),
+      'ui.openExternal' => ('ui', PluginPermissionRisk.medium),
+      'file.read' ||
+      'file.write' ||
+      'file.list' ||
+      'file.stat' ||
+      'file.mkdir' ||
+      'file.copy' ||
+      'file.move' ||
+      'file.remove' => ('file', PluginPermissionRisk.low),
+      'file.pick' || 'file.unload' => ('file', PluginPermissionRisk.medium),
+      'network.fetch' ||
+      'network.download' => ('network', PluginPermissionRisk.medium),
+      'interconnect.send' ||
+      'interconnect.observe' => ('interconnect', PluginPermissionRisk.medium),
+      'provider.register' ||
+      'provider.unregister' => ('provider', PluginPermissionRisk.medium),
+      'device.list' ||
+      'device.info' ||
+      'device.apps.list' => ('device', PluginPermissionRisk.medium),
+      'device.connect' ||
+      'device.disconnect' ||
+      'device.apps.launch' ||
+      'device.apps.uninstall' ||
+      'device.install' => ('device', PluginPermissionRisk.high),
+      'protocol.observe' => ('protocol', PluginPermissionRisk.medium),
+      'protocol.send' => ('protocol', PluginPermissionRisk.high),
+      _ => null,
+    };
+    if (policy == null) return null;
+    final resource = _permissionResource(method, arguments);
+    final scoped =
+        method.startsWith('network.') ||
+        method == 'ui.openExternal' ||
+        method.startsWith('interconnect.') ||
+        method.startsWith('device.') ||
+        method.startsWith('protocol.');
+    return PluginPermissionRequest(
+      pluginId: plugin.manifest.id,
+      pluginName: plugin.manifest.name,
+      capability: policy.$1,
+      operation: method,
+      risk: policy.$2,
+      description: _permissionDescription(method, resource),
+      resource: resource,
+      scope: scoped ? resource : null,
+    );
+  }
 
+  String? _permissionResource(String method, List<Object?> arguments) {
+    if (method == 'network.fetch' ||
+        method == 'network.download' ||
+        method == 'ui.openExternal') {
+      return Uri.tryParse(arguments.firstOrNull?.toString() ?? '')?.host;
+    }
+    if (method == 'interconnect.send' || method.startsWith('device.apps.')) {
+      return arguments.firstOrNull?.toString();
+    }
+    if (method == 'device.connect') return arguments.firstOrNull?.toString();
+    if (method.startsWith('device.') || method.startsWith('protocol.')) {
+      return readDeviceState().currentDevice?.name;
+    }
+    if (method == 'file.unload') return arguments.firstOrNull?.toString();
+    return null;
+  }
+
+  bool _isTransientHostError(String message) {
+    final normalized = message.toLowerCase();
+    return normalized.contains('device not ready') ||
+        normalized.contains('device disconnected') ||
+        normalized.contains('transport disconnected') ||
+        normalized.contains('has not established an interconnect session') ||
+        normalized.contains('did not establish an interconnect session');
+  }
+
+  String _permissionDescription(String method, String? resource) {
+    final target = resource?.isNotEmpty == true ? ' $resource' : '';
     return switch (method) {
-      'permission.require' => _checkPermission(
-        plugin,
-        arguments.firstOrNull?.toString() ?? '',
-      ),
-      'console.log' || 'console.info' => _pluginLog(id, arguments, 'info'),
-      'console.warn' => _pluginLog(id, arguments, 'warning'),
-      'console.error' => _pluginLog(id, arguments, 'severe'),
-      'config.readConfig' => jsonEncode(_requirePlugin(id).config),
-      'config.writeConfig' => _writeConfig(id, arguments),
-      'debug.sendRaw' => _sendRaw(arguments),
-      'device.getDeviceList' => jsonEncode(
-        readDeviceState().pairedDevices
-            .map((device) => {'name': device.name, 'addr': device.addr})
-            .toList(growable: false),
-      ),
-      'device.getDeviceState' => _getDeviceState(arguments),
-      'device.modifyDeviceState' => _modifyDeviceState(arguments),
-      'device.disconnectDevice' => deviceManager.disconnect(),
-      'filesystem.pickFile' => _pickFile(id, arguments),
-      'filesystem.readFile' => _readFile(arguments),
-      'filesystem.unloadFile' => _unloadFile(arguments),
-      'sandbox.readFile' => _readSandboxFile(id, arguments),
-      'sandbox.writeFile' => _writeSandboxFile(id, arguments),
-      'sandbox.listDirectory' => _listSandboxDirectory(id, arguments),
-      'sandbox.stat' => _statSandboxPath(id, arguments),
-      'sandbox.remove' => _removeSandboxPath(id, arguments),
-      'installer.addThirdPartyAppToQueue' => _installVirtualFile(
-        arguments,
-        LocalDeviceInstallType.app,
-      ),
-      'installer.addWatchFaceToQueue' => _installVirtualFile(
-        arguments,
-        LocalDeviceInstallType.watchface,
-      ),
-      'installer.addFirmwareToQueue' => _installVirtualFile(
-        arguments,
-        LocalDeviceInstallType.firmware,
-      ),
-      'interconnect.sendQAICMessage' => _sendInterconnect(id, arguments),
-      'network.fetch' => _networkFetch(arguments),
-      'provider.registerCommunityProvider' => _registerProvider(id, arguments),
-      'thirdpartyapp.launchQA' => _launchQuickApp(arguments),
-      'thirdpartyapp.getThirdPartyAppList' => _getQuickApps(),
-      'ui.updatePluginSettingsUI' => _updateSettingsUi(id, arguments),
-      'ui.openPageWithNodes' => _openPageWithNodes(id, arguments),
-      'ui.openPageWithUrl' => _openUrl(id, arguments),
-      _ => throw UnsupportedError('Unsupported ABv1 API: $method'),
+      'file.pick' => 'select files from the native environment',
+      'file.unload' => 'export$target to the native environment',
+      'network.fetch' => 'access$target',
+      'interconnect.send' => 'communicate with$target',
+      'interconnect.observe' => 'receive interconnect messages',
+      'provider.register' => 'register a resource provider',
+      'provider.unregister' => 'remove a resource provider',
+      'device.list' => 'access paired devices',
+      'device.info' => 'read information from$target',
+      'device.connect' => 'connect to$target',
+      'device.disconnect' => 'disconnect$target',
+      'device.apps.list' => 'read applications from$target',
+      'device.apps.launch' => 'launch$target',
+      'device.apps.uninstall' => 'uninstall$target',
+      'device.install' => 'install a file on$target',
+      'protocol.observe' => 'observe the protocol of$target',
+      'protocol.send' => 'send raw protocol data to$target',
+      _ => method,
     };
   }
 
-  String? _permissionFor(String method) {
-    if (method.startsWith('config.')) return 'config';
-    if (method.startsWith('debug.')) return 'debug';
-    if (method.startsWith('device.')) return 'device';
-    if (method.startsWith('filesystem.')) return 'filesystem';
-    if (method.startsWith('sandbox.')) return 'filesystem';
-    if (method.startsWith('installer.')) return 'installer';
-    if (method.startsWith('interconnect.')) return 'interconnect';
-    if (method.startsWith('network.')) return 'network';
-    if (method.startsWith('provider.')) return 'provider';
-    if (method.startsWith('thirdpartyapp.')) return 'thirdpartyapp';
-    if (method.startsWith('ui.')) return 'ui';
-    return null;
-  }
-
-  void _requirePermission(InstalledPlugin plugin, String permission) {
-    if (!plugin.manifest.permissions.contains(permission)) {
-      throw StateError(
-        'Plugin ${plugin.manifest.name} did not declare $permission permission',
-      );
-    }
-  }
-
-  Object? _checkPermission(InstalledPlugin plugin, String permission) {
-    _requirePermission(plugin, permission);
-    return null;
+  Future<PluginPermissionDecision> _promptPermission(
+    PluginPermissionRequest request,
+  ) async {
+    final response = await _requestHost(
+      request.pluginId,
+      'permission',
+      request.toJson(),
+    );
+    return switch (response['decision']?.toString()) {
+      'once' => PluginPermissionDecision.once,
+      'session' => PluginPermissionDecision.session,
+      'always' => PluginPermissionDecision.always,
+      _ => PluginPermissionDecision.deny,
+    };
   }
 
   Object? _pluginLog(String id, List<Object?> values, String level) {
@@ -359,123 +581,78 @@ class PluginManager {
     return null;
   }
 
-  Future<void> _writeConfig(String id, List<Object?> arguments) async {
-    final raw = jsonDecode(arguments.firstOrNull?.toString() ?? '{}');
-    if (raw is! Map) {
-      throw const FormatException('Plugin config must be an object');
-    }
+  Object? _storageGet(String id, List<Object?> arguments) {
+    final key = arguments.firstOrNull?.toString() ?? '';
+    if (key.isEmpty) throw const FormatException('Storage key is required');
+    return _requirePlugin(id).config[key];
+  }
+
+  Future<void> _storageSet(String id, List<Object?> arguments) async {
+    final key = arguments.firstOrNull?.toString() ?? '';
+    if (key.isEmpty) throw const FormatException('Storage key is required');
     final current = _requirePlugin(id);
-    final config = raw.cast<String, Object?>();
+    final config = Map<String, Object?>.of(current.config)
+      ..[key] = arguments.elementAtOrNull(1);
     await (await _storage).writeConfig(id, config);
     _plugins[id] = current.copyWith(config: config);
   }
 
-  Future<void> _sendRaw(List<Object?> arguments) async {
-    final payload = base64Decode(arguments.firstOrNull?.toString() ?? '');
-    await deviceManager.sendRaw(payload);
+  Future<void> _storageRemove(String id, List<Object?> arguments) async {
+    final key = arguments.firstOrNull?.toString() ?? '';
+    if (key.isEmpty) throw const FormatException('Storage key is required');
+    final current = _requirePlugin(id);
+    final config = Map<String, Object?>.of(current.config)..remove(key);
+    await (await _storage).writeConfig(id, config);
+    _plugins[id] = current.copyWith(config: config);
   }
 
-  String _getDeviceState(List<Object?> arguments) {
-    final address = arguments.firstOrNull?.toString();
-    final device = readDeviceState().pairedDevices
-        .where((candidate) => candidate.addr == address)
-        .firstOrNull;
-    if (device == null) throw StateError('Device not found: $address');
-    return jsonEncode({
-      'name': device.name,
-      'addr': device.addr,
-      'authkey': device.authkey ?? '',
-      'bleservice': {'recv': '', 'sent': ''},
-      'max_frame_size': 0,
-      'sec_keys': null,
-      'network_mtu': 0,
-      'codename': device.codename ?? '',
-    });
+  Future<void> _storageClear(String id) async {
+    final current = _requirePlugin(id);
+    await (await _storage).writeConfig(id, const {});
+    _plugins[id] = current.copyWith(config: const {});
   }
 
-  Object? _modifyDeviceState(List<Object?> arguments) {
-    final address = arguments.firstOrNull?.toString();
-    final json = jsonDecode(arguments.elementAtOrNull(1)?.toString() ?? '{}');
-    if (json is! Map) throw const FormatException('Invalid device state');
-    final values = json.cast<String, dynamic>();
-    final existing = readDeviceState().pairedDevices
-        .where((candidate) => candidate.addr == address)
-        .firstOrNull;
-    if (existing == null) throw StateError('Device not found: $address');
-    final device = existing.copyWith(
-      name: values['name']?.toString() ?? existing.name,
-      authkey: values['authkey']?.toString() ?? existing.authkey,
-      codename: values['codename']?.toString() ?? existing.codename,
-    );
-    if (address != values['addr']?.toString()) {
-      throw const FormatException('Device address mismatch');
-    }
-    unawaited(deviceManager.importSharedDevice(device));
-    return null;
-  }
-
-  Future<String?> _pickFile(String pluginId, List<Object?> arguments) async {
+  Future<Map<String, Object?>?> _pickSandboxFile(
+    String pluginId,
+    List<Object?> arguments,
+  ) async {
     final options = _jsonMap(arguments.firstOrNull);
-    _log.info('plugin $pluginId requested a file picker');
     final response = await _requestHost(pluginId, 'pickFile', {
       'options': options,
     });
     if (response['cancelled'] == true) return null;
-    final bytes = Uint8List.fromList(
-      (response['bytes'] as List?)
-              ?.whereType<num>()
-              .map((value) => value.toInt() & 0xff)
-              .toList(growable: false) ??
-          const [],
+    final bytes = _bytes(response['bytes']);
+    final rawName = response['name']?.toString() ?? 'plugin-file';
+    final name = rawName.replaceAll(RegExp(r'[/\\\x00]'), '_');
+    final path = PluginStoragePath.parse(
+      '/temp/picker/${DateTime.now().microsecondsSinceEpoch}/$name',
     );
-    final name = response['name']?.toString() ?? 'plugin-file';
-    final fileId = 'zbfile:${DateTime.now().microsecondsSinceEpoch}:$name';
-    final decodeText = options['decode_text'] == true;
-    final text = decodeText
-        ? _decodePluginText(bytes, options['encoding']?.toString())
-        : null;
-    _virtualFiles[fileId] = _PluginFile(name: name, bytes: bytes, text: text);
-    return jsonEncode({
-      'path': name,
-      'file_id': fileId,
+    await (await _storage).writeFile(pluginId, path, bytes);
+    return {
+      'name': name,
+      'path': path.virtualPath,
       'size': bytes.length,
-      'text_len': text?.runes.length ?? bytes.length,
-    });
+      if (options['_legacyText'] == true)
+        'textLength': PluginTextFileCodec.length(bytes),
+    };
   }
 
-  Future<String> _readFile(List<Object?> arguments) async {
-    final fileId = arguments.firstOrNull?.toString() ?? '';
-    final file = _virtualFiles[fileId];
-    if (file == null) throw StateError('File was not selected by this plugin');
-    final options = _jsonMap(arguments.elementAtOrNull(1));
-    final offset = (options['offset'] as num?)?.toInt() ?? 0;
-    final decodeText = options['decode_text'] == true;
-    if (decodeText) {
-      final runes = (file.text ?? utf8.decode(file.bytes, allowMalformed: true))
-          .runes
-          .toList();
-      final length = (options['len'] as num?)?.toInt() ?? runes.length;
-      if (offset < 0 || offset > runes.length) {
-        throw RangeError('Invalid offset');
-      }
-      return String.fromCharCodes(
-        runes.sublist(offset, (offset + length).clamp(offset, runes.length)),
-      );
-    }
-    final length = (options['len'] as num?)?.toInt() ?? file.bytes.length;
-    if (offset < 0 || offset > file.bytes.length) {
-      throw RangeError('Invalid offset');
-    }
-    return base64Encode(
-      file.bytes.sublist(
-        offset,
-        (offset + length).clamp(offset, file.bytes.length),
-      ),
+  Future<Map<String, Object?>> _unloadSandboxFile(
+    String pluginId,
+    List<Object?> arguments,
+  ) async {
+    final path = PluginStoragePath.parse(
+      arguments.firstOrNull?.toString() ?? '',
     );
-  }
-
-  bool _unloadFile(List<Object?> arguments) {
-    return _virtualFiles.remove(arguments.firstOrNull?.toString()) != null;
+    final bytes = await (await _storage).readFile(pluginId, path);
+    final options = _jsonMap(arguments.elementAtOrNull(1));
+    final name = options['suggestedName']?.toString().trim();
+    return _requestHost(pluginId, 'saveFile', {
+      'name': name?.isNotEmpty == true
+          ? name
+          : path.relativePath.split('/').last,
+      'bytes': bytes.toList(growable: false),
+    });
   }
 
   Future<String> _readSandboxFile(
@@ -486,7 +663,24 @@ class PluginManager {
       arguments.firstOrNull?.toString() ?? '',
     );
     final options = _jsonMap(arguments.elementAtOrNull(1));
-    final bytes = await (await _storage).readFile(pluginId, path);
+    final allBytes = await (await _storage).readFile(pluginId, path);
+    final offset = (options['offset'] as num?)?.toInt() ?? 0;
+    final requestedLength = (options['length'] as num?)?.toInt();
+    if (options['encoding']?.toString().toLowerCase() == 'text' &&
+        options['_legacyText'] == true) {
+      return PluginTextFileCodec.slice(
+        allBytes,
+        offset: offset,
+        length: requestedLength,
+      );
+    }
+    if (offset < 0 || offset > allBytes.length) {
+      throw RangeError('Invalid file offset: $offset');
+    }
+    final end = requestedLength == null
+        ? allBytes.length
+        : (offset + requestedLength).clamp(offset, allBytes.length);
+    final bytes = Uint8List.sublistView(allBytes, offset, end);
     return switch (options['encoding']?.toString().toLowerCase()) {
       'utf8' || 'utf-8' || 'text' => utf8.decode(bytes),
       null || '' || 'base64' => base64Encode(bytes),
@@ -503,19 +697,31 @@ class PluginManager {
     final path = PluginStoragePath.parse(
       arguments.firstOrNull?.toString() ?? '',
     );
-    final value = arguments.elementAtOrNull(1)?.toString() ?? '';
+    final value = arguments.elementAtOrNull(1);
     final options = _jsonMap(arguments.elementAtOrNull(2));
     final bytes = switch (options['encoding']?.toString().toLowerCase()) {
-      'utf8' || 'utf-8' || 'text' => Uint8List.fromList(utf8.encode(value)),
-      null || '' || 'base64' => base64Decode(value),
+      'utf8' ||
+      'utf-8' ||
+      'text' => Uint8List.fromList(utf8.encode(value?.toString() ?? '')),
+      null || '' || 'base64' => _bytes(value),
       final encoding => throw FormatException(
         'Unsupported plugin file encoding: $encoding',
       ),
     };
-    await (await _storage).writeFile(pluginId, path, bytes);
+    final storage = await _storage;
+    if (options['append'] == true) {
+      await storage.writeFileStream(
+        pluginId,
+        path,
+        Stream.value(bytes),
+        append: true,
+      );
+    } else {
+      await storage.writeFile(pluginId, path, bytes);
+    }
   }
 
-  Future<String> _listSandboxDirectory(
+  Future<List<Map<String, Object?>>> _listSandboxDirectory(
     String pluginId,
     List<Object?> arguments,
   ) async {
@@ -523,10 +729,10 @@ class PluginManager {
       arguments.firstOrNull?.toString() ?? '',
     );
     final entries = await (await _storage).listDirectory(pluginId, path);
-    return jsonEncode(entries.map((entry) => entry.toJson()).toList());
+    return entries.map((entry) => entry.toJson()).toList(growable: false);
   }
 
-  Future<String> _statSandboxPath(
+  Future<Map<String, Object?>?> _statSandboxPath(
     String pluginId,
     List<Object?> arguments,
   ) async {
@@ -534,7 +740,82 @@ class PluginManager {
       arguments.firstOrNull?.toString() ?? '',
     );
     final stat = await (await _storage).stat(pluginId, path);
-    return jsonEncode(stat?.toJson());
+    return stat?.toJson();
+  }
+
+  Future<void> _mkdirSandboxPath(
+    String pluginId,
+    List<Object?> arguments,
+  ) async {
+    final path = PluginStoragePath.parse(
+      arguments.firstOrNull?.toString() ?? '',
+    );
+    await (await _storage).createDirectory(pluginId, path);
+  }
+
+  Future<void> _copySandboxPath(
+    String pluginId,
+    List<Object?> arguments,
+  ) async {
+    final source = PluginStoragePath.parse(
+      arguments.firstOrNull?.toString() ?? '',
+    );
+    final destination = PluginStoragePath.parse(
+      arguments.elementAtOrNull(1)?.toString() ?? '',
+    );
+    await _copyStorageEntry(pluginId, source, destination);
+  }
+
+  Future<void> _moveSandboxPath(
+    String pluginId,
+    List<Object?> arguments,
+  ) async {
+    final source = PluginStoragePath.parse(
+      arguments.firstOrNull?.toString() ?? '',
+    );
+    final destination = PluginStoragePath.parse(
+      arguments.elementAtOrNull(1)?.toString() ?? '',
+    );
+    if (source.area == PluginStorageArea.package) {
+      throw UnsupportedError('/plugin is read-only');
+    }
+    await _copyStorageEntry(pluginId, source, destination);
+    await (await _storage).removeFile(pluginId, source);
+  }
+
+  Future<void> _copyStorageEntry(
+    String pluginId,
+    PluginStoragePath source,
+    PluginStoragePath destination,
+  ) async {
+    final storage = await _storage;
+    final stat = await storage.stat(pluginId, source);
+    if (stat == null) {
+      throw StateError('Plugin file does not exist: ${source.virtualPath}');
+    }
+    if (!stat.isDirectory) {
+      await storage.writeFile(
+        pluginId,
+        destination,
+        await storage.readFile(pluginId, source),
+      );
+      return;
+    }
+    if (destination.area == source.area &&
+        (source.relativePath.isEmpty ||
+            destination.relativePath == source.relativePath ||
+            destination.relativePath.startsWith('${source.relativePath}/'))) {
+      throw const FormatException('A directory cannot be copied into itself');
+    }
+    await storage.createDirectory(pluginId, destination);
+    for (final child in await storage.listDirectory(pluginId, source)) {
+      final name = child.path.split('/').last;
+      await _copyStorageEntry(
+        pluginId,
+        PluginStoragePath.parse(child.path),
+        PluginStoragePath.parse('${destination.virtualPath}/$name'),
+      );
+    }
   }
 
   Future<void> _removeSandboxPath(
@@ -545,50 +826,6 @@ class PluginManager {
       arguments.firstOrNull?.toString() ?? '',
     );
     await (await _storage).removeFile(pluginId, path);
-  }
-
-  String _decodePluginText(Uint8List bytes, String? requestedEncoding) {
-    final name = requestedEncoding?.trim().toLowerCase();
-    Encoding? encoding;
-    if (name != null && name.isNotEmpty && name != 'undefined') {
-      encoding = name == 'big5' ? enough.big5 : charset.Charset.getByName(name);
-      if (encoding == null) {
-        throw FormatException('Unsupported text encoding: $requestedEncoding');
-      }
-    }
-    encoding ??= charset.Charset.detect(
-      bytes,
-      defaultEncoding: utf8,
-      orders: [
-        utf8,
-        charset.gbk,
-        enough.big5,
-        charset.shiftJis,
-        charset.eucJp,
-        charset.eucKr,
-        charset.windows1252,
-        charset.latin2,
-      ],
-    );
-    return (encoding ?? utf8).decode(bytes);
-  }
-
-  Future<void> _installVirtualFile(
-    List<Object?> arguments,
-    LocalDeviceInstallType type,
-  ) async {
-    final fileId = arguments.firstOrNull?.toString() ?? '';
-    final file = _virtualFiles[fileId];
-    if (file == null) throw StateError('File was not selected by this plugin');
-    await _installer.installLocalPayload(
-      type: type,
-      fileName: file.name,
-      bytes: file.bytes,
-      deviceManager: deviceManager,
-      onProgress: (progress) => emitEvent(
-        CommandEvent('plugin.installProgress', data: {'progress': progress}),
-      ),
-    );
   }
 
   Future<void> _sendInterconnect(
@@ -625,6 +862,195 @@ class PluginManager {
     await send;
   }
 
+  List<Map<String, Object?>> _deviceList() => readDeviceState().pairedDevices
+      .map(
+        (device) => {
+          'id': device.addr,
+          'name': device.name,
+          'connectType': device.connectType,
+          if (device.codename != null) 'codename': device.codename,
+          'connected': readDeviceState().currentDevice?.addr == device.addr,
+        },
+      )
+      .toList(growable: false);
+
+  Map<String, Object?> _deviceInfo() {
+    final state = readDeviceState();
+    final device = state.currentDevice;
+    if (device == null) throw StateError('No device is connected');
+    return {
+      'id': device.addr,
+      'name': device.name,
+      if (device.codename != null) 'codename': device.codename,
+      if (state.battery != null) 'battery': state.battery!.capacity,
+      if (state.systemInfo != null) ...{
+        'model': state.systemInfo!.model,
+        'firmwareVersion': state.systemInfo!.firmwareVersion,
+      },
+    };
+  }
+
+  Future<Map<String, Object?>> _connectDevice(List<Object?> arguments) async {
+    final requested = arguments.firstOrNull?.toString() ?? '';
+    final state = readDeviceState();
+    final target = state.pairedDevices
+        .where((device) => requested.isEmpty || device.addr == requested)
+        .firstOrNull;
+    if (target == null) throw StateError('Paired device not found: $requested');
+    final authKey = target.authkey ?? '';
+    if (authKey.isEmpty) throw StateError('Device has no authentication key');
+    await deviceManager.connect(
+      target.addr,
+      target.name,
+      authKey,
+      connectType: target.connectType,
+    );
+    return _deviceInfo();
+  }
+
+  Future<List<Map<String, Object?>>> _deviceApps() async {
+    await deviceManager.fetchApps();
+    return readDeviceState().apps
+        .map(
+          (app) => {
+            'packageName': app.packageName,
+            'name': app.appName,
+            'versionCode': app.versionCode,
+            'canRemove': app.canRemove,
+          },
+        )
+        .toList(growable: false);
+  }
+
+  Future<void> _launchPluginApp(List<Object?> arguments) async {
+    final app = await _pluginApp(arguments.firstOrNull?.toString() ?? '');
+    final options = _jsonMap(arguments.elementAtOrNull(1));
+    await deviceManager.openApp(app, page: options['page']?.toString() ?? '');
+  }
+
+  Future<void> _uninstallPluginApp(List<Object?> arguments) async {
+    final app = await _pluginApp(arguments.firstOrNull?.toString() ?? '');
+    await deviceManager.uninstallApp(app);
+  }
+
+  Future<AppInfo> _pluginApp(String packageName) async {
+    await deviceManager.fetchApps();
+    final app = readDeviceState().apps
+        .where((candidate) => candidate.packageName == packageName)
+        .firstOrNull;
+    if (app == null) throw StateError('Application not found: $packageName');
+    return app;
+  }
+
+  Future<void> _installSandboxFile(
+    String pluginId,
+    List<Object?> arguments,
+  ) async {
+    final path = PluginStoragePath.parse(
+      arguments.firstOrNull?.toString() ?? '',
+    );
+    final options = _jsonMap(arguments.elementAtOrNull(1));
+    final type = switch (options['type']?.toString()) {
+      'app' => LocalDeviceInstallType.app,
+      'watchface' => LocalDeviceInstallType.watchface,
+      'firmware' => LocalDeviceInstallType.firmware,
+      final value => throw FormatException('Unsupported install type: $value'),
+    };
+    final bytes = await (await _storage).readFile(pluginId, path);
+    await _installer.installLocalPayload(
+      type: type,
+      fileName:
+          options['fileName']?.toString() ?? path.relativePath.split('/').last,
+      bytes: bytes,
+      deviceManager: deviceManager,
+      onProgress: (progress) => emitEvent(
+        CommandEvent(
+          'plugin.installProgress',
+          data: {'pluginId': pluginId, 'progress': progress},
+        ),
+      ),
+    );
+  }
+
+  Future<void> _sendProtocol(List<Object?> arguments) async {
+    await deviceManager.sendRaw(_bytes(arguments.firstOrNull));
+  }
+
+  Future<String> _wasmLoad(
+    InstalledPlugin plugin,
+    List<Object?> arguments,
+  ) async {
+    final path = arguments.firstOrNull?.toString() ?? '';
+    return (await _wasmHost(
+      plugin,
+    )).load(path, _jsonMap(arguments.elementAtOrNull(1)));
+  }
+
+  Future<List<Object?>> _wasmCall(
+    InstalledPlugin plugin,
+    List<Object?> arguments,
+  ) async {
+    final id = arguments.firstOrNull?.toString() ?? '';
+    final function = arguments.elementAtOrNull(1)?.toString() ?? '';
+    final values =
+        (arguments.elementAtOrNull(2) as List?)?.cast<Object?>() ?? const [];
+    return (await _wasmHost(plugin)).call(id, function, values);
+  }
+
+  Future<String> _wasmMemoryRead(
+    InstalledPlugin plugin,
+    List<Object?> arguments,
+  ) async {
+    return (await _wasmHost(plugin)).readMemory(
+      arguments.firstOrNull?.toString() ?? '',
+      arguments.elementAtOrNull(1)?.toString() ?? 'memory',
+      (arguments.elementAtOrNull(2) as num?)?.toInt() ?? 0,
+      (arguments.elementAtOrNull(3) as num?)?.toInt() ?? 0,
+    );
+  }
+
+  Future<void> _wasmMemoryWrite(
+    InstalledPlugin plugin,
+    List<Object?> arguments,
+  ) async {
+    (await _wasmHost(plugin)).writeMemory(
+      arguments.firstOrNull?.toString() ?? '',
+      arguments.elementAtOrNull(1)?.toString() ?? 'memory',
+      (arguments.elementAtOrNull(2) as num?)?.toInt() ?? 0,
+      _bytes(arguments.elementAtOrNull(3)),
+    );
+  }
+
+  Future<void> _wasmDispose(
+    InstalledPlugin plugin,
+    List<Object?> arguments,
+  ) async {
+    (await _wasmHost(
+      plugin,
+    )).disposeInstance(arguments.firstOrNull?.toString() ?? '');
+  }
+
+  Future<PluginWasmHost> _wasmHost(InstalledPlugin plugin) async {
+    if (plugin.manifest.runtime != PluginRuntimeType.hybrid) {
+      throw UnsupportedError('WASM is only available to hybrid plugins');
+    }
+    return _wasmHosts[plugin.manifest.id] ??= PluginWasmHost(
+      pluginId: plugin.manifest.id,
+      storage: await _storage,
+    );
+  }
+
+  Uint8List _bytes(Object? value) {
+    if (value is Uint8List) return value;
+    if (value is List) {
+      return Uint8List.fromList(
+        value.whereType<num>().map((item) => item.toInt() & 0xff).toList(),
+      );
+    }
+    if (value is String) return base64Decode(value);
+    throw const FormatException('Binary data is required');
+  }
+
   void _queueInterconnectDispatch(String packageName, Uint8List bytes) {
     final payload = utf8.decode(bytes, allowMalformed: true);
     _interconnectDispatchTail = _interconnectDispatchTail
@@ -632,28 +1058,99 @@ class PluginManager {
         .then((_) async {
           _log.info(
             'dispatching interconnect message from $packageName '
-            '(${bytes.length} bytes) to ${_runtimes.length} plugins',
+            '(${bytes.length} bytes)',
           );
-          for (final entry in _runtimes.entries.toList(growable: false)) {
-            try {
-              await entry.value.dispatchEvent(
-                'onQAICMessage_$packageName',
-                payload,
-              );
-            } catch (error, stackTrace) {
-              _log.warning(
-                'plugin ${entry.key} failed to handle interconnect message '
-                'from $packageName',
-                error,
-                stackTrace,
-              );
-            }
+          final id = _activePluginId;
+          final runtime = _activeRuntime;
+          final plugin = id == null ? null : _plugins[id];
+          if (id == null ||
+              runtime == null ||
+              plugin == null ||
+              _failures.containsKey(id) ||
+              !_interconnectObservers.contains(id)) {
+            return;
+          }
+          try {
+            await runtime.dispatchEvent(
+              plugin.manifest.runtime == PluginRuntimeType.legacy
+                  ? 'onQAICMessage_$packageName'
+                  : 'interconnect',
+              plugin.manifest.runtime == PluginRuntimeType.legacy
+                  ? payload
+                  : jsonEncode({'packageName': packageName, 'data': payload}),
+            );
+          } catch (error, stackTrace) {
+            await _recordFailure(
+              plugin,
+              error,
+              stackTrace,
+              phase: 'interconnect',
+            );
           }
         });
   }
 
+  void _queueRawProtocolDispatch(Uint8List bytes) {
+    final payload = jsonEncode({'data': base64Encode(bytes)});
+    _rawProtocolDispatchTail = _rawProtocolDispatchTail.catchError((_) {}).then(
+      (_) async {
+        final id = _activePluginId;
+        final runtime = _activeRuntime;
+        final plugin = id == null ? null : _plugins[id];
+        if (id == null ||
+            runtime == null ||
+            plugin == null ||
+            _failures.containsKey(id) ||
+            !_rawProtocolObservers.contains(id)) {
+          return;
+        }
+        try {
+          await runtime.dispatchEvent('protocol.data', payload);
+        } catch (error, stackTrace) {
+          await _recordFailure(plugin, error, stackTrace, phase: 'protocol');
+        }
+      },
+    );
+  }
+
+  Future<Map<String, Object?>> _networkDownload(
+    String pluginId,
+    List<Object?> arguments,
+  ) async {
+    final url = arguments.firstOrNull?.toString() ?? '';
+    _requireNetworkUri(url);
+    final path = PluginStoragePath.parse(
+      arguments.elementAtOrNull(1)?.toString() ?? '',
+    );
+    final options = _jsonMap(arguments.elementAtOrNull(2));
+    final response = await _dio.request<ResponseBody>(
+      url,
+      options: Options(
+        method: options['method']?.toString() ?? 'GET',
+        headers: (options['headers'] as Map?)?.cast<String, Object?>(),
+        responseType: ResponseType.stream,
+        validateStatus: (status) =>
+            status != null && status >= 200 && status < 300,
+      ),
+    );
+    final body = response.data;
+    if (body == null) throw StateError('Network response has no body');
+    final written = await (await _storage).writeFileStream(
+      pluginId,
+      path,
+      body.stream,
+      append: options['append'] == true,
+    );
+    return {
+      'path': path.virtualPath,
+      'bytesWritten': written,
+      'status': response.statusCode ?? 0,
+    };
+  }
+
   Future<Map<String, Object?>> _networkFetch(List<Object?> arguments) async {
     final url = arguments.firstOrNull?.toString() ?? '';
+    _requireNetworkUri(url);
     final options = _jsonMap(arguments.elementAtOrNull(1));
     final body = options['body']?.toString() ?? '';
     Uint8List? requestBody;
@@ -665,23 +1162,33 @@ class PluginManager {
       }
     }
     try {
-      final response = await _dio.request<List<int>>(
+      final response = await _dio.request<ResponseBody>(
         url,
         data: requestBody,
         options: Options(
           method: options['method']?.toString() ?? 'GET',
           headers: (options['headers'] as Map?)?.cast<String, Object?>(),
-          responseType: ResponseType.bytes,
+          responseType: ResponseType.stream,
           validateStatus: (_) => true,
         ),
       );
-      final bytes = Uint8List.fromList(response.data ?? const []);
+      final builder = BytesBuilder(copy: false);
+      var length = 0;
+      await for (final chunk
+          in response.data?.stream ?? const Stream<Uint8List>.empty()) {
+        length += chunk.length;
+        if (length > 16 * 1024 * 1024) {
+          throw StateError(
+            'Network response exceeds 16 MiB; use network.download',
+          );
+        }
+        builder.add(chunk);
+      }
+      final bytes = builder.takeBytes();
       return {
         'status': response.statusCode ?? 0,
-        'headers': jsonEncode(
-          response.headers.map.map(
-            (key, values) => MapEntry(key, values.join(',')),
-          ),
+        'headers': response.headers.map.map(
+          (key, values) => MapEntry(key, values.join(',')),
         ),
         'contentType': response.headers.value(Headers.contentTypeHeader) ?? '',
         'body': base64Encode(bytes),
@@ -694,43 +1201,41 @@ class PluginManager {
   Object? _registerProvider(String pluginId, List<Object?> arguments) {
     final json = _jsonMap(arguments.firstOrNull);
     final provider = _PluginProvider.fromJson(pluginId, json);
-    _providers[provider.name] = provider;
+    final existing = _providers[provider.id];
+    if (existing != null && existing.pluginId != pluginId) {
+      throw StateError(
+        'Provider ID is already registered by another plugin: ${provider.id}',
+      );
+    }
+    _providers[provider.id] = provider;
     emitEvent(CommandEvent('plugin.provider', data: provider.toJson()));
     return null;
   }
 
-  Future<void> _launchQuickApp(List<Object?> arguments) async {
-    final raw = _jsonMap(arguments.firstOrNull);
-    final packageName =
-        raw['package_name']?.toString() ?? raw['packageName']?.toString() ?? '';
-    await deviceManager.fetchApps();
-    final app = readDeviceState().apps
-        .where((candidate) => candidate.packageName == packageName)
-        .firstOrNull;
-    if (app == null) {
-      throw StateError('Quick app is not installed: $packageName');
+  Uri _requireNetworkUri(String value) {
+    final uri = Uri.tryParse(value);
+    if (uri == null ||
+        !uri.hasAuthority ||
+        (uri.scheme != 'https' && uri.scheme != 'http')) {
+      throw FormatException('Only HTTP and HTTPS URLs are supported: $value');
     }
-    await deviceManager.openApp(
-      app,
-      page: arguments.elementAtOrNull(1)?.toString() ?? '',
-    );
+    return uri;
   }
 
-  Future<String> _getQuickApps() async {
-    await deviceManager.fetchApps();
-    return jsonEncode(
-      readDeviceState().apps
-          .map(
-            (app) => {
-              'package_name': app.packageName,
-              'fingerprint': app.fingerprint,
-              'version_code': app.versionCode,
-              'can_remove': app.canRemove,
-              'app_name': app.appName,
-            },
-          )
-          .toList(growable: false),
+  Object? _unregisterProvider(String pluginId, List<Object?> arguments) {
+    final id = arguments.firstOrNull?.toString() ?? '';
+    final provider = _providers[id];
+    if (provider != null && provider.pluginId != pluginId) {
+      throw StateError('Provider belongs to another plugin: $id');
+    }
+    _providers.remove(id);
+    emitEvent(
+      CommandEvent(
+        'plugin.provider',
+        data: {'pluginId': pluginId, 'id': id, 'removed': true},
+      ),
     );
+    return null;
   }
 
   Object? _openPageWithNodes(String id, List<Object?> arguments) {
@@ -831,15 +1336,10 @@ class PluginManager {
     return values;
   }
 
-  Object? _openUrl(String id, List<Object?> arguments) {
+  Future<Map<String, Object?>> _openUrl(String id, List<Object?> arguments) {
     final url = arguments.firstOrNull?.toString() ?? '';
-    emitEvent(
-      CommandEvent(
-        'plugin.hostRequest',
-        data: {'pluginId': id, 'type': 'openUrl', 'url': url},
-      ),
-    );
-    return null;
+    _requireNetworkUri(url);
+    return _requestHost(id, 'openUrl', {'url': url});
   }
 
   Future<Map<String, Object?>> _requestHost(
@@ -892,14 +1392,96 @@ class PluginManager {
     emitEvent(CommandEvent('plugin.state', data: {'id': id}));
   }
 
+  Map<String, Object?> _summary(
+    InstalledPlugin plugin, {
+    bool includeIcon = true,
+  }) => {
+    ...plugin.summaryJson(includeIcon: includeIcon),
+    if (_failures[plugin.manifest.id] case final failure?)
+      'failure': failure.toJson(),
+    'safeMode': _safeMode,
+    'running': _activePluginId == plugin.manifest.id,
+  };
+
+  Future<T> _runPluginOperation<T>(
+    InstalledPlugin plugin,
+    String phase,
+    Future<T> Function() operation,
+  ) async {
+    try {
+      return await operation().timeout(
+        _operationTimeout,
+        onTimeout: () => throw TimeoutException(
+          'Plugin operation $phase timed out',
+          _operationTimeout,
+        ),
+      );
+    } on PluginExecutionException {
+      rethrow;
+    } catch (error, stackTrace) {
+      if (_isTransientHostError(error.toString())) {
+        throw PluginExecutionException(
+          plugin.manifest.id,
+          plugin.manifest.name,
+          error.toString(),
+        );
+      }
+      await _recordFailure(plugin, error, stackTrace, phase: phase);
+      throw PluginExecutionException(
+        plugin.manifest.id,
+        plugin.manifest.name,
+        error.toString(),
+      );
+    }
+  }
+
+  Future<void> _recordFailure(
+    InstalledPlugin plugin,
+    Object error,
+    StackTrace stackTrace, {
+    required String phase,
+  }) async {
+    final id = plugin.manifest.id;
+    if (_closed || _failures.containsKey(id)) return;
+    final failure = PluginExecutionFailure(
+      pluginId: id,
+      pluginName: plugin.manifest.name,
+      phase: phase,
+      message: error.toString(),
+      occurredAt: DateTime.now(),
+    );
+    _failures[id] = failure;
+    _log.warning(
+      'Plugin ${plugin.manifest.name} failed during $phase',
+      error,
+      stackTrace,
+    );
+    emitEvent(CommandEvent('plugin.error', data: failure.toJson()));
+    _emitState(id);
+    // This method can run inside a QuickJS/WASM host callback. Disposing that
+    // runtime before its current dispatch unwinds can deadlock the command bus.
+    // Mark it failed and stop feeding it events; a later close/remove/clear
+    // command owns runtime disposal from outside the callback stack.
+    _interconnectObservers.remove(id);
+    _rawProtocolObservers.remove(id);
+  }
+
   Future<void> close() async {
     _closed = true;
     await _interconnectSubscription.cancel();
-    for (final runtime in _runtimes.values) {
+    await _rawProtocolSubscription.cancel();
+    await _closeActiveRuntime();
+    _runtimeStarts.clear();
+    for (final host in _wasmHosts.values) {
+      await host.dispose();
+    }
+    _wasmHosts.clear();
+    final runtimes = {_quickJsRuntime, _wasmRuntime}.whereType<PluginRuntime>();
+    for (final runtime in runtimes) {
       await runtime.close();
     }
-    _runtimes.clear();
-    _runtimeStarts.clear();
+    _quickJsRuntime = null;
+    _wasmRuntime = null;
     for (final completer in _hostRequests.values) {
       if (!completer.isCompleted) {
         completer.completeError(StateError('Plugin host is closing'));
@@ -911,28 +1493,66 @@ class PluginManager {
   }
 }
 
-class _PluginFile {
-  const _PluginFile({required this.name, required this.bytes, this.text});
-  final String name;
-  final Uint8List bytes;
-  final String? text;
+class PluginExecutionFailure {
+  const PluginExecutionFailure({
+    required this.pluginId,
+    required this.pluginName,
+    required this.phase,
+    required this.message,
+    required this.occurredAt,
+  });
+
+  final String pluginId;
+  final String pluginName;
+  final String phase;
+  final String message;
+  final DateTime occurredAt;
+
+  Map<String, Object?> toJson() => {
+    'pluginId': pluginId,
+    'pluginName': pluginName,
+    'phase': phase,
+    'message': message,
+    'occurredAt': occurredAt.toIso8601String(),
+  };
+}
+
+class PluginExecutionException implements Exception {
+  const PluginExecutionException(this.pluginId, this.pluginName, this.message);
+
+  factory PluginExecutionException.fromFailure(
+    PluginExecutionFailure failure,
+  ) => PluginExecutionException(
+    failure.pluginId,
+    failure.pluginName,
+    failure.message,
+  );
+
+  final String pluginId;
+  final String pluginName;
+  final String message;
+
+  @override
+  String toString() => '$pluginName: $message';
 }
 
 class _PluginProvider {
   const _PluginProvider({
     required this.pluginId,
+    required this.id,
     required this.name,
-    this.getCategories,
-    required this.getPage,
-    required this.getItem,
+    this.categories,
+    required this.query,
+    required this.detail,
     required this.download,
   });
 
   final String pluginId;
+  final String id;
   final String name;
-  final String? getCategories;
-  final String getPage;
-  final String getItem;
+  final String? categories;
+  final String query;
+  final String detail;
   final String download;
 
   factory _PluginProvider.fromJson(String pluginId, Map<String, Object?> json) {
@@ -942,22 +1562,28 @@ class _PluginProvider {
       return value;
     }
 
+    final id = required('id');
+    if (!RegExp(r'^[a-z][a-z0-9]*(?:[.-][a-z0-9][a-z0-9-]*)+$').hasMatch(id)) {
+      throw FormatException('Invalid provider ID: $id');
+    }
     return _PluginProvider(
       pluginId: pluginId,
+      id: id,
       name: required('name'),
-      getCategories: json['fn_get_categories']?.toString(),
-      getPage: required('fn_get_page'),
-      getItem: required('fn_get_item'),
-      download: required('fn_download'),
+      categories: json['categories']?.toString(),
+      query: required('query'),
+      detail: required('detail'),
+      download: required('download'),
     );
   }
 
   Map<String, Object?> toJson() => {
     'pluginId': pluginId,
+    'id': id,
     'name': name,
-    if (getCategories != null) 'fn_get_categories': getCategories,
-    'fn_get_page': getPage,
-    'fn_get_item': getItem,
-    'fn_download': download,
+    if (categories != null) 'categories': categories,
+    'query': query,
+    'detail': detail,
+    'download': download,
   };
 }

@@ -17,22 +17,46 @@ class ThirdpartyAppInfo {
 
 class XiaomiThirdpartyAppSystem extends XiaomiPbSystem {
   static final _log = getLogger('XiaomiThirdpartyAppSystem');
+  static const _sessionTimeout = Duration(seconds: 5);
 
   final _connectedApps = <String, ThirdpartyAppInfo>{};
+  final _sessionWaiters = <String, Completer<ThirdpartyAppInfo>>{};
 
   Future<void> sendPhoneMessage(String packageName, Uint8List payload) async {
-    final app = _connectedApps[packageName];
-    if (app == null) {
-      throw StateError(
-        'Quick app has not established an interconnect session: $packageName',
-      );
-    }
+    final app = await _waitForSession(packageName);
     _log.info(
       '[${entity.id}] sending interconnect message to $packageName '
       '(${payload.length} bytes, fingerprint=${app.fingerprint.length} bytes)',
     );
     await component.sendPbPacket(_buildThirdpartyAppMsgContent(app, payload));
     _log.info('[${entity.id}] interconnect message queued for $packageName');
+  }
+
+  Future<ThirdpartyAppInfo> _waitForSession(String packageName) async {
+    final connected = _connectedApps[packageName];
+    if (connected != null) return connected;
+    var waiter = _sessionWaiters[packageName];
+    if (waiter == null) {
+      waiter = Completer<ThirdpartyAppInfo>();
+      _sessionWaiters[packageName] = waiter;
+      _log.info(
+        '[${entity.id}] waiting for interconnect session from $packageName',
+      );
+      Timer(_sessionTimeout, () {
+        if (!identical(_sessionWaiters[packageName], waiter)) return;
+        _sessionWaiters.remove(packageName);
+        if (!waiter!.isCompleted) {
+          waiter.completeError(
+            TimeoutException(
+              'Quick app did not establish an interconnect session: '
+              '$packageName',
+              _sessionTimeout,
+            ),
+          );
+        }
+      });
+    }
+    return waiter.future;
   }
 
   Future<void> launchApp(ThirdpartyAppInfo app, String page) async {
@@ -54,10 +78,13 @@ class XiaomiThirdpartyAppSystem extends XiaomiPbSystem {
 
   void _handleBasicInfo(pb_thirdparty.BasicInfo basicInfo) {
     final packageName = basicInfo.packageName;
-    _connectedApps[packageName] = ThirdpartyAppInfo(
+    final info = ThirdpartyAppInfo(
       packageName: packageName,
       fingerprint: Uint8List.fromList(basicInfo.fingerprint),
     );
+    _connectedApps[packageName] = info;
+    final waiter = _sessionWaiters.remove(packageName);
+    if (waiter != null && !waiter.isCompleted) waiter.complete(info);
     _log.info(
       '[${entity.id}] interconnect session opened by $packageName '
       '(fingerprint=${basicInfo.fingerprint.length} bytes)',
