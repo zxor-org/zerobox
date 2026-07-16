@@ -2713,6 +2713,150 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Logs may contain BandBBS, Xiaomi, or Amazfit login credentials and other sensitive information. Do not share them with anyone other than official ZeroBox maintainers!'**
   String get settingsAboutLogsWarningMessage;
+
+  /// No description provided for @pluginPermissionRequestTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Plugin permission request'**
+  String get pluginPermissionRequestTitle;
+
+  /// No description provided for @pluginPermissionRequestMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'\"{plugin}\" wants to {operation}.'**
+  String pluginPermissionRequestMessage(Object plugin, Object operation);
+
+  /// No description provided for @pluginPermissionOnce.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow once'**
+  String get pluginPermissionOnce;
+
+  /// No description provided for @pluginPermissionSession.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow this run'**
+  String get pluginPermissionSession;
+
+  /// No description provided for @pluginPermissionAlways.
+  ///
+  /// In en, this message translates to:
+  /// **'Always allow'**
+  String get pluginPermissionAlways;
+
+  /// No description provided for @pluginPermissionDeny.
+  ///
+  /// In en, this message translates to:
+  /// **'Deny'**
+  String get pluginPermissionDeny;
+
+  /// No description provided for @pluginPermissionOpenExternal.
+  ///
+  /// In en, this message translates to:
+  /// **'open an external link'**
+  String get pluginPermissionOpenExternal;
+
+  /// No description provided for @pluginPermissionPickFile.
+  ///
+  /// In en, this message translates to:
+  /// **'access host files'**
+  String get pluginPermissionPickFile;
+
+  /// No description provided for @pluginPermissionExportFile.
+  ///
+  /// In en, this message translates to:
+  /// **'export a file to the host'**
+  String get pluginPermissionExportFile;
+
+  /// No description provided for @pluginPermissionNetwork.
+  ///
+  /// In en, this message translates to:
+  /// **'access the network'**
+  String get pluginPermissionNetwork;
+
+  /// No description provided for @pluginPermissionInterconnect.
+  ///
+  /// In en, this message translates to:
+  /// **'communicate with device applications'**
+  String get pluginPermissionInterconnect;
+
+  /// No description provided for @pluginPermissionProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'register a resource provider'**
+  String get pluginPermissionProvider;
+
+  /// No description provided for @pluginPermissionReadDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'read device information'**
+  String get pluginPermissionReadDevice;
+
+  /// No description provided for @pluginPermissionOperateDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'operate a device'**
+  String get pluginPermissionOperateDevice;
+
+  /// No description provided for @pluginPermissionObserveProtocol.
+  ///
+  /// In en, this message translates to:
+  /// **'read raw device protocol data'**
+  String get pluginPermissionObserveProtocol;
+
+  /// No description provided for @pluginPermissionSendProtocol.
+  ///
+  /// In en, this message translates to:
+  /// **'send raw protocol data to a device'**
+  String get pluginPermissionSendProtocol;
+
+  /// No description provided for @pluginErrorTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Plugin runtime error'**
+  String get pluginErrorTitle;
+
+  /// No description provided for @pluginErrorMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'\"{plugin}\" encountered a runtime error:\n\n{error}'**
+  String pluginErrorMessage(Object plugin, Object error);
+
+  /// No description provided for @pluginErrorClearData.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear plugin data'**
+  String get pluginErrorClearData;
+
+  /// No description provided for @pluginErrorUninstall.
+  ///
+  /// In en, this message translates to:
+  /// **'Uninstall plugin'**
+  String get pluginErrorUninstall;
+
+  /// No description provided for @pluginErrorSafeMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter safe mode'**
+  String get pluginErrorSafeMode;
+
+  /// No description provided for @pluginSafeModeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Plugin safe mode is enabled'**
+  String get pluginSafeModeTitle;
+
+  /// No description provided for @pluginSafeModeDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'All plugins are stopped and will reload after safe mode is disabled.'**
+  String get pluginSafeModeDescription;
+
+  /// No description provided for @pluginSafeModeExit.
+  ///
+  /// In en, this message translates to:
+  /// **'Exit safe mode'**
+  String get pluginSafeModeExit;
 }
 
 class _AppLocalizationsDelegate

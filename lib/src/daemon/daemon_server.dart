@@ -23,6 +23,7 @@ class ZeroBoxDaemonServer {
   RandomAccessFile? _windowsLock;
   final DateTime startedAt = DateTime.now();
   Socket? _activeOperationClient;
+  final _pluginClients = <Socket, String>{};
   static final _log = getLogger('DaemonServer');
 
   Future<void> run() async {
@@ -131,8 +132,15 @@ class ZeroBoxDaemonServer {
         if (command.method == 'plugin.open' ||
             command.method == 'plugin.invoke' ||
             command.method == 'device.connect') {
-          unawaited(_executeAndWrite(client, id, command));
+          unawaited(
+            command.method.startsWith('plugin.')
+                ? _executePluginAndWrite(client, id, command)
+                : _executeAndWrite(client, id, command),
+          );
           continue;
+        }
+        if (command.method == 'plugin.close') {
+          _pluginClients.remove(client);
         }
         if (command.method == 'device.connect.cancel') {
           await host.cancelActiveOperation();
@@ -152,6 +160,12 @@ class ZeroBoxDaemonServer {
       // A disconnected CLI client is expected and does not stop the daemon.
     } finally {
       _clients.remove(client);
+      final pluginId = _pluginClients.remove(client);
+      if (pluginId != null && !_pluginClients.containsValue(pluginId)) {
+        await host.execute(
+          ZeroBoxCommand(method: 'plugin.close', params: {'id': pluginId}),
+        );
+      }
       await client.close();
     }
   }
@@ -176,6 +190,25 @@ class ZeroBoxDaemonServer {
     ZeroBoxCommand command,
   ) async {
     final result = await _executeForClient(client, command);
+    _write(client, {'id': id, ...result.toJson()});
+  }
+
+  Future<void> _executePluginAndWrite(
+    Socket client,
+    String id,
+    ZeroBoxCommand command,
+  ) async {
+    final result = await _executeForClient(client, command);
+    if (result.ok) {
+      final pluginId = command.params['id']?.toString() ?? '';
+      if (_clients.contains(client)) {
+        _pluginClients[client] = pluginId;
+      } else {
+        await host.execute(
+          ZeroBoxCommand(method: 'plugin.close', params: {'id': pluginId}),
+        );
+      }
+    }
     _write(client, {'id': id, ...result.toJson()});
   }
 

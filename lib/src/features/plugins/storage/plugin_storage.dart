@@ -30,10 +30,10 @@ class PluginStoragePath {
 
   String get virtualPath {
     final root = switch (area) {
-      PluginStorageArea.package => 'package',
+      PluginStorageArea.package => 'plugin',
       PluginStorageArea.data => 'data',
       PluginStorageArea.cache => 'cache',
-      PluginStorageArea.temporary => 'tmp',
+      PluginStorageArea.temporary => 'temp',
     };
     return relativePath.isEmpty ? '/$root' : '/$root/$relativePath';
   }
@@ -49,10 +49,10 @@ class PluginStoragePath {
       throw FormatException('Invalid plugin path: $value');
     }
     final area = switch (parts.first) {
-      'package' => PluginStorageArea.package,
+      'plugin' => PluginStorageArea.package,
       'data' => PluginStorageArea.data,
       'cache' => PluginStorageArea.cache,
-      'tmp' => PluginStorageArea.temporary,
+      'temp' => PluginStorageArea.temporary,
       _ => throw FormatException('Unknown plugin path root: $value'),
     };
     final tail = parts.skip(1).toList(growable: false);
@@ -79,7 +79,13 @@ abstract interface class PluginStorage {
 
   Future<void> writeConfig(String pluginId, Map<String, Object?> config);
 
+  Future<Set<String>> readPermissionGrants(String pluginId);
+
+  Future<void> writePermissionGrants(String pluginId, Set<String> grants);
+
   Future<void> removePlugin(String pluginId);
+
+  Future<void> clearPluginData(String pluginId);
 
   Future<Uint8List> readFile(String pluginId, PluginStoragePath path);
 
@@ -89,14 +95,25 @@ abstract interface class PluginStorage {
     Uint8List bytes,
   );
 
+  Future<int> writeFileStream(
+    String pluginId,
+    PluginStoragePath path,
+    Stream<List<int>> stream, {
+    bool append = false,
+  });
+
   Future<List<PluginFileStat>> listDirectory(
     String pluginId,
     PluginStoragePath path,
   );
 
+  Future<void> createDirectory(String pluginId, PluginStoragePath path);
+
   Future<PluginFileStat?> stat(String pluginId, PluginStoragePath path);
 
   Future<void> removeFile(String pluginId, PluginStoragePath path);
+
+  String? nativePath(String pluginId, PluginStoragePath path);
 
   Future<void> close();
 }

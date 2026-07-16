@@ -1,7 +1,18 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 typedef PluginHostCall =
     FutureOr<Object?> Function(String method, List<Object?> arguments);
+
+void settlePluginHostCall(Object? result, void Function() dispatch) {
+  if (result is! Future) return;
+  unawaited(
+    result.then<void>(
+      (_) => scheduleMicrotask(dispatch),
+      onError: (_, _) => scheduleMicrotask(dispatch),
+    ),
+  );
+}
 
 abstract interface class PluginRuntime {
   Future<void> start({
@@ -9,26 +20,25 @@ abstract interface class PluginRuntime {
     required String pluginName,
     required String pluginVersion,
     required String runtimeVersion,
-    required String source,
+    required Uint8List entryBytes,
+    required String bootstrap,
     required PluginHostCall hostCall,
   });
 
   Future<void> invokeCallback(String callbackId, [String? value]);
 
-  Future<Object?> invokeRegistered(String callbackId, List<String> arguments);
+  Future<Object?> invokeRegistered(String callbackId, List<Object?> arguments);
 
   Future<void> dispatchEvent(String name, String payload);
 
   Future<void> close();
 }
 
-const abV1PluginBootstrap = r'''
+const zeroBoxPluginBootstrap = r'''
 (() => {
   const callbacks = Object.create(null);
-  const lifecycle = [];
   const events = Object.create(null);
   const timers = Object.create(null);
-  const virtualFiles = Object.create(null);
   let nextCallback = 0;
   let nextTimer = 0;
 
@@ -36,43 +46,35 @@ const abV1PluginBootstrap = r'''
     return sendMessage('ZeroBoxHost', JSON.stringify({method, args}));
   }
 
-  function resolveVirtualFile(path) {
-    return virtualFiles[path] || path;
+  function registerCallback(fn) {
+    if (typeof fn !== 'function') throw new TypeError('Expected a function');
+    const id = `zb_callback_${++nextCallback}`;
+    callbacks[id] = fn;
+    return id;
   }
 
-  globalThis.console = {
-    log: (...args) => host('console.log', args.map(String)),
-    debug: (...args) => host('console.log', args.map(String)),
-    info: (...args) => host('console.info', args.map(String)),
-    warn: (...args) => host('console.warn', args.map(String)),
-    error: (...args) => host('console.error', args.map(String)),
-  };
-
-  globalThis.__zbSetRuntimeGlobals = (id, name, version, runtimeVersion) => {
-    const values = {
-      RUNTIME: 'AstroBox',
-      RUNTIME_VERSION: runtimeVersion,
-      PLUGIN_NAME: name,
-      PLUGIN_PATH: `zerobox-plugin://${id}`,
-      PLUGIN_VERSION: version,
-    };
-    for (const [key, value] of Object.entries(values)) {
-      Object.defineProperty(globalThis, key, {
-        value,
-        writable: false,
-        configurable: false,
-        enumerable: true,
-      });
-    }
-  };
-
   function scheduleTimer(fn, delay, repeat) {
-    if (typeof fn !== 'function') throw new TypeError('Timer callback must be a function');
     const id = ++nextTimer;
     timers[id] = {fn, repeat};
     host('runtime.setTimer', [id, Number(delay) || 0, repeat]);
     return id;
   }
+
+  globalThis.console = {
+    log: (...args) => host('log.info', args.map(String)),
+    debug: (...args) => host('log.debug', args.map(String)),
+    info: (...args) => host('log.info', args.map(String)),
+    warn: (...args) => host('log.warning', args.map(String)),
+    error: (...args) => host('log.error', args.map(String)),
+  };
+
+  globalThis.__zbSetRuntimeGlobals = (id, name, version, runtimeVersion) => {
+    Object.defineProperty(globalThis, 'PLUGIN', {
+      value: Object.freeze({id, name, version, runtimeVersion}),
+      writable: false,
+      configurable: false,
+    });
+  };
 
   globalThis.setTimeout = (fn, delay = 0) => scheduleTimer(fn, delay, false);
   globalThis.setInterval = (fn, delay = 0) => scheduleTimer(fn, delay, true);
@@ -81,133 +83,127 @@ const abV1PluginBootstrap = r'''
     host('runtime.clearTimer', [Number(id)]);
   };
 
-  const astroBoxApi = {
-    config: {
-      readConfig: () => host('config.readConfig'),
-      writeConfig: (value) => host('config.writeConfig', [value]),
+  const api = {
+    storage: {
+      get: (key) => host('storage.get', [key]),
+      set: (key, value) => host('storage.set', [key, value]),
+      remove: (key) => host('storage.remove', [key]),
+      clear: () => host('storage.clear'),
     },
-    debug: {
-      sendRaw: (value) => host('debug.sendRaw', [value]),
-    },
-    device: {
-      getDeviceList: () => host('device.getDeviceList'),
-      getDeviceState: (address) => host('device.getDeviceState', [address]),
-      modifyDeviceState: (address, state) => host('device.modifyDeviceState', [address, state]),
-      disconnectDevice: () => host('device.disconnectDevice'),
-    },
-    event: {
-      addEventListener: (name, fn) => {
-        host('permission.require', ['event']);
-        events[name] = fn;
-      },
-      removeEventListener: (name) => {
-        host('permission.require', ['event']);
-        delete events[name];
-      },
-      sendEvent: (name, payload) => {
-        host('permission.require', ['event']);
-        return __zbDispatchEvent(name, payload);
-      },
-    },
-    installer: {
-      addThirdPartyAppToQueue: (value) => host('installer.addThirdPartyAppToQueue', [resolveVirtualFile(value)]),
-      addWatchFaceToQueue: (value) => host('installer.addWatchFaceToQueue', [resolveVirtualFile(value)]),
-      addFirmwareToQueue: (value) => host('installer.addFirmwareToQueue', [resolveVirtualFile(value)]),
-    },
-    interconnect: {
-      sendQAICMessage: (packageName, data) =>
-        host('interconnect.sendQAICMessage', [packageName, data]),
-    },
-    lifecycle: {
-      onLoad: (fn) => {
-        host('permission.require', ['lifecycle']);
-        lifecycle.push(fn);
-      },
-    },
-    native: {
-      regNativeFun: (fn) => {
-        host('permission.require', ['native']);
-        const id = `zb_callback_${++nextCallback}`;
-        callbacks[id] = fn;
-        return id;
-      },
+    file: {
+      read: (path, options) => host('file.read', [path, options]),
+      write: (path, data, options) => host('file.write', [path, data, options]),
+      list: (path) => host('file.list', [path]),
+      stat: (path) => host('file.stat', [path]),
+      mkdir: (path) => host('file.mkdir', [path]),
+      copy: (source, destination) =>
+        host('file.copy', [source, destination]),
+      move: (source, destination) =>
+        host('file.move', [source, destination]),
+      remove: (path) => host('file.remove', [path]),
+      pick: (options) => host('file.pick', [options]),
+      unload: (path, options) => host('file.unload', [path, options]),
     },
     network: {
       fetch: (url, options) => host('network.fetch', [url, options]),
+      download: (url, path, options) =>
+        host('network.download', [url, path, options]),
+    },
+    interconnect: {
+      send: (packageName, data) =>
+        host('interconnect.send', [packageName, data]),
+      onMessage: async (fn) => {
+        await host('interconnect.observe');
+        events.interconnect = (payload) => fn(
+          typeof payload === 'string' ? JSON.parse(payload) : payload
+        );
+        return () => {
+          delete events.interconnect;
+          return host('interconnect.unobserve');
+        };
+      },
     },
     provider: {
-      registerCommunityProvider: (provider) =>
-        host('provider.registerCommunityProvider', [provider]),
+      register: (definition) => {
+        const value = {...definition};
+        for (const key of ['categories', 'query', 'detail', 'download']) {
+          if (typeof value[key] === 'function') value[key] = registerCallback(value[key]);
+        }
+        return host('provider.register', [value]);
+      },
+      unregister: (id) => host('provider.unregister', [id]),
     },
-    thirdpartyapp: {
-      launchQA: (app, page) => host('thirdpartyapp.launchQA', [app, page]),
-      getThirdPartyAppList: () => host('thirdpartyapp.getThirdPartyAppList'),
+    device: {
+      list: () => host('device.list'),
+      info: () => host('device.info'),
+      connect: (id) => host('device.connect', [id]),
+      disconnect: () => host('device.disconnect'),
+      apps: {
+        list: () => host('device.apps.list'),
+        launch: (packageName, options) =>
+          host('device.apps.launch', [packageName, options]),
+        uninstall: (packageName) => host('device.apps.uninstall', [packageName]),
+      },
+      install: (path, options) => host('device.install', [path, options]),
+    },
+    protocol: {
+      send: (data, options) => host('protocol.send', [data, options]),
+      observe: async (fn) => {
+        await host('protocol.observe');
+        events['protocol.data'] = (payload) => fn(
+          typeof payload === 'string' ? JSON.parse(payload) : payload
+        );
+        return () => {
+          delete events['protocol.data'];
+          return host('protocol.unobserve');
+        };
+      },
     },
     ui: {
-      updatePluginSettingsUI: (nodes) => host('ui.updatePluginSettingsUI', [nodes]),
-      openPageWithNodes: (nodes) => host('ui.openPageWithNodes', [nodes]),
-      openPageWithUrl: (url) => host('ui.openPageWithUrl', [url]),
+      update: (nodes) => host('ui.update', [nodes]),
+      openPage: (nodes) => host('ui.openPage', [nodes]),
+      openExternal: (url) => host('ui.openExternal', [url]),
+      callback: registerCallback,
     },
-    filesystem: {
-      pickFile: async (options) => {
-        const raw = await host('filesystem.pickFile', [options]);
-        if (raw == null) return raw;
-        const result = typeof raw === 'string' ? JSON.parse(raw) : raw;
-        if (!result || typeof result !== 'object') return raw;
-        if (result.file_id && result.path) virtualFiles[result.path] = result.file_id;
-        delete result.file_id;
-        return JSON.stringify(result);
-      },
-      readFile: (id, options) => host('filesystem.readFile', [resolveVirtualFile(id), options]),
-      unloadFile: (id) => {
-        const handle = resolveVirtualFile(id);
-        delete virtualFiles[id];
-        return host('filesystem.unloadFile', [handle]);
+    wasm: {
+      load: async (path, options) => {
+        const id = await host('wasm.load', [path, options]);
+        return Object.freeze({
+          id,
+          call: (name, ...args) => host('wasm.call', [id, name, args]),
+          readMemory: (offset, length, memory = 'memory') =>
+            host('wasm.memory.read', [id, memory, offset, length]),
+          writeMemory: (offset, data, memory = 'memory') =>
+            host('wasm.memory.write', [id, memory, offset, data]),
+          dispose: () => host('wasm.dispose', [id]),
+        });
       },
     },
   };
-  Object.defineProperty(globalThis, 'AstroBox', {
-    value: astroBoxApi,
-    writable: false,
-    configurable: false,
-    enumerable: true,
-  });
 
-  const zeroBoxApi = {
-    filesystem: {
-      readFile: (path, options) => host('sandbox.readFile', [path, options]),
-      writeFile: (path, data, options) =>
-        host('sandbox.writeFile', [path, data, options]),
-      listDirectory: async (path) =>
-        JSON.parse(await host('sandbox.listDirectory', [path])),
-      stat: async (path) => JSON.parse(await host('sandbox.stat', [path])),
-      remove: (path) => host('sandbox.remove', [path]),
-    },
-  };
   Object.defineProperty(globalThis, 'ZeroBox', {
-    value: zeroBoxApi,
+    value: Object.freeze(api),
     writable: false,
     configurable: false,
-    enumerable: true,
   });
 
-  globalThis.__zbStartPlugin = async () => {
-    for (const fn of lifecycle) await fn();
-  };
   globalThis.__zbInvokeRegistered = async (id, args) => {
-    const fn = callbacks[id];
-    if (typeof fn !== 'function') throw new Error(`Unknown callback: ${id}`);
-    return await fn(...args);
+    const callback = callbacks[id];
+    if (typeof callback !== 'function') throw new Error(`Callback not found: ${id}`);
+    return await callback(...args);
   };
   globalThis.__zbDispatchEvent = async (name, payload) => {
-    const listener = events[name];
-    if (typeof listener === 'function') await listener(payload);
+    const callback = events[name];
+    if (typeof callback === 'function') await callback(payload);
   };
   globalThis.__zbFireTimer = async (id) => {
     const timer = timers[id];
     if (!timer) return;
     if (!timer.repeat) delete timers[id];
     await timer.fn();
+  };
+  globalThis.__zbStartPlugin = async () => {
+    if (typeof globalThis.activate === 'function') await globalThis.activate(PLUGIN);
   };
 })();
 ''';

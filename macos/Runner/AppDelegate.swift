@@ -8,6 +8,7 @@ class AppDelegate: FlutterAppDelegate {
   override func applicationDidFinishLaunching(_ notification: Notification) {
     if ProcessInfo.processInfo.arguments.contains("--nogui") {
       NSApp.setActivationPolicy(.prohibited)
+      return
     }
     super.applicationDidFinishLaunching(notification)
   }

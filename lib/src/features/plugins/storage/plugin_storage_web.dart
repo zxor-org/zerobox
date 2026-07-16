@@ -20,6 +20,7 @@ class _WebPluginStorage implements PluginStorage {
   static const _filesStore = 'files';
   static const _separator = '\u0001';
   static const _configFile = '.zerobox-config.json';
+  static const _permissionsFile = '.zerobox-permissions.json';
 
   web.IDBDatabase? _database;
 
@@ -49,9 +50,7 @@ class _WebPluginStorage implements PluginStorage {
           0,
           entry.key.length - manifestSuffix.length,
         );
-        final manifest = const AbPluginPackageReader().readManifest(
-          entry.value,
-        );
+        final manifest = const PluginPackageReader().readManifest(entry.value);
         if (manifest.id != id) {
           throw const FormatException(
             'Plugin storage ID does not match manifest',
@@ -74,7 +73,7 @@ class _WebPluginStorage implements PluginStorage {
         plugins.add(
           InstalledPlugin(
             manifest: manifest,
-            source: utf8.decode(source),
+            entryBytes: source,
             config: _decodeConfig(configBytes),
             iconBase64: icon == null ? null : base64Encode(icon),
           ),
@@ -127,12 +126,67 @@ class _WebPluginStorage implements PluginStorage {
   }
 
   @override
+  Future<Set<String>> readPermissionGrants(String pluginId) async {
+    final transaction = _db.transaction(_filesStore.toJS, 'readonly');
+    final value = await _request(
+      transaction
+          .objectStore(_filesStore)
+          .get(
+            _fileKey(pluginId, PluginStorageArea.data, _permissionsFile).toJS,
+          ),
+    );
+    if (value == null) return <String>{};
+    final raw = value.dartify();
+    final bytes = raw is Uint8List
+        ? raw
+        : Uint8List.fromList((raw as List).cast<int>());
+    final decoded = jsonDecode(utf8.decode(bytes));
+    if (decoded is! List) {
+      throw const FormatException('Invalid plugin permission grants');
+    }
+    return decoded.map((item) => item.toString()).toSet();
+  }
+
+  @override
+  Future<void> writePermissionGrants(
+    String pluginId,
+    Set<String> grants,
+  ) async {
+    final bytes = Uint8List.fromList(
+      utf8.encode(jsonEncode(grants.toList()..sort())),
+    );
+    final transaction = _db.transaction(_filesStore.toJS, 'readwrite');
+    transaction
+        .objectStore(_filesStore)
+        .put(
+          bytes.toJS,
+          _fileKey(pluginId, PluginStorageArea.data, _permissionsFile).toJS,
+        );
+    await _transaction(transaction);
+  }
+
+  @override
   Future<void> removePlugin(String pluginId) async {
     final keys = await _allKeys();
     final prefix = '$pluginId$_separator';
     final transaction = _db.transaction(_filesStore.toJS, 'readwrite');
     final files = transaction.objectStore(_filesStore);
     for (final key in keys.where((key) => key.startsWith(prefix))) {
+      files.delete(key.toJS);
+    }
+    await _transaction(transaction);
+  }
+
+  @override
+  Future<void> clearPluginData(String pluginId) async {
+    final keys = await _allKeys();
+    final packagePrefix = _areaPrefix(pluginId, PluginStorageArea.package);
+    final pluginPrefix = '$pluginId$_separator';
+    final transaction = _db.transaction(_filesStore.toJS, 'readwrite');
+    final files = transaction.objectStore(_filesStore);
+    for (final key in keys.where(
+      (key) => key.startsWith(pluginPrefix) && !key.startsWith(packagePrefix),
+    )) {
       files.delete(key.toJS);
     }
     await _transaction(transaction);
@@ -169,7 +223,7 @@ class _WebPluginStorage implements PluginStorage {
     Uint8List bytes,
   ) async {
     if (path.area == PluginStorageArea.package) {
-      throw UnsupportedError('/package is read-only');
+      throw UnsupportedError('/plugin is read-only');
     }
     if (path.relativePath.isEmpty) {
       throw const FormatException('A file path is required');
@@ -179,6 +233,29 @@ class _WebPluginStorage implements PluginStorage {
         .objectStore(_filesStore)
         .put(bytes.toJS, _fileKey(pluginId, path.area, path.relativePath).toJS);
     await _transaction(transaction);
+  }
+
+  @override
+  Future<int> writeFileStream(
+    String pluginId,
+    PluginStoragePath path,
+    Stream<List<int>> stream, {
+    bool append = false,
+  }) async {
+    final builder = BytesBuilder(copy: false);
+    if (append) {
+      final existing = await stat(pluginId, path);
+      if (existing != null && !existing.isDirectory) {
+        builder.add(await readFile(pluginId, path));
+      }
+    }
+    var written = 0;
+    await for (final chunk in stream) {
+      builder.add(chunk);
+      written += chunk.length;
+    }
+    await writeFile(pluginId, path, builder.takeBytes());
+    return written;
   }
 
   @override
@@ -210,6 +287,20 @@ class _WebPluginStorage implements PluginStorage {
   }
 
   @override
+  Future<void> createDirectory(String pluginId, PluginStoragePath path) async {
+    if (path.area == PluginStorageArea.package) {
+      throw UnsupportedError('/plugin is read-only');
+    }
+    if (path.relativePath.isEmpty) return;
+    final marker = '${path.relativePath}/.zerobox-directory';
+    final transaction = _db.transaction(_filesStore.toJS, 'readwrite');
+    transaction
+        .objectStore(_filesStore)
+        .put(Uint8List(0).toJS, _fileKey(pluginId, path.area, marker).toJS);
+    await _transaction(transaction);
+  }
+
+  @override
   Future<PluginFileStat?> stat(String pluginId, PluginStoragePath path) async {
     if (path.relativePath.isEmpty) {
       return PluginFileStat(path: path.virtualPath, size: 0, isDirectory: true);
@@ -233,7 +324,7 @@ class _WebPluginStorage implements PluginStorage {
   @override
   Future<void> removeFile(String pluginId, PluginStoragePath path) async {
     if (path.area == PluginStorageArea.package) {
-      throw UnsupportedError('/package is read-only');
+      throw UnsupportedError('/plugin is read-only');
     }
     if (path.relativePath.isEmpty) {
       throw const FormatException('Cannot remove a storage root');
@@ -249,6 +340,9 @@ class _WebPluginStorage implements PluginStorage {
     }
     await _transaction(transaction);
   }
+
+  @override
+  String? nativePath(String pluginId, PluginStoragePath path) => null;
 
   Future<List<String>> _allKeys() async {
     final transaction = _db.transaction(_filesStore.toJS, 'readonly');

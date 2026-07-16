@@ -49,6 +49,8 @@ class BleTransport implements CharacteristicTransport {
 
   final _incomingController = StreamController<Uint8List>.broadcast();
   StreamSubscription<Uint8List>? _valueSubscription;
+  Completer<void>? _exclusiveWriteGate;
+  Set<String> _exclusiveCharacteristics = const {};
   final _characteristicSubscriptions = <StreamSubscription<Uint8List>>[];
   StreamSubscription<bool>? _connectionSubscription;
 
@@ -119,6 +121,49 @@ class BleTransport implements CharacteristicTransport {
     );
   }
 
+  /// Temporarily stops the normal protocol notification stream while the
+  /// firmware characteristics own the BLE link exclusively.
+  Future<void> suspendProtocolNotifications() async {
+    final connection = _bleConnection;
+    if (connection == null || _valueSubscription == null) return;
+    await _valueSubscription?.cancel();
+    _valueSubscription = null;
+    await connection.unsubscribe(_serviceUuid, _recvCharUuid);
+  }
+
+  Future<void> resumeProtocolNotifications() async {
+    final connection = _bleConnection;
+    if (connection == null || _valueSubscription != null) return;
+    _valueSubscription = await connection.subscribe(
+      _serviceUuid,
+      _recvCharUuid,
+      _incomingController.add,
+    );
+  }
+
+  Future<int?> requestMtu(int desiredMtu) async {
+    final connection = _bleConnection;
+    if (connection == null) return null;
+    return connection.requestMtu(desiredMtu);
+  }
+
+  void beginExclusiveCharacteristicWrites(Iterable<String> characteristics) {
+    if (_exclusiveWriteGate != null) {
+      throw StateError('An exclusive BLE operation is already active');
+    }
+    _exclusiveCharacteristics = characteristics
+        .map((value) => value.toLowerCase())
+        .toSet();
+    _exclusiveWriteGate = Completer<void>();
+  }
+
+  void endExclusiveCharacteristicWrites() {
+    final gate = _exclusiveWriteGate;
+    _exclusiveWriteGate = null;
+    _exclusiveCharacteristics = const {};
+    if (gate != null && !gate.isCompleted) gate.complete();
+  }
+
   @override
   Future<void> send(Uint8List data) async {
     _log.fine('[$deviceId] sending ${data.length} bytes');
@@ -138,6 +183,13 @@ class BleTransport implements CharacteristicTransport {
     BleRequiredCharacteristic characteristic, {
     bool withResponse = false,
   }) async {
+    final gate = _exclusiveWriteGate;
+    if (gate != null &&
+        !_exclusiveCharacteristics.contains(
+          characteristic.characteristicUuid.toLowerCase(),
+        )) {
+      await gate.future;
+    }
     final effectiveWithResponse = withResponse || _defaultWithResponse;
     _log.fine(
       '[$deviceId] sending ${data.length} bytes to '

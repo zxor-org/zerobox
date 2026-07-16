@@ -502,5 +502,41 @@
   "settingsAboutLogsOpen": "Open logs folder",
   "settingsAboutLogsOpenFailed": "Unable to open the logs folder",
   "settingsAboutLogsWarningTitle": "Sensitive information warning",
-  "settingsAboutLogsWarningMessage": "Logs may contain BandBBS, Xiaomi, or Amazfit login credentials and other sensitive information. Do not share them with anyone other than official ZeroBox maintainers!"
+  "settingsAboutLogsWarningMessage": "Logs may contain BandBBS, Xiaomi, or Amazfit login credentials and other sensitive information. Do not share them with anyone other than official ZeroBox maintainers!",
+  "pluginPermissionRequestTitle": "Plugin permission request",
+  "pluginPermissionRequestMessage": "\"{plugin}\" wants to {operation}.",
+  "@pluginPermissionRequestMessage": {
+    "placeholders": {
+      "plugin": {},
+      "operation": {}
+    }
+  },
+  "pluginPermissionOnce": "Allow once",
+  "pluginPermissionSession": "Allow this run",
+  "pluginPermissionAlways": "Always allow",
+  "pluginPermissionDeny": "Deny",
+  "pluginPermissionOpenExternal": "open an external link",
+  "pluginPermissionPickFile": "access host files",
+  "pluginPermissionExportFile": "export a file to the host",
+  "pluginPermissionNetwork": "access the network",
+  "pluginPermissionInterconnect": "communicate with device applications",
+  "pluginPermissionProvider": "register a resource provider",
+  "pluginPermissionReadDevice": "read device information",
+  "pluginPermissionOperateDevice": "operate a device",
+  "pluginPermissionObserveProtocol": "read raw device protocol data",
+  "pluginPermissionSendProtocol": "send raw protocol data to a device",
+  "pluginErrorTitle": "Plugin runtime error",
+  "pluginErrorMessage": "\"{plugin}\" encountered a runtime error:\n\n{error}",
+  "@pluginErrorMessage": {
+    "placeholders": {
+      "plugin": {},
+      "error": {}
+    }
+  },
+  "pluginErrorClearData": "Clear plugin data",
+  "pluginErrorUninstall": "Uninstall plugin",
+  "pluginErrorSafeMode": "Enter safe mode",
+  "pluginSafeModeTitle": "Plugin safe mode is enabled",
+  "pluginSafeModeDescription": "All plugins are stopped and will reload after safe mode is disabled.",
+  "pluginSafeModeExit": "Exit safe mode"
 }

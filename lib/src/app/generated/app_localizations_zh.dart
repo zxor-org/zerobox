@@ -1352,4 +1352,80 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get settingsAboutLogsWarningMessage =>
       '日志可能包含米坛/小米/华米登录凭证等敏感信息，请勿随意分享给除 ZeroBox 官方维护者以外的其他人！';
+
+  @override
+  String get pluginPermissionRequestTitle => '插件权限请求';
+
+  @override
+  String pluginPermissionRequestMessage(Object plugin, Object operation) {
+    return '“$plugin”希望$operation。';
+  }
+
+  @override
+  String get pluginPermissionOnce => '允许本次';
+
+  @override
+  String get pluginPermissionSession => '本次运行中允许';
+
+  @override
+  String get pluginPermissionAlways => '始终允许';
+
+  @override
+  String get pluginPermissionDeny => '拒绝';
+
+  @override
+  String get pluginPermissionOpenExternal => '打开外部链接';
+
+  @override
+  String get pluginPermissionPickFile => '访问宿主文件';
+
+  @override
+  String get pluginPermissionExportFile => '将文件导出到宿主环境';
+
+  @override
+  String get pluginPermissionNetwork => '访问网络';
+
+  @override
+  String get pluginPermissionInterconnect => '与设备应用通信';
+
+  @override
+  String get pluginPermissionProvider => '注册资源源';
+
+  @override
+  String get pluginPermissionReadDevice => '读取设备信息';
+
+  @override
+  String get pluginPermissionOperateDevice => '操作设备';
+
+  @override
+  String get pluginPermissionObserveProtocol => '读取设备原始协议数据';
+
+  @override
+  String get pluginPermissionSendProtocol => '向设备发送原始协议数据';
+
+  @override
+  String get pluginErrorTitle => '插件运行错误';
+
+  @override
+  String pluginErrorMessage(Object plugin, Object error) {
+    return '“$plugin”运行时发生错误：\n\n$error';
+  }
+
+  @override
+  String get pluginErrorClearData => '清除插件数据';
+
+  @override
+  String get pluginErrorUninstall => '卸载插件';
+
+  @override
+  String get pluginErrorSafeMode => '进入安全模式';
+
+  @override
+  String get pluginSafeModeTitle => '插件安全模式已启用';
+
+  @override
+  String get pluginSafeModeDescription => '所有插件均已停止，退出安全模式后才会重新加载。';
+
+  @override
+  String get pluginSafeModeExit => '退出安全模式';
 }

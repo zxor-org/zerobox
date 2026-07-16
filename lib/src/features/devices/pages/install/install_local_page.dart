@@ -54,14 +54,10 @@ class _InstallLocalPageState extends ConsumerState<InstallLocalPage> {
   }
 
   Future<void> _pickFile() async {
-    final extensions = switch (widget.type) {
-      InstallType.app => ['bin', 'rpk', 'zpk', 'zab', 'zip'],
-      InstallType.watchface => ['bin', 'face', 'mwz', 'zip'],
-      InstallType.firmware => ['zip', 'bin'],
-    };
     final result = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: extensions,
+      // Package contents are authoritative. Extensions are often renamed and
+      // must not prevent a valid package from being selected.
+      type: FileType.any,
       withData: true,
     );
     if (result == null || result.files.isEmpty) return;

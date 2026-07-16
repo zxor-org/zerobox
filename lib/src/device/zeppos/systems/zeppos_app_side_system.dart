@@ -255,7 +255,7 @@ class ZeppOsAppSideSystem extends System {
       _addEvent(appId, type: 'error', message: 'settingsStorage 加载失败：$error');
     }
     _addEvent(appId, type: 'start', message: '脚本加载成功（${source.length} 字符）');
-    final runtime = createPluginRuntime();
+    final runtime = createJavaScriptPluginRuntime();
     final session = _AppSideSession(
       appId: appId,
       version: version,
@@ -269,14 +269,33 @@ class ZeppOsAppSideSystem extends System {
     session.settingsSubscription = ZeppOsSettingsCoordinator.instance
         .changesFor(appId)
         .where((change) => !identical(change.origin, session))
-        .listen((change) async {
-          session.settings
-            ..clear()
-            ..addAll(change.values);
-          await runtime.dispatchEvent(
-            'appside.settings.external',
-            jsonEncode(change.values),
-          );
+        .listen((change) {
+          final values = Map<String, String>.from(change.values);
+          session.settingsDispatch = session.settingsDispatch
+              .catchError((_) {})
+              .then((_) async {
+                session.settings
+                  ..clear()
+                  ..addAll(values);
+                await runtime.dispatchEvent(
+                  'appside.settings.external',
+                  jsonEncode(values),
+                );
+              })
+              .catchError((error, stackTrace) {
+                _addEvent(
+                  appId,
+                  type: 'error',
+                  source: 'settingsStorage',
+                  message: 'settingsStorage 事件派发失败：$error',
+                );
+                _log.warning(
+                  'Failed to dispatch app-side settings for '
+                  '0x${appId.toRadixString(16)}',
+                  error,
+                  stackTrace,
+                );
+              });
         });
     _sessions[appId] = session;
     try {
@@ -285,7 +304,10 @@ class ZeppOsAppSideSystem extends System {
         pluginName: 'Zepp OS app-side',
         pluginVersion: '1',
         runtimeVersion: '1',
-        source: '${_appSideBootstrap(jsonEncode(settings))}\n$source',
+        entryBytes: Uint8List.fromList(
+          utf8.encode('${_appSideBootstrap(jsonEncode(settings))}\n$source'),
+        ),
+        bootstrap: '',
         hostCall: (method, arguments) => _hostCall(session, method, arguments),
       );
       await runtime.dispatchEvent('appside.lifecycle.start', '');
@@ -386,8 +408,8 @@ class ZeppOsAppSideSystem extends System {
     String method,
     List<Object?> arguments,
   ) {
-    if (method.startsWith('console.')) {
-      final level = method.substring(8);
+    if (method.startsWith('console.') || method.startsWith('log.')) {
+      final level = method.substring(method.indexOf('.') + 1);
       final message = arguments.join(' ');
       _addEvent(session.appId, type: 'console', message: '$level: $message');
       _log.info('[0x${session.appId.toRadixString(16)}] $level: $message');
@@ -461,6 +483,7 @@ class ZeppOsAppSideSystem extends System {
           (key, values) => MapEntry(key, values.join(', ')),
         ),
         'body': body,
+        'bodyBase64': base64Encode(bytes),
         'redirected': responseUrl != url.toString(),
         'type': 'basic',
       };
@@ -634,6 +657,7 @@ class _AppSideSession {
   final PluginRuntime runtime;
   final Map<String, String> settings;
   Future<void> settingsWrite = Future.value();
+  Future<void> settingsDispatch = Future.value();
   StreamSubscription<ZeppOsSettingsChange>? settingsSubscription;
   bool _destroyed = false;
 
@@ -641,6 +665,7 @@ class _AppSideSession {
     if (_destroyed) return;
     _destroyed = true;
     await settingsSubscription?.cancel();
+    await settingsDispatch.catchError((_) {});
     await runtime.dispatchEvent('appside.lifecycle.destroy', '');
   }
 }
@@ -786,15 +811,51 @@ String _appSideBootstrap(String initialSettings) =>
     }))
   };
   globalThis.messaging = {peerSocket};
+  const decodeBase64 = value => {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    const input = String(value || '').replace(/[^A-Za-z0-9+/]/g, '');
+    const output = [];
+    let bits = 0, bitCount = 0;
+    for (const char of input) {
+      const index = alphabet.indexOf(char);
+      if (index < 0) continue;
+      bits = bits << 6 | index;
+      bitCount += 6;
+      if (bitCount >= 8) {
+        bitCount -= 8;
+        output.push(bits >> bitCount & 0xff);
+      }
+    }
+    return new ZbBuffer(output);
+  };
   globalThis.fetch = (input, options) => {
     const request = typeof input === 'string'
       ? {...(options || {}), url: input}
       : {...(input || {})};
     request.method = String(request.method || 'GET');
     request.headers = request.headers || {};
-    return sendMessage('ZeroBoxHost', JSON.stringify({
+    return Promise.resolve(sendMessage('ZeroBoxHost', JSON.stringify({
       method: 'appside.fetch', args: [JSON.stringify(request)]
-    }));
+    }))).then(raw => {
+      const response = raw && typeof raw === 'object' ? raw : {body: raw};
+      const bodyText = () => {
+        if (typeof response.body === 'string') return response.body;
+        if (response.body == null) return '';
+        return JSON.stringify(response.body);
+      };
+      response.ok = Number(response.status) >= 200 && Number(response.status) < 300;
+      response.text = () => Promise.resolve(bodyText());
+      response.json = () => Promise.resolve(
+        typeof response.body === 'string' ? JSON.parse(response.body) : response.body
+      );
+      response.arrayBuffer = () => Promise.resolve(
+        response.bodyBase64 == null
+          ? ZbBuffer.from(bodyText()).buffer
+          : decodeBase64(response.bodyBase64).buffer
+      );
+      response.clone = () => ({...response});
+      return response;
+    });
   };
   const values = new Map(Object.entries(initialSettings));
   const storageListeners = [];

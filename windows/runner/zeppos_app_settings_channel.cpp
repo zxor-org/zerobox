@@ -5,8 +5,6 @@
 #include <flutter/standard_method_codec.h>
 
 #include <cwchar>
-#include <filesystem>
-#include <fstream>
 #include <memory>
 #include <string>
 #include <variant>
@@ -71,15 +69,11 @@ class Session : public std::enable_shared_from_this<Session> {
       : parent_(parent), messenger_(messenger) {}
   ~Session() { Close(false); }
 
-  void Open(int app_id, const std::string& title, const std::string& html,
+  void Open(int64_t app_id, const std::string& title, const std::string& html,
             std::unique_ptr<flutter::MethodResult<EncodableValue>> result) {
     app_id_ = app_id;
     result_ = std::move(result);
-    if (!WriteHtml(html)) {
-      result_->Error("WEBVIEW_FAILED", "Failed to create settings HTML file");
-      result_.reset();
-      return;
-    }
+    html_ = Wide(html);
 
     WNDCLASSW wc{};
     wc.lpfnWndProc = Proc;
@@ -146,7 +140,7 @@ class Session : public std::enable_shared_from_this<Session> {
                                 })
                                 .Get(),
                             &self->message_token_);
-                        self->webview_->Navigate(self->html_uri_.c_str());
+                        self->webview_->NavigateToString(self->html_.c_str());
                         if (self->result_) {
                           self->result_->Success();
                           self->result_.reset();
@@ -160,6 +154,8 @@ class Session : public std::enable_shared_from_this<Session> {
   }
 
   bool Matches(int64_t app_id) const { return app_id_ == app_id; }
+
+  void Shutdown() { Close(false); }
 
   void SettingsChanged(const std::string& settings_json) {
     if (!webview_) return;
@@ -195,25 +191,6 @@ class Session : public std::enable_shared_from_this<Session> {
     return DefWindowProc(hwnd, message, wparam, lparam);
   }
 
-  bool WriteHtml(const std::string& html) {
-    wchar_t directory[MAX_PATH];
-    if (!GetTempPathW(MAX_PATH, directory)) return false;
-    wchar_t path[MAX_PATH];
-    if (!GetTempFileNameW(directory, L"zbs", 0, path)) return false;
-    html_path_ = path;
-    std::ofstream output(std::filesystem::path(html_path_),
-                         std::ios::binary | std::ios::trunc);
-    output.write(html.data(), static_cast<std::streamsize>(html.size()));
-    output.close();
-    if (!output) return false;
-    std::wstring normalized = html_path_;
-    for (auto& character : normalized) {
-      if (character == L'\\') character = L'/';
-    }
-    html_uri_ = L"file:///" + normalized;
-    return true;
-  }
-
   void Resize() {
     if (!controller_ || !window_) return;
     RECT bounds{};
@@ -238,7 +215,7 @@ class Session : public std::enable_shared_from_this<Session> {
   }
 
   void Close(bool notify) {
-    const int app_id = app_id_;
+    const int64_t app_id = app_id_;
     app_id_ = 0;
     if (notify && app_id) {
       Send("closed", EncodableMap{{EncodableValue("appId"),
@@ -254,18 +231,14 @@ class Session : public std::enable_shared_from_this<Session> {
       SetWindowLongPtr(window, GWLP_USERDATA, 0);
       DestroyWindow(window);
     }
-    if (!html_path_.empty()) {
-      DeleteFileW(html_path_.c_str());
-      html_path_.clear();
-    }
+    html_.clear();
   }
 
   HWND parent_ = nullptr;
   HWND window_ = nullptr;
   flutter::BinaryMessenger* messenger_;
-  int app_id_ = 0;
-  std::wstring html_path_;
-  std::wstring html_uri_;
+  int64_t app_id_ = 0;
+  std::wstring html_;
   std::unique_ptr<flutter::MethodResult<EncodableValue>> result_;
   ComPtr<ICoreWebView2Controller> controller_;
   ComPtr<ICoreWebView2> webview_;
@@ -298,6 +271,7 @@ void RegisterZeppOsAppSettingsChannel(flutter::BinaryMessenger* messenger,
             result->Error("INVALID_ARGUMENT");
             return;
           }
+          if (session) session->Shutdown();
           session.reset();
           session = std::make_shared<Session>(parent_window, messenger);
           session->Open(
@@ -333,4 +307,11 @@ void RegisterZeppOsAppSettingsChannel(flutter::BinaryMessenger* messenger,
 #endif
       });
   channel.release();
+}
+
+void CloseZeppOsAppSettings() {
+#if defined(ZEROBOX_HAVE_WEBVIEW2)
+  if (session) session->Shutdown();
+  session.reset();
+#endif
 }

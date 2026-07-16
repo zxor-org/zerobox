@@ -22,9 +22,12 @@ class DeviceEntity {
 
   final _components = <Type, Object>{};
   final _systems = <System>[];
+  final _rawIncomingController = StreamController<Uint8List>.broadcast();
   Dispatcher? _dispatcher;
   StreamSubscription<Uint8List>? _incomingSubscription;
   StreamSubscription<bool>? _connectionSubscription;
+
+  Stream<Uint8List> get rawIncomingData => _rawIncomingController.stream;
 
   T? get<T>() => _components[T] as T?;
   T getRequired<T>() => _components[T] as T;
@@ -74,6 +77,7 @@ class DeviceEntity {
 
   void _onIncomingData(Uint8List data) {
     _log.fine('[$id] received ${data.length} bytes');
+    _rawIncomingController.add(Uint8List.fromList(data));
     try {
       _dispatcher?.dispatch(data);
     } catch (e, st) {
@@ -97,6 +101,7 @@ class DeviceEntity {
     _log.info('[$id] disposing entity');
     await _incomingSubscription?.cancel();
     await _connectionSubscription?.cancel();
+    await _rawIncomingController.close();
     for (final system in _systems) {
       try {
         await system.dispose();

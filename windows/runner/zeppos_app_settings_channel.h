@@ -6,5 +6,6 @@
 
 void RegisterZeppOsAppSettingsChannel(flutter::BinaryMessenger* messenger,
                                       HWND parent_window);
+void CloseZeppOsAppSettings();
 
 #endif

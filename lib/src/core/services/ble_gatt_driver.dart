@@ -126,6 +126,19 @@ class BleConnection {
     );
   }
 
+  Future<void> unsubscribe(String serviceUuid, String charUuid) async {
+    final characteristic = findCharacteristic(serviceUuid, charUuid);
+    if (characteristic == null) return;
+    _log.info('[$deviceId] unsubscribing from $charUuid');
+    await characteristic.notifications.unsubscribe().timeout(
+      const Duration(seconds: 8),
+      onTimeout: () => throw TimeoutException(
+        'BLE notification unsubscribe timed out for $charUuid',
+        const Duration(seconds: 8),
+      ),
+    );
+  }
+
   Future<void> write(
     String serviceUuid,
     String charUuid,

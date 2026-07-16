@@ -1414,4 +1414,83 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get settingsAboutLogsWarningMessage =>
       'Logs may contain BandBBS, Xiaomi, or Amazfit login credentials and other sensitive information. Do not share them with anyone other than official ZeroBox maintainers!';
+
+  @override
+  String get pluginPermissionRequestTitle => 'Plugin permission request';
+
+  @override
+  String pluginPermissionRequestMessage(Object plugin, Object operation) {
+    return '\"$plugin\" wants to $operation.';
+  }
+
+  @override
+  String get pluginPermissionOnce => 'Allow once';
+
+  @override
+  String get pluginPermissionSession => 'Allow this run';
+
+  @override
+  String get pluginPermissionAlways => 'Always allow';
+
+  @override
+  String get pluginPermissionDeny => 'Deny';
+
+  @override
+  String get pluginPermissionOpenExternal => 'open an external link';
+
+  @override
+  String get pluginPermissionPickFile => 'access host files';
+
+  @override
+  String get pluginPermissionExportFile => 'export a file to the host';
+
+  @override
+  String get pluginPermissionNetwork => 'access the network';
+
+  @override
+  String get pluginPermissionInterconnect =>
+      'communicate with device applications';
+
+  @override
+  String get pluginPermissionProvider => 'register a resource provider';
+
+  @override
+  String get pluginPermissionReadDevice => 'read device information';
+
+  @override
+  String get pluginPermissionOperateDevice => 'operate a device';
+
+  @override
+  String get pluginPermissionObserveProtocol => 'read raw device protocol data';
+
+  @override
+  String get pluginPermissionSendProtocol =>
+      'send raw protocol data to a device';
+
+  @override
+  String get pluginErrorTitle => 'Plugin runtime error';
+
+  @override
+  String pluginErrorMessage(Object plugin, Object error) {
+    return '\"$plugin\" encountered a runtime error:\n\n$error';
+  }
+
+  @override
+  String get pluginErrorClearData => 'Clear plugin data';
+
+  @override
+  String get pluginErrorUninstall => 'Uninstall plugin';
+
+  @override
+  String get pluginErrorSafeMode => 'Enter safe mode';
+
+  @override
+  String get pluginSafeModeTitle => 'Plugin safe mode is enabled';
+
+  @override
+  String get pluginSafeModeDescription =>
+      'All plugins are stopped and will reload after safe mode is disabled.';
+
+  @override
+  String get pluginSafeModeExit => 'Exit safe mode';
 }

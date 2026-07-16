@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zerobox/src/app/generated/app_localizations.dart';
 import 'package:zerobox/src/app/widgets/page_container.dart';
@@ -21,6 +22,16 @@ class _ZeppOsMoreFeaturesPageState
     extends ConsumerState<ZeppOsMoreFeaturesPage> {
   bool _finding = false;
   bool _busy = false;
+
+  Future<void> _showMirror() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const _WatchMirrorSheet(),
+    );
+  }
 
   Future<void> _setFinding(bool finding) async {
     if (_busy) return;
@@ -99,6 +110,15 @@ class _ZeppOsMoreFeaturesPageState
                       onTap: ready
                           ? () => context.push('/devices/zeppos-more/app-side')
                           : null,
+                    ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.watch_outlined),
+                      title: const Text('屏幕镜像'),
+                      subtitle: const Text('屏幕镜像'),
+                      trailing: const Icon(Icons.keyboard_arrow_up_rounded),
+                      enabled: ready,
+                      onTap: ready ? _showMirror : null,
                     ),
                     const Divider(),
                     const SizedBox(height: 12),
@@ -205,6 +225,208 @@ class _ZeppOsMoreFeaturesPageState
       ),
     );
   }
+}
+
+class _WatchMirrorSheet extends ConsumerStatefulWidget {
+  const _WatchMirrorSheet();
+
+  @override
+  ConsumerState<_WatchMirrorSheet> createState() => _WatchMirrorSheetState();
+}
+
+class _WatchMirrorSheetState extends ConsumerState<_WatchMirrorSheet> {
+  Uint8List? _frame;
+  Object? _error;
+  bool _active = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loop();
+  }
+
+  Future<void> _loop() async {
+    while (mounted && _active) {
+      try {
+        final frame = await ref
+            .read(deviceManagerProvider.notifier)
+            .requestZeppOsScreenshot();
+        if (!mounted || !_active) return;
+        setState(() {
+          _frame = frame;
+          _error = null;
+        });
+        await Future<void>.delayed(const Duration(milliseconds: 180));
+      } catch (error) {
+        if (!mounted || !_active) return;
+        setState(() => _error = error);
+        await Future<void>.delayed(const Duration(seconds: 1));
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _active = false;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: colors.surface,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 10, 20, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: colors.onSurfaceVariant.withValues(alpha: .35),
+                borderRadius: BorderRadius.circular(99),
+              ),
+            ),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    '屏幕镜像',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                IconButton(
+                  tooltip: '关闭',
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
+            Flexible(
+              child: SingleChildScrollView(
+                child: _WatchMirror(frame: _frame, error: _error),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WatchMirror extends StatelessWidget {
+  const _WatchMirror({required this.frame, required this.error});
+
+  final Uint8List? frame;
+  final Object? error;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final android = Theme.of(context).platform == TargetPlatform.android;
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: android ? 28 : 0),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: android ? 220 : 320),
+          child: AspectRatio(
+            aspectRatio: 1,
+            child: Semantics(
+            label: 'Zepp OS 手表屏幕镜像',
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+              if (frame == null)
+                Positioned.fill(
+                  child: SvgPicture.asset(
+                    'assets/images/devices/xiaomi-watch.svg',
+                    colorFilter: ColorFilter.mode(
+                      colors.onSurface,
+                      BlendMode.srcIn,
+                    ),
+                  ),
+                ),
+              if (frame == null)
+                SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: CircularProgressIndicator(
+                    color: colors.primary,
+                    strokeWidth: 4,
+                    strokeCap: StrokeCap.round,
+                  ),
+                ),
+              if (frame != null)
+                Positioned.fill(
+                  child: Align(
+                    child: FractionallySizedBox(
+                      widthFactor: 13 / 16,
+                      heightFactor: 13 / 16,
+                      child: ClipOval(
+                        child: ColoredBox(
+                          color: Colors.black,
+                          child: Image.memory(
+                            frame!,
+                            fit: BoxFit.cover,
+                            gaplessPlayback: true,
+                            errorBuilder: (_, error, _) => _MirrorStatus(
+                              icon: Icons.broken_image_outlined,
+                              text: '截图格式无法显示\n$error',
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              if (frame != null)
+                Positioned.fill(
+                  child: SvgPicture.asset(
+                    'assets/images/devices/xiaomi-watch-mirror-shell.svg',
+                    colorFilter: ColorFilter.mode(
+                      colors.onSurface,
+                      BlendMode.srcIn,
+                    ),
+                  ),
+                ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MirrorStatus extends StatelessWidget {
+  const _MirrorStatus({required this.icon, required this.text, this.color});
+  final IconData icon;
+  final String text;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 36),
+          const SizedBox(height: 12),
+          Text(
+            text,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: color ?? Colors.white70),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _ZeppOsMessageList extends StatelessWidget {

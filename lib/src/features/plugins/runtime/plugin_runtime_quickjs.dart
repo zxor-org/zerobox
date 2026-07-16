@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:quickjs_engine/quickjs_engine.dart';
 
@@ -18,7 +19,8 @@ class _QuickJsPluginRuntime implements PluginRuntime {
     required String pluginName,
     required String pluginVersion,
     required String runtimeVersion,
-    required String source,
+    required Uint8List entryBytes,
+    required String bootstrap,
     required PluginHostCall hostCall,
   }) async {
     await close();
@@ -30,7 +32,9 @@ class _QuickJsPluginRuntime implements PluginRuntime {
       timeout: 10 * 1000,
       hostPromiseRejectionHandler: (reason) {
         unawaited(
-          Future.sync(() => hostCall('console.error', [reason.toString()])),
+          Future.sync(
+            () => hostCall('runtime.reportError', [reason.toString()]),
+          ).then<void>((_) {}, onError: (_, _) {}),
         );
       },
     );
@@ -49,23 +53,23 @@ class _QuickJsPluginRuntime implements PluginRuntime {
         return _clearTimer(arguments);
       }
       final result = hostCall(method, arguments);
-      if (result is Future) {
-        result.whenComplete(() => scheduleMicrotask(runtime.dispatch));
-      }
+      settlePluginHostCall(result, runtime.dispatch);
       return result;
     };
 
-    _evaluate(runtime, abV1PluginBootstrap, name: 'zerobox_abv1_host.js');
-    _evaluate(
-      runtime,
-      '__zbSetRuntimeGlobals('
-      '${jsonEncode(pluginId)}, '
-      '${jsonEncode(pluginName)}, '
-      '${jsonEncode(pluginVersion)}, '
-      '${jsonEncode(runtimeVersion)})',
-      name: 'zerobox_abv1_globals.js',
-    );
-    _evaluate(runtime, source, name: '$pluginId/main.js');
+    if (bootstrap.isNotEmpty) {
+      _evaluate(runtime, bootstrap, name: 'zerobox_plugin_host.js');
+      _evaluate(
+        runtime,
+        '__zbSetRuntimeGlobals('
+        '${jsonEncode(pluginId)}, '
+        '${jsonEncode(pluginName)}, '
+        '${jsonEncode(pluginVersion)}, '
+        '${jsonEncode(runtimeVersion)})',
+        name: 'zerobox_plugin_globals.js',
+      );
+    }
+    _evaluate(runtime, utf8.decode(entryBytes), name: '$pluginId/main.js');
     final started = runtime.evaluate('__zbStartPlugin()');
     if (started.isError) throw StateError(started.stringResult);
     await _resolveResult(runtime, started.rawResult);
@@ -79,7 +83,7 @@ class _QuickJsPluginRuntime implements PluginRuntime {
   @override
   Future<Object?> invokeRegistered(
     String callbackId,
-    List<String> arguments,
+    List<Object?> arguments,
   ) async {
     final runtime = _requiredRuntime;
     final result = runtime.evaluate(
@@ -175,7 +179,7 @@ class _QuickJsPluginRuntime implements PluginRuntime {
       await _resolveResult(runtime, result.rawResult);
     } catch (error) {
       await Future.sync(
-        () => _hostCall?.call('console.error', ['Timer $id failed: $error']),
+        () => _hostCall?.call('log.error', ['Timer $id failed: $error']),
       );
     }
   }

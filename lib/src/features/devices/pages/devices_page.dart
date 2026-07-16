@@ -338,36 +338,21 @@ class _DeviceFeaturesPanel extends ConsumerWidget {
               title: Text(l10n.install),
               tiles: [
                 SettingsTile.navigation(
-                  onPressed: (_) => _pickAndEnqueue(
-                    context,
-                    ref,
-                    LocalDeviceInstallType.app,
-                    ['bin', 'rpk', 'zpk', 'zip'],
-                  ),
+                  onPressed: (_) => _pickAndEnqueue(context, ref),
                   enabled: enabled,
                   leading: const Icon(Icons.apps_outlined),
                   title: Text(l10n.deviceFeaturesInstallApp),
                   description: Text(l10n.deviceFeaturesInstallAppDesc),
                 ),
                 SettingsTile.navigation(
-                  onPressed: (_) => _pickAndEnqueue(
-                    context,
-                    ref,
-                    LocalDeviceInstallType.watchface,
-                    ['bin', 'face', 'mwz', 'zip'],
-                  ),
+                  onPressed: (_) => _pickAndEnqueue(context, ref),
                   enabled: enabled,
                   leading: const Icon(Icons.watch_outlined),
                   title: Text(l10n.deviceFeaturesInstallWatchface),
                   description: Text(l10n.deviceFeaturesInstallWatchfaceDesc),
                 ),
                 SettingsTile.navigation(
-                  onPressed: (_) => _pickAndEnqueue(
-                    context,
-                    ref,
-                    LocalDeviceInstallType.firmware,
-                    ['zip', 'bin'],
-                  ),
+                  onPressed: (_) => _pickAndEnqueue(context, ref),
                   enabled: enabled,
                   leading: const Icon(Icons.memory_outlined),
                   title: Text(l10n.deviceFeaturesInstallFirmware),
@@ -418,12 +403,9 @@ class _DeviceFeaturesPanel extends ConsumerWidget {
   Future<void> _pickAndEnqueue(
     BuildContext context,
     WidgetRef ref,
-    LocalDeviceInstallType type,
-    List<String> extensions,
   ) async {
     final result = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: extensions,
+      type: FileType.any,
       withData: true,
     );
     if (result == null || result.files.isEmpty) return;

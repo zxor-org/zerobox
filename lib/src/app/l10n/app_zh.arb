@@ -502,5 +502,41 @@
   "settingsAboutLogsOpen": "打开日志文件夹",
   "settingsAboutLogsOpenFailed": "无法打开日志文件夹",
   "settingsAboutLogsWarningTitle": "敏感信息警告",
-  "settingsAboutLogsWarningMessage": "日志可能包含米坛/小米/华米登录凭证等敏感信息，请勿随意分享给除 ZeroBox 官方维护者以外的其他人！"
+  "settingsAboutLogsWarningMessage": "日志可能包含米坛/小米/华米登录凭证等敏感信息，请勿随意分享给除 ZeroBox 官方维护者以外的其他人！",
+  "pluginPermissionRequestTitle": "插件权限请求",
+  "pluginPermissionRequestMessage": "“{plugin}”希望{operation}。",
+  "@pluginPermissionRequestMessage": {
+    "placeholders": {
+      "plugin": {},
+      "operation": {}
+    }
+  },
+  "pluginPermissionOnce": "允许本次",
+  "pluginPermissionSession": "本次运行中允许",
+  "pluginPermissionAlways": "始终允许",
+  "pluginPermissionDeny": "拒绝",
+  "pluginPermissionOpenExternal": "打开外部链接",
+  "pluginPermissionPickFile": "访问宿主文件",
+  "pluginPermissionExportFile": "将文件导出到宿主环境",
+  "pluginPermissionNetwork": "访问网络",
+  "pluginPermissionInterconnect": "与设备应用通信",
+  "pluginPermissionProvider": "注册资源源",
+  "pluginPermissionReadDevice": "读取设备信息",
+  "pluginPermissionOperateDevice": "操作设备",
+  "pluginPermissionObserveProtocol": "读取设备原始协议数据",
+  "pluginPermissionSendProtocol": "向设备发送原始协议数据",
+  "pluginErrorTitle": "插件运行错误",
+  "pluginErrorMessage": "“{plugin}”运行时发生错误：\n\n{error}",
+  "@pluginErrorMessage": {
+    "placeholders": {
+      "plugin": {},
+      "error": {}
+    }
+  },
+  "pluginErrorClearData": "清除插件数据",
+  "pluginErrorUninstall": "卸载插件",
+  "pluginErrorSafeMode": "进入安全模式",
+  "pluginSafeModeTitle": "插件安全模式已启用",
+  "pluginSafeModeDescription": "所有插件均已停止，退出安全模式后才会重新加载。",
+  "pluginSafeModeExit": "退出安全模式"
 }

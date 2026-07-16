@@ -2,12 +2,13 @@ import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:zerobox/src/device/zeppos/install/zeppos_package_parser.dart';
+import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
 import 'package:zerobox/src/features/resources/domain/community_resource.dart';
 import 'package:zerobox/src/features/resources/domain/resource_catalog.dart';
-import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
-import 'package:archive/archive.dart';
 
 export 'resource_task_status.dart';
 
@@ -217,19 +218,34 @@ class ResourceInstallService {
     String fileName,
     Uint8List bytes,
   ) {
+    // Zepp OS packages are ZIP containers whose extension is routinely
+    // changed by browsers, download managers and users. Their manifest and
+    // nested package structure are authoritative; the name is only a hint.
+    try {
+      final package = const ZeppOsPackageParser().parse(bytes);
+      return switch (package.type) {
+        ZeppOsPackageType.app => LocalDeviceInstallType.app,
+        ZeppOsPackageType.watchface => LocalDeviceInstallType.watchface,
+        ZeppOsPackageType.firmware => LocalDeviceInstallType.firmware,
+      };
+    } catch (_) {
+      // Not a recognized Zepp OS container. Continue with other formats and
+      // finally use the extension as a compatibility fallback.
+    }
+
     final lower = fileName.toLowerCase();
     final extension = lower.contains('.') ? lower.split('.').last : '';
 
-    if (extension == 'rpk' || extension == 'zpk' || extension == 'zab') {
-      return LocalDeviceInstallType.app;
-    }
-    if (extension == 'face' || extension == 'mwz') {
-      return LocalDeviceInstallType.watchface;
-    }
     if (_extractAppPackageName(bytes) != null) {
       return LocalDeviceInstallType.app;
     }
     if (_extractWatchfaceId(bytes) != null) {
+      return LocalDeviceInstallType.watchface;
+    }
+    if (extension == 'rpk' || extension == 'zpk' || extension == 'zab') {
+      return LocalDeviceInstallType.app;
+    }
+    if (extension == 'face' || extension == 'mwz') {
       return LocalDeviceInstallType.watchface;
     }
     return null;

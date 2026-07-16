@@ -23,13 +23,25 @@ Future<PluginStorage> createPluginStorage() async {
         )
       : await getApplicationCacheDirectory();
   final temporary = await getTemporaryDirectory();
-  final storage = _IoPluginStorage(
+  return createIoPluginStorage(
     installedRoot: Directory('${support.path}${Platform.pathSeparator}plugins'),
     cacheRoot: Directory('${cache.path}${Platform.pathSeparator}plugins'),
     temporaryRoot: Directory(
       '${temporary.path}${Platform.pathSeparator}zerobox'
       '${Platform.pathSeparator}plugins-$pid',
     ),
+  );
+}
+
+Future<PluginStorage> createIoPluginStorage({
+  required Directory installedRoot,
+  required Directory cacheRoot,
+  required Directory temporaryRoot,
+}) async {
+  final storage = _IoPluginStorage(
+    installedRoot: installedRoot,
+    cacheRoot: cacheRoot,
+    temporaryRoot: temporaryRoot,
   );
   await storage.initialize();
   return storage;
@@ -43,7 +55,11 @@ class _IoPluginStorage implements PluginStorage {
   });
 
   static const _manifestFile = 'manifest.json';
-  static const _configFile = '.zerobox-config.json';
+  static const _metadataDirectoryName = '.zerobox';
+  static const _configFile = 'config.json';
+  static const _permissionsFile = 'permissions.json';
+  static const _legacyConfigFile = '.zerobox-config.json';
+  static const _legacyPermissionsFile = '.zerobox-permissions.json';
 
   final Directory installedRoot;
   final Directory cacheRoot;
@@ -77,7 +93,7 @@ class _IoPluginStorage implements PluginStorage {
   Future<InstalledPlugin> _loadPlugin(String id) async {
     final package = _packageDirectory(id);
     final manifestFile = File(_join(package.path, _manifestFile));
-    final manifest = const AbPluginPackageReader().readManifest(
+    final manifest = const PluginPackageReader().readManifest(
       await manifestFile.readAsBytes(),
     );
     if (manifest.id != id) {
@@ -85,27 +101,32 @@ class _IoPluginStorage implements PluginStorage {
         'Plugin directory ID does not match manifest',
       );
     }
-    final source = await _packageFile(id, manifest.entry).readAsString();
+    final entryBytes = await _packageFile(id, manifest.entry).readAsBytes();
     final icon = manifest.iconPath == null
         ? null
         : await _packageFile(id, manifest.iconPath!).readAsBytes();
+    await readPermissionGrants(id);
     return InstalledPlugin(
       manifest: manifest,
-      source: source,
+      entryBytes: entryBytes,
       config: await _readConfig(id),
       iconBase64: icon == null ? null : base64Encode(icon),
     );
   }
 
   Future<Map<String, Object?>> _readConfig(String id) async {
-    await _ensureNoSymbolicLinks(
-      id,
-      const PluginStoragePath(
-        area: PluginStorageArea.data,
-        relativePath: _configFile,
-      ),
-    );
-    final file = File(_join(_dataDirectory(id).path, _configFile));
+    await _ensureMetadataSafe(id);
+    var file = _metadataFile(id, _configFile);
+    final legacy = File(_join(_dataDirectory(id).path, _legacyConfigFile));
+    if (!await file.exists() && await legacy.exists()) {
+      final bytes = await legacy.readAsBytes();
+      await writeConfig(
+        id,
+        (jsonDecode(utf8.decode(bytes)) as Map).cast<String, Object?>(),
+      );
+      await legacy.delete();
+      file = _metadataFile(id, _configFile);
+    }
     if (!await file.exists()) return const {};
     final decoded = jsonDecode(await file.readAsString());
     if (decoded is! Map) throw const FormatException('Invalid plugin config');
@@ -156,18 +177,58 @@ class _IoPluginStorage implements PluginStorage {
   @override
   Future<void> writeConfig(String pluginId, Map<String, Object?> config) async {
     _requirePluginId(pluginId);
-    await _ensureNoSymbolicLinks(
-      pluginId,
-      const PluginStoragePath(
-        area: PluginStorageArea.data,
-        relativePath: _configFile,
-      ),
-    );
-    final directory = _dataDirectory(pluginId);
+    await _ensureMetadataSafe(pluginId);
+    final directory = _metadataDirectory(pluginId);
     await directory.create(recursive: true);
     final target = File(_join(directory.path, _configFile));
     final temporary = File('${target.path}.tmp-$pid');
     await temporary.writeAsString(jsonEncode(config), flush: true);
+    await _replaceFile(temporary, target);
+  }
+
+  @override
+  Future<Set<String>> readPermissionGrants(String pluginId) async {
+    _requirePluginId(pluginId);
+    await _ensureMetadataSafe(pluginId);
+    var file = _metadataFile(pluginId, _permissionsFile);
+    final legacy = File(
+      _join(_dataDirectory(pluginId).path, _legacyPermissionsFile),
+    );
+    if (!await file.exists() && await legacy.exists()) {
+      final decoded = jsonDecode(await legacy.readAsString());
+      if (decoded is! List) {
+        throw const FormatException('Invalid plugin permission grants');
+      }
+      await writePermissionGrants(
+        pluginId,
+        decoded.map((value) => value.toString()).toSet(),
+      );
+      await legacy.delete();
+      file = _metadataFile(pluginId, _permissionsFile);
+    }
+    if (!await file.exists()) return <String>{};
+    final decoded = jsonDecode(await file.readAsString());
+    if (decoded is! List) {
+      throw const FormatException('Invalid plugin permission grants');
+    }
+    return decoded.map((value) => value.toString()).toSet();
+  }
+
+  @override
+  Future<void> writePermissionGrants(
+    String pluginId,
+    Set<String> grants,
+  ) async {
+    _requirePluginId(pluginId);
+    await _ensureMetadataSafe(pluginId);
+    final directory = _metadataDirectory(pluginId);
+    await directory.create(recursive: true);
+    final target = File(_join(directory.path, _permissionsFile));
+    final temporary = File('${target.path}.tmp-$pid');
+    await temporary.writeAsString(
+      jsonEncode(grants.toList()..sort()),
+      flush: true,
+    );
     await _replaceFile(temporary, target);
   }
 
@@ -181,6 +242,22 @@ class _IoPluginStorage implements PluginStorage {
     ]) {
       if (await directory.exists()) await directory.delete(recursive: true);
     }
+  }
+
+  @override
+  Future<void> clearPluginData(String pluginId) async {
+    _requirePluginId(pluginId);
+    for (final directory in [
+      _dataDirectory(pluginId),
+      _metadataDirectory(pluginId),
+      _cacheDirectory(pluginId),
+      _temporaryDirectory(pluginId),
+    ]) {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    }
+    await _dataDirectory(pluginId).create(recursive: true);
+    await _cacheDirectory(pluginId).create(recursive: true);
+    await _temporaryDirectory(pluginId).create(recursive: true);
   }
 
   @override
@@ -201,7 +278,7 @@ class _IoPluginStorage implements PluginStorage {
     Uint8List bytes,
   ) async {
     if (path.area == PluginStorageArea.package) {
-      throw UnsupportedError('/package is read-only');
+      throw UnsupportedError('/plugin is read-only');
     }
     if (path.relativePath.isEmpty) {
       throw const FormatException('A file path is required');
@@ -212,6 +289,35 @@ class _IoPluginStorage implements PluginStorage {
     final temporary = File('${file.path}.tmp-$pid');
     await temporary.writeAsBytes(bytes, flush: true);
     await _replaceFile(temporary, file);
+  }
+
+  @override
+  Future<int> writeFileStream(
+    String pluginId,
+    PluginStoragePath path,
+    Stream<List<int>> stream, {
+    bool append = false,
+  }) async {
+    if (path.area == PluginStorageArea.package) {
+      throw UnsupportedError('/plugin is read-only');
+    }
+    if (path.relativePath.isEmpty) {
+      throw const FormatException('A file path is required');
+    }
+    await _ensureNoSymbolicLinks(pluginId, path);
+    final file = _resolveFile(pluginId, path);
+    await file.parent.create(recursive: true);
+    var written = 0;
+    final sink = file.openWrite(
+      mode: append ? FileMode.append : FileMode.write,
+    );
+    await for (final chunk in stream) {
+      sink.add(chunk);
+      written += chunk.length;
+    }
+    await sink.flush();
+    await sink.close();
+    return written;
   }
 
   @override
@@ -244,6 +350,15 @@ class _IoPluginStorage implements PluginStorage {
   }
 
   @override
+  Future<void> createDirectory(String pluginId, PluginStoragePath path) async {
+    if (path.area == PluginStorageArea.package) {
+      throw UnsupportedError('/plugin is read-only');
+    }
+    await _ensureNoSymbolicLinks(pluginId, path);
+    await _resolveDirectory(pluginId, path).create(recursive: true);
+  }
+
+  @override
   Future<PluginFileStat?> stat(String pluginId, PluginStoragePath path) async {
     await _ensureNoSymbolicLinks(pluginId, path);
     final entityPath = _resolvePath(pluginId, path);
@@ -264,7 +379,7 @@ class _IoPluginStorage implements PluginStorage {
   @override
   Future<void> removeFile(String pluginId, PluginStoragePath path) async {
     if (path.area == PluginStorageArea.package) {
-      throw UnsupportedError('/package is read-only');
+      throw UnsupportedError('/plugin is read-only');
     }
     if (path.relativePath.isEmpty) {
       throw const FormatException('Cannot remove a storage root');
@@ -279,6 +394,11 @@ class _IoPluginStorage implements PluginStorage {
     } else if (type == FileSystemEntityType.link) {
       throw StateError('Symbolic links are not allowed in plugin storage');
     }
+  }
+
+  @override
+  String nativePath(String pluginId, PluginStoragePath path) {
+    return _resolvePath(pluginId, path);
   }
 
   @override
@@ -298,6 +418,12 @@ class _IoPluginStorage implements PluginStorage {
 
   Directory _dataDirectory(String id) =>
       Directory(_join(_pluginDirectory(id).path, 'data'));
+
+  Directory _metadataDirectory(String id) =>
+      Directory(_join(_pluginDirectory(id).path, _metadataDirectoryName));
+
+  File _metadataFile(String id, String name) =>
+      File(_join(_metadataDirectory(id).path, name));
 
   Directory _cacheDirectory(String id) {
     _requirePluginId(id);
@@ -353,6 +479,21 @@ class _IoPluginStorage implements PluginStorage {
     }
   }
 
+  Future<void> _ensureMetadataSafe(String id) async {
+    final pluginType = await FileSystemEntity.type(
+      _pluginDirectory(id).path,
+      followLinks: false,
+    );
+    final metadataType = await FileSystemEntity.type(
+      _metadataDirectory(id).path,
+      followLinks: false,
+    );
+    if (pluginType == FileSystemEntityType.link ||
+        metadataType == FileSystemEntityType.link) {
+      throw StateError('Symbolic links are not allowed in plugin storage');
+    }
+  }
+
   Future<void> _replaceFile(File temporary, File target) async {
     final backup = File(
       '${target.path}.backup-${DateTime.now().microsecondsSinceEpoch}',
@@ -386,6 +527,7 @@ class _IoPluginStorage implements PluginStorage {
   }
 
   bool _isPluginId(String id) =>
+      RegExp(r'^[a-z][a-z0-9]*(?:[.-][a-z0-9][a-z0-9-]*)+$').hasMatch(id) ||
       RegExp(r'^[a-z0-9][a-z0-9-]{0,127}$').hasMatch(id);
 
   void _requirePluginId(String id) {

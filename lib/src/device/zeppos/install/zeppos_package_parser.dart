@@ -81,33 +81,6 @@ class ZeppOsPackageParser {
       );
     }
 
-    final appJsonBytes = _file(archive, const ['app.json']);
-    if (appJsonBytes != null) {
-      final root = _json(appJsonBytes, 'app.json');
-      final app = (root['app'] as Map?)?.cast<String, Object?>();
-      if (app == null) {
-        throw const FormatException('app.json has no app object');
-      }
-      final type = switch (app['appType']?.toString()) {
-        'app' => ZeppOsPackageType.app,
-        'watchface' => ZeppOsPackageType.watchface,
-        final value => throw FormatException(
-          'Unsupported Zepp OS appType: $value',
-        ),
-      };
-      return ZeppOsInstallPackage(
-        type: type,
-        bytes: bytes,
-        crc32: _crc32(bytes),
-        appId: _appId(app['appId']),
-        name: app['appName']?.toString(),
-        version: (app['version'] as Map?)?['name']?.toString(),
-        appSideJs: side.appSideJs,
-        settingJs: side.settingJs,
-        settingAssets: side.assets,
-      );
-    }
-
     final manifestBytes = _file(archive, const ['manifest.json']);
     if (manifestBytes != null) {
       final zpks = _json(manifestBytes, 'manifest.json')['zpks'];
@@ -159,6 +132,39 @@ class ZeppOsPackageParser {
         deviceSources: deviceSources,
         depth: depth + 1,
         inheritedSide: side,
+      );
+    }
+
+    final appJsonBytes = _file(archive, const ['app.json']);
+    if (appJsonBytes != null) {
+      final root = _json(appJsonBytes, 'app.json');
+      final app = (root['app'] as Map?)?.cast<String, Object?>();
+      if (app == null) {
+        throw const FormatException('app.json has no app object');
+      }
+      final type = switch (app['appType']?.toString()) {
+        'app' => ZeppOsPackageType.app,
+        'watchface' => ZeppOsPackageType.watchface,
+        final value => throw FormatException(
+          'Unsupported Zepp OS appType: $value',
+        ),
+      };
+      final appId = _appId(app['appId']);
+      if (appId == null) {
+        throw const FormatException(
+          'Zepp OS app package has a missing or invalid appId',
+        );
+      }
+      return ZeppOsInstallPackage(
+        type: type,
+        bytes: bytes,
+        crc32: _crc32(bytes),
+        appId: appId,
+        name: app['appName']?.toString(),
+        version: (app['version'] as Map?)?['name']?.toString(),
+        appSideJs: side.appSideJs,
+        settingJs: side.settingJs,
+        settingAssets: side.assets,
       );
     }
     throw const FormatException('Not a recognized Zepp OS package');
@@ -224,13 +230,17 @@ class ZeppOsPackageParser {
   }
 
   static int? _appId(Object? value) {
-    if (value is num) return value.toInt();
+    if (value is num) {
+      final id = value.toInt();
+      return id >= 0 && id <= 0xffffffff ? id : null;
+    }
     if (value is! String) return null;
     final normalized = value.trim().toLowerCase();
-    return int.tryParse(
+    final id = int.tryParse(
       normalized.startsWith('0x') ? normalized.substring(2) : normalized,
       radix: normalized.startsWith('0x') ? 16 : 10,
     );
+    return id != null && id >= 0 && id <= 0xffffffff ? id : null;
   }
 
   static Uint8List? _file(Archive archive, List<String> names) {

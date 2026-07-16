@@ -4,13 +4,28 @@ import 'package:zerobox/src/device/core/device_profile.dart';
 import 'package:zerobox/src/device/zeppos/zeppos_device_catalog.dart';
 
 void main() {
-  test('contains every Gadgetbridge ZeppOS coordinator ported in this revision', () {
-    expect(zeppOsDeviceCatalog, hasLength(36));
+  test('catalog entries have unique IDs and Bluetooth names', () {
+    final ids = zeppOsDeviceCatalog.map((entry) => entry.id).toList();
+    final names = zeppOsDeviceCatalog
+        .expand((entry) => entry.bluetoothNames)
+        .map((name) => name.toLowerCase())
+        .toList();
+
+    expect(ids.toSet(), hasLength(ids.length));
+    expect(names.toSet(), hasLength(names.length));
+    expect(ids, everyElement(matches(RegExp(r'^[a-z0-9]+(?:-[a-z0-9]+)*$'))));
+    expect(names, everyElement(isNotEmpty));
   });
 
   test('matches exact names and Gadgetbridge four-character suffixes', () {
-    expect(zeppOsDeviceForBluetoothName('Active 2 (Round)')?.id, 'active-2-round');
-    expect(zeppOsDeviceForBluetoothName('Active 2 (Round) A1B2')?.id, 'active-2-round');
+    expect(
+      zeppOsDeviceForBluetoothName('Active 2 (Round)')?.id,
+      'active-2-round',
+    );
+    expect(
+      zeppOsDeviceForBluetoothName('Active 2 (Round) A1B2')?.id,
+      'active-2-round',
+    );
     expect(zeppOsDeviceForBluetoothName('Amazfit GTR 4-12AF')?.id, 'gtr-4');
     expect(zeppOsDeviceForBluetoothName('Amazfit GTR 4-CALL'), isNull);
   });

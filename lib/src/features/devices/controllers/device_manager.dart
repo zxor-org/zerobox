@@ -37,6 +37,7 @@ import 'package:zerobox/src/device/zeppos/systems/zeppos_battery_system.dart';
 import 'package:zerobox/src/device/zeppos/systems/zeppos_device_info_system.dart';
 import 'package:zerobox/src/device/zeppos/systems/zeppos_find_device_system.dart';
 import 'package:zerobox/src/device/zeppos/systems/zeppos_services_system.dart';
+import 'package:zerobox/src/device/zeppos/systems/zeppos_screenshot_system.dart';
 import 'package:zerobox/src/device/zeppos/systems/zeppos_xiao_ai_system.dart';
 import 'package:zerobox/src/device/zeppos/zeppos_device_catalog.dart';
 import 'package:zerobox/src/device/zeppos/zeppos_device_factory.dart';
@@ -199,10 +200,12 @@ abstract class DeviceManager extends Notifier<DeviceManagerState> {
   final _xiaoAiOpusFrames = StreamController<Uint8List>.broadcast();
   final _interconnectMessages =
       StreamController<InterconnectMessage>.broadcast();
+  final _rawProtocolFrames = StreamController<Uint8List>.broadcast();
 
   Stream<Uint8List> get xiaoAiOpusFrames => _xiaoAiOpusFrames.stream;
   Stream<InterconnectMessage> get interconnectMessages =>
       _interconnectMessages.stream;
+  Stream<Uint8List> get rawProtocolFrames => _rawProtocolFrames.stream;
 
   @protected
   void emitXiaoAiOpusFrame(Uint8List frame) {
@@ -237,6 +240,7 @@ abstract class DeviceManager extends Notifier<DeviceManagerState> {
   Future<void> sendXiaoAiReply(String text);
   Future<void> setXiaoAiContinuousCapture(bool enabled);
   Future<void> setXiaoAiEndpoint(int endpoint);
+  Future<Uint8List> requestZeppOsScreenshot();
   void clearZeppOsMessages();
   Future<List<int>> listZeppOsAppSides();
   Future<List<int>> observedZeppOsAppSideIds();
@@ -293,6 +297,7 @@ class LocalDeviceManager extends DeviceManager {
       _log.info('DeviceManager disposed');
       unawaited(_xiaoAiOpusFrames.close());
       unawaited(_interconnectMessages.close());
+      unawaited(_rawProtocolFrames.close());
       _scanTimer?.cancel();
       _batteryRefreshTimer?.cancel();
       _scanSubscription?.cancel();
@@ -345,6 +350,7 @@ class LocalDeviceManager extends DeviceManager {
   late DeviceRuntime _runtime;
   StreamSubscription<BluetoothEndpoint>? _scanSubscription;
   StreamSubscription<DeviceEvent>? _eventSubscription;
+  StreamSubscription<Uint8List>? _rawProtocolSubscription;
   Timer? _scanTimer;
   Timer? _batteryRefreshTimer;
   bool _batteryRefreshInProgress = false;
@@ -792,6 +798,10 @@ class LocalDeviceManager extends DeviceManager {
             : XiaomiDeviceFactory(),
       );
       _currentEntity = entity;
+      await _rawProtocolSubscription?.cancel();
+      _rawProtocolSubscription = entity.rawIncomingData.listen(
+        _rawProtocolFrames.add,
+      );
 
       if (effectiveKind == DeviceKind.zepp) {
         if (transportType == ConnectType.spp) {
@@ -1386,11 +1396,8 @@ class LocalDeviceManager extends DeviceManager {
     final xiaomiBleV1Session = _xiaomiBleV1Session;
     _bluetoothConnection = null;
     _currentEntity = null;
-    _xiaomiBleV1Session = null;
-
-    if (xiaomiBleV1Session != null) {
-      await xiaomiBleV1Session.dispose();
-    }
+    await _rawProtocolSubscription?.cancel();
+    _rawProtocolSubscription = null;
 
     if (entity != null) {
       _log.info('cleaning up connection to ${entity.id}');
@@ -1573,6 +1580,17 @@ class LocalDeviceManager extends DeviceManager {
   @override
   Future<void> sendZeppOsAppSideMessage(int appId, Uint8List payload) =>
       _appSideSystem().sendMessageToWatch(appId, payload);
+
+  @override
+  Future<Uint8List> requestZeppOsScreenshot() async {
+    final entity = _currentEntity;
+    if (entity == null || state.protocolState != ProtocolState.ready) {
+      throw ProtocolException('Device not ready');
+    }
+    final system = entity.system<ZeppOsScreenshotSystem>();
+    if (system == null) throw UnsupportedError('Screenshot service unavailable');
+    return system.requestScreenshot();
+  }
 
   @override
   Future<void> fetchSystemInfo() async {
