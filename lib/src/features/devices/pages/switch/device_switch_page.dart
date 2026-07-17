@@ -16,6 +16,7 @@ import 'package:zerobox/src/core/utils/layout.dart';
 import 'package:zerobox/src/device/core/connect_type.dart';
 import 'package:zerobox/src/device/core/device_profile.dart';
 import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
+import 'package:zerobox/src/features/devices/utils/device_address.dart';
 import 'package:zerobox/src/features/devices/widgets/device_connection_text.dart';
 import 'package:zerobox/src/features/devices/services/device_share_link.dart';
 import 'package:zerobox/src/features/devices/providers/pending_shared_device_provider.dart';
@@ -29,6 +30,8 @@ class DeviceSwitchPage extends ConsumerStatefulWidget {
 }
 
 class _DeviceSwitchPageState extends ConsumerState<DeviceSwitchPage> {
+  String? _lastErrorToast;
+
   @override
   void initState() {
     super.initState();
@@ -95,6 +98,7 @@ class _DeviceSwitchPageState extends ConsumerState<DeviceSwitchPage> {
         : null;
 
     ref.listen<DeviceManagerState>(deviceManagerProvider, (previous, next) {
+      if (next.error == null) _lastErrorToast = null;
       final wasConnecting = previous?.connecting ?? false;
       final isReady = next.protocolState == proto.ProtocolState.ready;
       final connectedTarget = next.connectionTargetAddr;
@@ -113,9 +117,15 @@ class _DeviceSwitchPageState extends ConsumerState<DeviceSwitchPage> {
           context.pop();
         }
       } else if (next.error != null && next.error != previous?.error) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(localizedErrorMessage(l10n, next.error))),
-        );
+        // The same failure can surface twice with different wording (daemon
+        // state push vs. command wrapper); toast once per distinct message.
+        final message = localizedErrorMessage(l10n, next.error);
+        if (message != _lastErrorToast) {
+          _lastErrorToast = message;
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(message)));
+        }
       }
     });
 
@@ -146,50 +156,61 @@ class _DeviceSwitchPageState extends ConsumerState<DeviceSwitchPage> {
           padding: const EdgeInsets.symmetric(
             horizontal: StyleConstants.pagePadding,
           ),
-          child: isWide
-              ? Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(
-                      child: _ListWrapper(isFirst: true, child: savedList),
-                    ),
-                    Container(
-                      width: 1,
-                      margin: const EdgeInsets.symmetric(vertical: 12),
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.outlineVariant.withValues(alpha: 0.5),
-                    ),
-                    Expanded(
-                      child: _ListWrapper(isFirst: false, child: scanList),
-                    ),
-                  ],
-                )
-              : CustomScrollView(
-                  slivers: [
-                    SliverToBoxAdapter(
-                      child: _SectionHeader(
-                        title: AppLocalizations.of(context)!.savedDevices,
+          child: Column(
+            children: [
+              AnimatedOpacity(
+                opacity: state.scanning ? 1 : 0,
+                duration: const Duration(milliseconds: 300),
+                child: const LinearProgressIndicator(minHeight: 2),
+              ),
+              Expanded(
+                child: isWide
+                    ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            child: _ListWrapper(isFirst: true, child: savedList),
+                          ),
+                          Container(
+                            width: 1,
+                            margin: const EdgeInsets.symmetric(vertical: 12),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.outlineVariant.withValues(alpha: 0.5),
+                          ),
+                          Expanded(
+                            child: _ListWrapper(isFirst: false, child: scanList),
+                          ),
+                        ],
+                      )
+                    : CustomScrollView(
+                        slivers: [
+                          SliverToBoxAdapter(
+                            child: _SectionHeader(
+                              title: AppLocalizations.of(context)!.savedDevices,
+                            ),
+                          ),
+                          _SliverSavedDeviceList(
+                            selectedAddr: currentAddr,
+                            onComplete: () => setState(() {}),
+                          ),
+                          const SliverToBoxAdapter(
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(vertical: 12),
+                              child: Divider(height: 1),
+                            ),
+                          ),
+                          SliverToBoxAdapter(
+                            child: _ScanSectionHeader(
+                              onComplete: () => setState(() {}),
+                            ),
+                          ),
+                          _SliverScanDeviceList(onComplete: () => setState(() {})),
+                        ],
                       ),
-                    ),
-                    _SliverSavedDeviceList(
-                      selectedAddr: currentAddr,
-                      onComplete: () => setState(() {}),
-                    ),
-                    const SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Divider(height: 1),
-                      ),
-                    ),
-                    SliverToBoxAdapter(
-                      child: _ScanSectionHeader(
-                        onComplete: () => setState(() {}),
-                      ),
-                    ),
-                    _SliverScanDeviceList(onComplete: () => setState(() {})),
-                  ],
-                ),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -289,18 +310,8 @@ class _ListWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Container(
+    return Padding(
       padding: EdgeInsets.only(left: isFirst ? 0 : 20, right: isFirst ? 20 : 0),
-      decoration: isFirst
-          ? BoxDecoration(
-              border: Border(
-                right: BorderSide(
-                  color: colorScheme.outlineVariant.withValues(alpha: 0.5),
-                ),
-              ),
-            )
-          : null,
       child: child,
     );
   }
@@ -481,15 +492,18 @@ class _ScanDeviceListState extends ConsumerState<_ScanDeviceList> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final state = ref.watch(deviceManagerProvider);
+    // Already-paired devices show up on the left; don't list them again here.
+    final visibleDevices = state.scannedDevices
+        .where(
+          (scan) => !state.pairedDevices.any(
+            (paired) => deviceAddressEquals(scan.addr, paired.addr),
+          ),
+        )
+        .toList(growable: false);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        AnimatedOpacity(
-          opacity: state.scanning ? 1 : 0,
-          duration: const Duration(milliseconds: 300),
-          child: const LinearProgressIndicator(minHeight: 2),
-        ),
         _SectionHeader(
           title: l10n.scanAndAdd,
           trailing: IconButton(
@@ -506,11 +520,11 @@ class _ScanDeviceListState extends ConsumerState<_ScanDeviceList> {
             tooltip: l10n.refresh,
           ),
         ),
-        if (!state.scanning && state.scannedDevices.isEmpty)
+        if (!state.scanning && visibleDevices.isEmpty)
           const Flexible(
             child: SizedBox(height: 240, child: _EmptyState(message: '')),
           )
-        else if (state.scanning && state.scannedDevices.isEmpty)
+        else if (state.scanning && visibleDevices.isEmpty)
           const Flexible(
             child: SizedBox(
               height: 240,
@@ -521,9 +535,9 @@ class _ScanDeviceListState extends ConsumerState<_ScanDeviceList> {
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.only(top: 8),
-              itemCount: state.scannedDevices.length,
+              itemCount: visibleDevices.length,
               itemBuilder: (context, index) {
-                final device = state.scannedDevices[index];
+                final device = visibleDevices[index];
                 return _DeviceCard(
                   key: ValueKey('scan-${device.addr}'),
                   device: MiWearState(
@@ -586,31 +600,21 @@ class _ScanSectionHeader extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context)!;
     final state = ref.watch(deviceManagerProvider);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        AnimatedOpacity(
-          opacity: state.scanning ? 1 : 0,
-          duration: const Duration(milliseconds: 300),
-          child: const LinearProgressIndicator(minHeight: 2),
+    return _SectionHeader(
+      title: l10n.scanAndAdd,
+      trailing: IconButton(
+        icon: AnimatedRotation(
+          turns: state.scanning ? 1 : 0,
+          duration: const Duration(milliseconds: 500),
+          child: const Icon(Icons.refresh),
         ),
-        _SectionHeader(
-          title: l10n.scanAndAdd,
-          trailing: IconButton(
-            icon: AnimatedRotation(
-              turns: state.scanning ? 1 : 0,
-              duration: const Duration(milliseconds: 500),
-              child: const Icon(Icons.refresh),
-            ),
-            onPressed: state.scanning
-                ? null
-                : () => ref
-                      .read(deviceManagerProvider.notifier)
-                      .startBluetoothScan(),
-            tooltip: l10n.refresh,
-          ),
-        ),
-      ],
+        onPressed: state.scanning
+            ? null
+            : () => ref
+                  .read(deviceManagerProvider.notifier)
+                  .startBluetoothScan(),
+        tooltip: l10n.refresh,
+      ),
     );
   }
 }
@@ -629,13 +633,21 @@ class _SliverScanDeviceListState extends ConsumerState<_SliverScanDeviceList> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(deviceManagerProvider);
+    // Already-paired devices show up in the saved list; don't repeat them.
+    final visibleDevices = state.scannedDevices
+        .where(
+          (scan) => !state.pairedDevices.any(
+            (paired) => deviceAddressEquals(scan.addr, paired.addr),
+          ),
+        )
+        .toList(growable: false);
 
-    if (!state.scanning && state.scannedDevices.isEmpty) {
+    if (!state.scanning && visibleDevices.isEmpty) {
       return const SliverToBoxAdapter(
         child: SizedBox(height: 240, child: _EmptyState(message: '')),
       );
     }
-    if (state.scanning && state.scannedDevices.isEmpty) {
+    if (state.scanning && visibleDevices.isEmpty) {
       return const SliverToBoxAdapter(
         child: SizedBox(
           height: 240,
@@ -644,9 +656,9 @@ class _SliverScanDeviceListState extends ConsumerState<_SliverScanDeviceList> {
       );
     }
     return SliverList.builder(
-      itemCount: state.scannedDevices.length,
+      itemCount: visibleDevices.length,
       itemBuilder: (context, index) {
-        final device = state.scannedDevices[index];
+        final device = visibleDevices[index];
         return _DeviceCard(
           key: ValueKey('scan-${device.addr}'),
           device: MiWearState(
@@ -683,18 +695,23 @@ class _SectionHeader extends StatelessWidget {
     }
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              title,
-              style: textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
+      child: SizedBox(
+        // Fixed height so a header with a trailing action (scan refresh)
+        // and a header without one stay visually aligned.
+        height: 48,
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
-          ),
-          trailing ?? const SizedBox.shrink(),
-        ],
+            trailing ?? const SizedBox.shrink(),
+          ],
+        ),
       ),
     );
   }
@@ -721,6 +738,10 @@ class _DeviceCard extends ConsumerStatefulWidget {
 class _DeviceCardState extends ConsumerState<_DeviceCard> {
   bool _showInput = false;
   bool _showConnectionError = false;
+  // Only a connect tapped on this card may surface the inline error;
+  // background connects (startup auto-reconnect, CLI) must not pop the
+  // input open with an error the user never asked for.
+  bool _connectInitiated = false;
   late final TextEditingController _authController;
 
   @override
@@ -754,6 +775,7 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
     setState(() {
       _showInput = false;
       _showConnectionError = false;
+      _connectInitiated = true;
     });
     await ref
         .read(deviceManagerProvider.notifier)
@@ -800,12 +822,13 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
           !next.connecting &&
           next.connectStatus == 3 &&
           next.connectionTargetAddr == widget.device.addr;
-      if (failedThisDevice && mounted) {
+      if (failedThisDevice && _connectInitiated && mounted) {
         setState(() {
           _showInput = true;
           _showConnectionError = true;
         });
       }
+      if (!next.connecting) _connectInitiated = false;
     });
 
     return Card(
@@ -862,9 +885,9 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
                         ),
                         Text(
                           isUnrecognized
-                              ? '${widget.device.addr} · $transportLabel · '
+                              ? '${formatDeviceAddress(widget.device.addr)} · $transportLabel · '
                                     '${l10n.deviceCompatibilityUnknown}'
-                              : '${widget.device.addr} · $transportLabel',
+                              : '${formatDeviceAddress(widget.device.addr)} · $transportLabel',
                           style: TextStyle(
                             fontSize: 12,
                             color: colorScheme.onSurfaceVariant,

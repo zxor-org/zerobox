@@ -25,11 +25,26 @@ android {
         versionName = flutter.versionName
     }
 
+    // Compress native libraries inside the APK (they are extracted at install
+    // time). Direct APK distribution makes the download ~2.3x smaller at the
+    // cost of ~16MB extra on-device storage.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }

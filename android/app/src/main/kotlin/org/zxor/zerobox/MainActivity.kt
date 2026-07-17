@@ -58,10 +58,29 @@ class MainActivity : FlutterActivity() {
     private val connectGeneration = AtomicLong(0)
     private val backgroundTaskIds = mutableSetOf<Int>()
     private var nextBackgroundTaskId = 0
+    private var connectionLabel: String? = null
+    private var lastTaskLabel: String? = null
     private var zeppSettingsContainer: ViewGroup? = null
     private var zeppSettingsWebView: WebView? = null
     private var zeppSettingsAppId: Long? = null
     private var zeppSettingsChannel: MethodChannel? = null
+
+    private fun startBackgroundService(label: String) {
+        val intent = Intent(this, BackgroundTaskService::class.java).apply {
+            putExtra(BackgroundTaskService.EXTRA_LABEL, label)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
+    }
+
+    private fun stopBackgroundServiceIfIdle() {
+        if (backgroundTaskIds.isEmpty() && connectionLabel == null) {
+            stopService(Intent(this, BackgroundTaskService::class.java))
+        }
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -73,24 +92,30 @@ class MainActivity : FlutterActivity() {
                 "begin" -> {
                     val id = ++nextBackgroundTaskId
                     backgroundTaskIds.add(id)
-                    val intent = Intent(this, BackgroundTaskService::class.java).apply {
-                        putExtra(
-                            BackgroundTaskService.EXTRA_LABEL,
-                            call.argument<String>("label") ?: "Installing resources",
-                        )
-                    }
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        startForegroundService(intent)
-                    } else {
-                        startService(intent)
-                    }
+                    lastTaskLabel = call.argument<String>("label") ?: "Installing resources"
+                    startBackgroundService(lastTaskLabel!!)
                     result.success(id)
                 }
                 "end" -> {
                     call.argument<Int>("id")?.let(backgroundTaskIds::remove)
                     if (backgroundTaskIds.isEmpty()) {
-                        stopService(Intent(this, BackgroundTaskService::class.java))
+                        lastTaskLabel = null
+                        connectionLabel?.let(::startBackgroundService)
                     }
+                    stopBackgroundServiceIfIdle()
+                    result.success(null)
+                }
+                // Keeps the process (and the BLE link) alive while a device
+                // is connected; task labels take precedence while both run.
+                "beginConnection" -> {
+                    connectionLabel = call.argument<String>("label") ?: "Device connected"
+                    startBackgroundService(lastTaskLabel ?: connectionLabel!!)
+                    result.success(null)
+                }
+                "endConnection" -> {
+                    connectionLabel = null
+                    lastTaskLabel?.let(::startBackgroundService)
+                    stopBackgroundServiceIfIdle()
                     result.success(null)
                 }
                 else -> result.notImplemented()

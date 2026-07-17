@@ -1,19 +1,36 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zerobox/src/app/generated/app_localizations.dart';
 import 'package:zerobox/src/core/services/build_info_service.dart';
+import 'package:zerobox/src/core/services/shared_prefs_service.dart';
 import 'package:zerobox/src/features/settings/pages/about_software_page.dart';
 
 void main() {
+  setUpAll(() async {
+    SharedPreferences.setMockInitialValues({});
+    await SharedPrefsService.instance.init();
+  });
+
   testWidgets('log disclosure confirmation is locked for five seconds', (
     tester,
   ) async {
+    final router = GoRouter(
+      routes: [
+        GoRoute(path: '/', builder: (_, _) => const AboutSoftwarePage()),
+      ],
+    );
+    addTearDown(router.dispose);
     await tester.pumpWidget(
-      const MaterialApp(
-        locale: Locale('zh'),
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: AboutSoftwarePage(),
+      ProviderScope(
+        child: MaterialApp.router(
+          locale: const Locale('zh'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          routerConfig: router,
+        ),
       ),
     );
     await tester.pump();

@@ -1,33 +1,91 @@
 import 'dart:async';
 
+import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zerobox/src/app/generated/app_localizations.dart';
 import 'package:zerobox/src/app/theme/app_theme.dart';
+import 'package:zerobox/src/app/theme/system_accent_color.dart';
 import 'package:zerobox/src/app/window/secondary_window_host.dart';
+import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
 import 'package:zerobox/src/commands/command_protocol.dart';
 import 'package:zerobox/src/core/logging/diagnostic_event.dart';
+import 'package:zerobox/src/core/providers/theme_locale_providers.dart';
+import 'package:zerobox/src/core/utils/layout.dart';
 import 'package:zerobox/src/features/debug/widgets/debug_console.dart';
 import 'package:zerobox/src/features/debug/widgets/debug_inspectors.dart';
 import 'package:zerobox/src/host/application_host_provider.dart';
 
-class DebugWindowApp extends StatelessWidget {
+final _desktopAccentColorProvider = FutureProvider<Color?>((ref) {
+  final source = ref.watch(
+    themeSettingsProvider.select((settings) {
+      return settings.desktopAccentColorSource;
+    }),
+  );
+  return loadDesktopAccentColor(source);
+});
+
+class DebugWindowApp extends ConsumerWidget {
   const DebugWindowApp({super.key});
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'ZeroBox Debug',
-    debugShowCheckedModeBanner: false,
-    theme: AppTheme.light,
-    darkTheme: AppTheme.dark,
-    localizationsDelegates: AppLocalizations.localizationsDelegates,
-    supportedLocales: AppLocalizations.supportedLocales,
-    home: const SecondaryWindowHost(role: 'debug', child: DebugWindowPage()),
-  );
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeSettings = ref.watch(themeSettingsProvider);
+    final localeSettings = ref.watch(localeSettingsProvider);
+    final desktopAccentColor = ref
+        .watch(_desktopAccentColorProvider)
+        .maybeWhen(data: (color) => color, orElse: () => null);
+
+    return DynamicColorBuilder(
+      builder: (lightDynamic, darkDynamic) {
+        final useDynamicColor = themeSettings.useDynamicColor;
+        final lightColorScheme = useDynamicColor
+            ? lightDynamic ??
+                  _accentColorScheme(desktopAccentColor, Brightness.light)
+            : _seedColorScheme(themeSettings.customSeedColor, Brightness.light);
+        final darkColorScheme = useDynamicColor
+            ? darkDynamic ??
+                  _accentColorScheme(desktopAccentColor, Brightness.dark)
+            : _seedColorScheme(themeSettings.customSeedColor, Brightness.dark);
+
+        return MaterialApp(
+          title: 'ZeroBox DevTools',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.buildLightTheme(colorScheme: lightColorScheme),
+          darkTheme: themeSettings.isOledDark
+              ? AppTheme.buildOledDarkTheme(colorScheme: darkColorScheme)
+              : AppTheme.buildDarkTheme(colorScheme: darkColorScheme),
+          themeMode: themeSettings.materialThemeMode,
+          locale: localeSettings.materialLocale,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: const SecondaryWindowHost(
+            role: 'debug',
+            child: DebugWindowPage(),
+          ),
+        );
+      },
+    );
+  }
+
+  ColorScheme? _accentColorScheme(Color? accentColor, Brightness brightness) {
+    if (accentColor == null) {
+      return null;
+    }
+    return _seedColorScheme(accentColor, brightness);
+  }
+
+  ColorScheme _seedColorScheme(Color seedColor, Brightness brightness) {
+    return ColorScheme.fromSeed(seedColor: seedColor, brightness: brightness);
+  }
 }
 
 class DebugWindowPage extends ConsumerStatefulWidget {
-  const DebugWindowPage({super.key});
+  const DebugWindowPage({super.key, this.embedded = false});
+
+  /// Embedded mode is used inside the main app (Android): adds an app bar
+  /// with back navigation and switches to the narrow-screen layout.
+  final bool embedded;
 
   @override
   ConsumerState<DebugWindowPage> createState() => _DebugWindowPageState();
@@ -133,92 +191,145 @@ class _DebugWindowPageState extends ConsumerState<DebugWindowPage>
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('调试窗口'),
-        actions: [
-          IconButton(
-            onPressed: _load,
-            tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
-      ),
-      body: Row(
-        children: [
-          SizedBox(
-            width: 190,
-            child: Material(
-              color: colors.surfaceContainerLow,
-              child: _SourceList(
-                source: _source,
-                records: _records,
-                plugins: _plugins,
-                onSelected: (value) => setState(() => _source = value),
-              ),
+    final l10n = AppLocalizations.of(context)!;
+    final isWide = useWideLayout(MediaQuery.sizeOf(context).width);
+    final content = Column(
+      children: [
+        _Toolbar(
+          search: _search,
+          level: _level,
+          paused: _paused,
+          onRefresh: _load,
+          onSearch: () => setState(() {}),
+          onLevel: (value) => setState(() => _level = value),
+          onPause: () => setState(() => _paused = !_paused),
+          onClear: () => setState(_records.clear),
+        ),
+        TabBar(
+          controller: _tabs,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          tabs: const [
+            Tab(icon: Icon(Icons.terminal), text: 'Console'),
+            Tab(
+              icon: Icon(Icons.account_tree_outlined),
+              text: 'Layout',
             ),
-          ),
-          const VerticalDivider(width: 1),
-          Expanded(
-            child: Column(
-              children: [
-                _Toolbar(
-                  search: _search,
-                  level: _level,
-                  paused: _paused,
-                  onSearch: () => setState(() {}),
-                  onLevel: (value) => setState(() => _level = value),
-                  onPause: () => setState(() => _paused = !_paused),
-                  onClear: () => setState(_records.clear),
-                ),
-                TabBar(
+            Tab(icon: Icon(Icons.memory), text: 'Runtime'),
+            Tab(icon: Icon(Icons.folder_outlined), text: 'Storage'),
+          ],
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: _error != null
+              ? Center(child: Text(_error.toString()))
+              : TabBarView(
                   controller: _tabs,
-                  isScrollable: true,
-                  tabAlignment: TabAlignment.start,
-                  tabs: const [
-                    Tab(icon: Icon(Icons.terminal), text: 'Console'),
-                    Tab(
-                      icon: Icon(Icons.account_tree_outlined),
-                      text: 'Layout',
+                  children: [
+                    DebugConsole(records: _visibleRecords),
+                    DebugLayoutInspector(
+                      nodes: (_selectedPlugin?['layout'] as List? ?? const [])
+                          .whereType<Map>()
+                          .map((node) => node.cast<String, Object?>())
+                          .toList(growable: false),
                     ),
-                    Tab(icon: Icon(Icons.memory), text: 'Runtime'),
-                    Tab(icon: Icon(Icons.folder_outlined), text: 'Storage'),
+                    DebugRuntimeInspector(
+                      host: _host,
+                      source: _source,
+                      plugin: _selectedPlugin,
+                    ),
+                    DebugStorageInspector(
+                      host: _host,
+                      source: _source,
+                      plugin: _selectedPlugin,
+                    ),
                   ],
                 ),
-                const Divider(height: 1),
-                Expanded(
-                  child: _error != null
-                      ? Center(child: Text(_error.toString()))
-                      : TabBarView(
-                          controller: _tabs,
-                          children: [
-                            DebugConsole(records: _visibleRecords),
-                            DebugLayoutInspector(
-                              nodes:
-                                  (_selectedPlugin?['layout'] as List? ??
-                                          const [])
-                                      .whereType<Map>()
-                                      .map(
-                                        (node) => node.cast<String, Object?>(),
-                                      )
-                                      .toList(growable: false),
-                            ),
-                            DebugRuntimeInspector(
-                              host: _host,
-                              source: _source,
-                              plugin: _selectedPlugin,
-                            ),
-                            DebugStorageInspector(
-                              host: _host,
-                              source: _source,
-                              plugin: _selectedPlugin,
-                            ),
-                          ],
-                        ),
+        ),
+      ],
+    );
+    return Scaffold(
+      appBar: widget.embedded
+          ? SysAppBar(secondary: true, title: Text(l10n.devTools))
+          : null,
+      body: isWide
+          ? Row(
+              children: [
+                SizedBox(
+                  width: 190,
+                  child: Material(
+                    color: colors.surfaceContainerLow,
+                    child: _SourceList(
+                      source: _source,
+                      records: _records,
+                      plugins: _plugins,
+                      onSelected: (value) => setState(() => _source = value),
+                    ),
+                  ),
                 ),
+                const VerticalDivider(width: 1),
+                Expanded(child: content),
+              ],
+            )
+          : Column(
+              children: [
+                _SourceChips(
+                  source: _source,
+                  records: _records,
+                  plugins: _plugins,
+                  onSelected: (value) => setState(() => _source = value),
+                ),
+                const Divider(height: 1),
+                Expanded(child: content),
               ],
             ),
-          ),
+    );
+  }
+}
+
+class _SourceChips extends StatelessWidget {
+  const _SourceChips({
+    required this.source,
+    required this.records,
+    required this.plugins,
+    required this.onSelected,
+  });
+
+  final String source;
+  final List<DiagnosticEvent> records;
+  final Map<String, Map<String, Object?>> plugins;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    int count(String value) => value == 'all'
+        ? records.length
+        : records.where((record) => record.scope == value).length;
+    final entries = <(String, String)>[
+      ('all', 'All'),
+      ('frontend', 'Frontend'),
+      ('backend', 'Backend'),
+      for (final plugin in plugins.values)
+        (
+          'plugin:${plugin['id']}',
+          plugin['name']?.toString() ?? plugin['id'].toString(),
+        ),
+    ];
+    return SizedBox(
+      height: 48,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        children: [
+          for (final entry in entries)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: ChoiceChip(
+                selected: source == entry.$1,
+                onSelected: (_) => onSelected(entry.$1),
+                label: Text('${entry.$2} ${count(entry.$1)}'),
+              ),
+            ),
         ],
       ),
     );
@@ -280,6 +391,7 @@ class _Toolbar extends StatelessWidget {
     required this.search,
     required this.level,
     required this.paused,
+    required this.onRefresh,
     required this.onSearch,
     required this.onLevel,
     required this.onPause,
@@ -289,6 +401,7 @@ class _Toolbar extends StatelessWidget {
   final TextEditingController search;
   final String level;
   final bool paused;
+  final VoidCallback onRefresh;
   final VoidCallback onSearch;
   final ValueChanged<String> onLevel;
   final VoidCallback onPause;
@@ -320,6 +433,11 @@ class _Toolbar extends StatelessWidget {
                 .toList(),
             onChanged: (value) => onLevel(value!),
           ),
+        ),
+        IconButton(
+          onPressed: onRefresh,
+          tooltip: 'Refresh',
+          icon: const Icon(Icons.refresh),
         ),
         IconButton(
           onPressed: onPause,

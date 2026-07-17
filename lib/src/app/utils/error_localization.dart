@@ -24,6 +24,29 @@ String localizedErrorMessage(AppLocalizations l10n, Object? error) {
     return l10n.errorCertificateVerificationFailed;
   }
 
+  if (normalized.contains('ble connect failed: timeout') ||
+      normalized.contains('ble connect failed: service discovery timed out') ||
+      normalized.contains('ble notification subscription timed out')) {
+    // All connection-failure causes (timeout or refused) share one message:
+    // permissions, radio off, device occupied, or wrong device mode.
+    return l10n.errorBluetoothConnectFailed;
+  }
+
+  // The BLE and SPP drivers normalize native failures into these stable
+  // shapes at the Dart boundary; match the shape, not native wording.
+  if (normalized.contains('ble connect failed') ||
+      normalized.contains('spp connect failed')) {
+    return l10n.errorBluetoothConnectFailed;
+  }
+
+  if (normalized.contains('ble write timed out')) {
+    return l10n.errorBluetoothDisconnected;
+  }
+
+  if (normalized.contains('bluetooth permission is required')) {
+    return l10n.errorBluetoothUnavailable;
+  }
+
   if (normalized.contains('timeout') ||
       normalized.contains('timed out') ||
       normalized.contains('future not completed') ||

@@ -24,21 +24,6 @@ final _desktopExitBehaviorProvider = Provider<int?>((ref) {
   return SharedPrefsService.instance.getInt('desktop.exit_behavior');
 });
 
-final _debugWindowEnabledProvider =
-    NotifierProvider<_DebugWindowEnabledNotifier, bool>(
-      _DebugWindowEnabledNotifier.new,
-    );
-
-class _DebugWindowEnabledNotifier extends Notifier<bool> {
-  @override
-  bool build() => isDebugWindowEnabled();
-
-  Future<void> setEnabled(bool enabled) async {
-    state = enabled;
-    await setDebugWindowEnabled(enabled);
-  }
-}
-
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
 
@@ -64,8 +49,11 @@ class SettingsPage extends ConsumerWidget {
         (defaultTargetPlatform == TargetPlatform.windows ||
             defaultTargetPlatform == TargetPlatform.linux ||
             defaultTargetPlatform == TargetPlatform.macOS);
+    final showDebugWindowSettings =
+        showDesktopWindowSettings ||
+        (!kIsWeb && defaultTargetPlatform == TargetPlatform.android);
     final themeSettings = ref.watch(themeSettingsProvider);
-    final debugWindowEnabled = ref.watch(_debugWindowEnabledProvider);
+    final debugWindowEnabled = ref.watch(debugWindowEnabledProvider);
 
     return Scaffold(
       appBar: SysAppBar(title: Text(l10n.settingsTab)),
@@ -353,14 +341,18 @@ class SettingsPage extends ConsumerWidget {
                 title: Text(l10n.settingsAboutWebsite),
                 description: Text(l10n.settingsAboutWebsiteDesc),
               ),
-              if (showDesktopWindowSettings)
+              if (showDebugWindowSettings)
                 SettingsTile.switchTile(
                   onToggle: (value) =>
                       _setDebugWindowEnabled(context, ref, value ?? false),
                   initialValue: debugWindowEnabled,
                   leading: const Icon(Icons.developer_mode_outlined),
-                  title: Text(l10n.debugWindow),
-                  description: Text(l10n.debugWindowDescription),
+                  title: Text(l10n.devTools),
+                  description: Text(
+                    showDesktopWindowSettings
+                        ? l10n.devToolsDescriptionDesktop
+                        : l10n.devToolsDescriptionEntry,
+                  ),
                 ),
             ],
           ),
@@ -382,24 +374,32 @@ class SettingsPage extends ConsumerWidget {
     WidgetRef ref,
     bool enabled,
   ) async {
-    final notifier = ref.read(_debugWindowEnabledProvider.notifier);
-    final succeeded = enabled
-        ? await openDebugWindow()
-        : await closeDebugWindow();
-    if (succeeded) {
-      await notifier.setEnabled(enabled);
-      return;
+    final notifier = ref.read(debugWindowEnabledProvider.notifier);
+    if (showDesktopWindowOnly) {
+      final succeeded = enabled
+          ? await openDebugWindow()
+          : await closeDebugWindow();
+      if (!succeeded) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                AppLocalizations.of(context)!.devToolsOperationFailed,
+              ),
+            ),
+          );
+        }
+        return;
+      }
     }
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            AppLocalizations.of(context)!.debugWindowOperationFailed,
-          ),
-        ),
-      );
-    }
+    await notifier.setEnabled(enabled);
   }
+
+  bool get showDesktopWindowOnly =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.linux ||
+          defaultTargetPlatform == TargetPlatform.macOS);
 
   String _localeLabel(AppLocalizations l10n, AppLocale locale) {
     return switch (locale) {

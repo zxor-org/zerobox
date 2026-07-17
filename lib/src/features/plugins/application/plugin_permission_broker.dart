@@ -11,12 +11,10 @@ typedef PluginPermissionGrantWriter =
 
 class PluginPermissionBroker {
   PluginPermissionBroker({
-    required PluginPermissionPrompt prompt,
-    required PluginPermissionGrantReader readPersistentGrants,
-    required PluginPermissionGrantWriter writePersistentGrants,
-  }) : _prompt = prompt,
-       _readPersistentGrants = readPersistentGrants,
-       _writePersistentGrants = writePersistentGrants;
+    required this._prompt,
+    required this._readPersistentGrants,
+    required this._writePersistentGrants,
+  });
 
   final PluginPermissionPrompt _prompt;
   final PluginPermissionGrantReader _readPersistentGrants;

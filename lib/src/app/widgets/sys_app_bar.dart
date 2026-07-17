@@ -3,10 +3,13 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:zerobox/src/app/window/debug_window_preference.dart';
 import 'package:zerobox/src/core/utils/layout.dart';
 
-class SysAppBar extends StatelessWidget implements PreferredSizeWidget {
+class SysAppBar extends ConsumerWidget implements PreferredSizeWidget {
   const SysAppBar({
     super.key,
     this.title,
@@ -27,7 +30,7 @@ class SysAppBar extends StatelessWidget implements PreferredSizeWidget {
   final bool secondary;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final desktop =
         !kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.windows ||
@@ -58,6 +61,13 @@ class SysAppBar extends StatelessWidget implements PreferredSizeWidget {
               )
               .toList(growable: false)
         : actions;
+    // Android-only debug entry: the settings toggle puts a bug button in
+    // every app bar; desktop uses its separate debug window instead.
+    final showDebugEntry =
+        !kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android &&
+        ref.watch(debugWindowEnabledProvider) &&
+        GoRouterState.of(context).uri.path != '/debug';
     final appBar = AppBar(
       title: resolvedTitle,
       leading: resolvedLeading,
@@ -68,6 +78,12 @@ class SysAppBar extends StatelessWidget implements PreferredSizeWidget {
       automaticallyImplyLeading: !macOSSecondary,
       actions: [
         ...?resolvedActions,
+        if (showDebugEntry)
+          IconButton(
+            icon: const Icon(Icons.bug_report_outlined),
+            tooltip: 'DevTools',
+            onPressed: () => context.push('/debug'),
+          ),
         if (customClose) CloseButton(onPressed: () => windowManager.close()),
         if (desktop) const SizedBox(width: 4),
       ],

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -190,28 +189,31 @@ class _ZeppOsXiaoAiPageState extends ConsumerState<ZeppOsXiaoAiPage> {
   }
 
   Future<void> _saveWav() async {
-    final path = await FilePicker.saveFile(
-      dialogTitle: '保存语音助手录音',
-      fileName: 'xiaoai-${DateTime.now().millisecondsSinceEpoch}.wav',
-      type: FileType.custom,
-      allowedExtensions: const ['wav'],
-    );
-    if (path == null) return;
-    final pcm = _pcmBytes.toBytes();
-    await File(path).writeAsBytes(_wavFile(pcm), flush: true);
+    try {
+      await FilePicker.saveFile(
+        dialogTitle: '保存语音助手录音',
+        fileName: 'xiaoai-${DateTime.now().millisecondsSinceEpoch}.wav',
+        type: FileType.custom,
+        allowedExtensions: const ['wav'],
+        bytes: _wavFile(_pcmBytes.toBytes()),
+      );
+    } catch (error) {
+      if (mounted) setState(() => _error = '导出 WAV 失败：$error');
+    }
   }
 
   Future<void> _saveOpus() async {
-    final path = await FilePicker.saveFile(
-      dialogTitle: '保存语音助手 Opus',
-      fileName: 'xiaoai-${DateTime.now().millisecondsSinceEpoch}.opus',
-      type: FileType.custom,
-      allowedExtensions: const ['opus'],
-    );
-    if (path == null) return;
-    await File(
-      path,
-    ).writeAsBytes(_oggOpusFile(_opusFrames, _opusDurations), flush: true);
+    try {
+      await FilePicker.saveFile(
+        dialogTitle: '保存语音助手 Opus',
+        fileName: 'xiaoai-${DateTime.now().millisecondsSinceEpoch}.opus',
+        type: FileType.custom,
+        allowedExtensions: const ['opus'],
+        bytes: _oggOpusFile(_opusFrames, _opusDurations),
+      );
+    } catch (error) {
+      if (mounted) setState(() => _error = '导出 Opus 失败：$error');
+    }
   }
 
   void _clearCapture() {

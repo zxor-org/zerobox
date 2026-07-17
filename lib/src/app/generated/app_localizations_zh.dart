@@ -293,7 +293,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get errorBluetoothConnectFailed =>
-      '蓝牙连接失败，请确认设备在附近、未被其他程序占用，并尝试重新开启蓝牙';
+      '连接失败，请确认蓝牙权限已授予且蓝牙已开启、设备在附近且未被其他工具或设备占用；VelaOS 设备请先在设备上进入「连接新手机」状态，然后重试';
 
   @override
   String get errorBluetoothDisconnected => '蓝牙连接已断开，请重新连接设备';
@@ -1448,13 +1448,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pluginSafeModeExit => '退出安全模式';
 
   @override
-  String get debugWindow => '调试窗口';
+  String get devTools => 'DevTools';
 
   @override
-  String get debugWindowDescription => '是否启用 ZeroBox 调试窗口';
+  String get devToolsDescriptionDesktop => '启用独立的 DevTools 窗口';
 
   @override
-  String get debugWindowOperationFailed => '无法更改调试窗口状态';
+  String get devToolsDescriptionEntry => '在页面顶栏显示 DevTools 入口';
+
+  @override
+  String get devToolsOperationFailed => '无法更改 DevTools 状态';
 
   @override
   String get resourceTypeErrorTitle => '错误的资源类型';

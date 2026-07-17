@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:universal_ble/universal_ble.dart';
 import 'package:zerobox/src/core/logging/logging_service.dart';
 import 'package:zerobox/src/device/core/ble_requirement.dart';
@@ -85,7 +86,7 @@ class BleConnection {
     services = await UniversalBle.discoverServices(deviceId).timeout(
       const Duration(seconds: 10),
       onTimeout: () => throw TimeoutException(
-        'BLE service discovery timed out',
+        'BLE connect failed: service discovery timed out',
         const Duration(seconds: 10),
       ),
     );
@@ -253,6 +254,8 @@ class BleGattDriver {
 
   Stream<BluetoothEndpoint> get scanStream => _scanController.stream;
 
+  Timer? _scanStopTimer;
+
   static const String xiaomiServiceUuid = xiaomiBleServiceUuid;
   static const String xiaomiRecvCharUuid = xiaomiBleRecvCharUuid;
   static const String xiaomiSentCharUuid = xiaomiBleSentCharUuid;
@@ -314,10 +317,12 @@ class BleGattDriver {
       scanFilter: ScanFilter(withServices: withServices ?? []),
     );
 
-    Future.delayed(timeout, stopScan);
+    _scanStopTimer = Timer(timeout, () => unawaited(stopScan()));
   }
 
   Future<List<BluetoothEndpoint>> stopScan() async {
+    _scanStopTimer?.cancel();
+    _scanStopTimer = null;
     _log.info('stopping BLE scan');
     final scanSubscription = _scanSubscription;
     if (scanSubscription == null) {
@@ -368,6 +373,21 @@ class BleGattDriver {
           throw TimeoutException('UniversalBle.connect timed out');
         },
       );
+    } on TimeoutException {
+      // CoreBluetooth (and some other backends) has no connect timeout of its
+      // own: a peripheral that is already linked to another host simply never
+      // answers, so surface an actionable message instead of a bare timeout.
+      _log.severe(
+        '[$effectiveDeviceId] BLE connect timed out after '
+        '${connectTimeout.inSeconds}s; the device may be connected to '
+        'another host or out of range',
+      );
+      await connection.dispose();
+      throw TimeoutException(
+        'BLE connect failed: timeout ($deviceName); the device may be '
+        'occupied by another host or tool, or out of range',
+        connectTimeout,
+      );
     } catch (e) {
       final deviceNotFound = e.toString().contains('deviceNotFound');
       if (kIsWeb && deviceNotFound) {
@@ -409,6 +429,11 @@ class BleGattDriver {
       } else {
         _log.severe('[$effectiveDeviceId] UniversalBle.connect failed', e);
         await connection.dispose();
+        if (e is PlatformException) {
+          // Same contract as the SPP driver: native errors cross the daemon
+          // as strings, so give them one stable shape for the UI mapping.
+          throw StateError('BLE connect failed: ${e.code}: ${e.message}');
+        }
         rethrow;
       }
     }

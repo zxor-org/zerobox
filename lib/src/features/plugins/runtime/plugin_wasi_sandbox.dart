@@ -8,8 +8,8 @@ final class PluginWasiSandbox {
     required this.pluginId,
     required this.storage,
     required this.config,
-    required Map<String, WasiDirectory> webDirectories,
-  }) : _webDirectories = webDirectories;
+    required this._webDirectories,
+  });
 
   final String pluginId;
   final PluginStorage storage;

@@ -665,7 +665,7 @@ abstract class AppLocalizations {
   /// No description provided for @errorBluetoothConnectFailed.
   ///
   /// In en, this message translates to:
-  /// **'Bluetooth connection failed. Make sure the device is nearby, not occupied by another app, and try restarting Bluetooth'**
+  /// **'Connection failed. Check that Bluetooth permission is granted and Bluetooth is on, the device is nearby and not occupied by another app or device, and VelaOS devices are in \"Connect new phone\" mode, then try again'**
   String get errorBluetoothConnectFailed;
 
   /// No description provided for @errorBluetoothDisconnected.
@@ -2888,23 +2888,29 @@ abstract class AppLocalizations {
   /// **'Exit safe mode'**
   String get pluginSafeModeExit;
 
-  /// No description provided for @debugWindow.
+  /// No description provided for @devTools.
   ///
   /// In en, this message translates to:
-  /// **'Debug window'**
-  String get debugWindow;
+  /// **'DevTools'**
+  String get devTools;
 
-  /// No description provided for @debugWindowDescription.
+  /// No description provided for @devToolsDescriptionDesktop.
   ///
   /// In en, this message translates to:
-  /// **'Toggle the ZeroBox debug window'**
-  String get debugWindowDescription;
+  /// **'Open DevTools in a separate window'**
+  String get devToolsDescriptionDesktop;
 
-  /// No description provided for @debugWindowOperationFailed.
+  /// No description provided for @devToolsDescriptionEntry.
   ///
   /// In en, this message translates to:
-  /// **'Unable to change the debug window state'**
-  String get debugWindowOperationFailed;
+  /// **'Show a DevTools entry button in app bars'**
+  String get devToolsDescriptionEntry;
+
+  /// No description provided for @devToolsOperationFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to change the DevTools state'**
+  String get devToolsOperationFailed;
 
   /// No description provided for @resourceTypeErrorTitle.
   ///

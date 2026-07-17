@@ -256,11 +256,18 @@ class DaemonTaskQueue {
   void _restore() {
     final rows =
         SharedPrefsService.instance.getStringList(_storageKey) ?? const [];
+    var droppedInstallTasks = false;
     for (final row in rows) {
       try {
         final task = DaemonTask.fromJson(
           (jsonDecode(row) as Map).cast<String, Object?>(),
         );
+        // Install tasks never survive a restart: a half-finished install
+        // against a possibly disconnected device is worse than a clean queue.
+        if (task.command.method.startsWith('install.')) {
+          droppedInstallTasks = true;
+          continue;
+        }
         _tasks[task.id] = task.status == 'running'
             ? task.copyWith(
                 status: 'pending',
@@ -273,6 +280,7 @@ class DaemonTaskQueue {
             : task;
       } catch (_) {}
     }
+    if (droppedInstallTasks) _persist();
     _schedulePump();
   }
 

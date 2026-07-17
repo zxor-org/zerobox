@@ -77,17 +77,14 @@ class _ZeppOsSettingViewerPageState extends State<ZeppOsSettingViewerPage> {
     super.dispose();
   }
 
-  Future<bool> _onWillPop() {
-    if (!_closing) {
-      _closing = true;
-      unawaited(ZeppOsAppSettingsService.instance.close(widget.appId));
-    }
-    return SynchronousFuture(true);
-  }
-
   @override
-  Widget build(BuildContext context) => WillPopScope(
-    onWillPop: _onWillPop,
+  Widget build(BuildContext context) => PopScope(
+    onPopInvokedWithResult: (_, _) {
+      if (!_closing) {
+        _closing = true;
+        unawaited(ZeppOsAppSettingsService.instance.close(widget.appId));
+      }
+    },
     child: Scaffold(
       appBar: SysAppBar(secondary: true, title: Text(widget.title)),
       body: Center(

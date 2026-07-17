@@ -42,7 +42,10 @@ class BackgroundTaskService : Service() {
             .setContentIntent(pendingIntent)
             .build()
         startForeground(NOTIFICATION_ID, notification)
-        return START_NOT_STICKY
+        // Sticky so a system-initiated kill resurrects the service (and its
+        // notification); tapping it relaunches the app, whose auto-reconnect
+        // then restores the device link.
+        return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

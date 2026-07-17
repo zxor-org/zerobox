@@ -15,6 +15,7 @@ import 'package:zerobox/src/features/devices/pages/more/zeppos_xiao_ai_page.dart
 import 'package:zerobox/src/features/devices/pages/more/zeppos_app_side_debug_page.dart';
 import 'package:zerobox/src/features/devices/pages/more/zeppos_app_settings_page.dart';
 import 'package:zerobox/src/features/devices/pages/switch/device_switch_page.dart';
+import 'package:zerobox/src/features/debug/pages/debug_window_app.dart';
 import 'package:zerobox/src/features/devices/pages/watchfaces/device_watchfaces_page.dart';
 import 'package:zerobox/src/features/devices/providers/pending_shared_device_provider.dart';
 import 'package:zerobox/src/features/devices/services/device_share_link.dart';
@@ -61,6 +62,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     },
     routes: [
       GoRoute(path: '/home', redirect: (context, state) => '/resources'),
+      GoRoute(
+        path: '/debug',
+        builder: (context, state) => const DebugWindowPage(embedded: true),
+      ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) {
           return AppScaffold(navigationShell: navigationShell);

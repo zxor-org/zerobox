@@ -296,7 +296,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get errorBluetoothConnectFailed =>
-      'Bluetooth connection failed. Make sure the device is nearby, not occupied by another app, and try restarting Bluetooth';
+      'Connection failed. Check that Bluetooth permission is granted and Bluetooth is on, the device is nearby and not occupied by another app or device, and VelaOS devices are in \"Connect new phone\" mode, then try again';
 
   @override
   String get errorBluetoothDisconnected =>
@@ -1512,14 +1512,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pluginSafeModeExit => 'Exit safe mode';
 
   @override
-  String get debugWindow => 'Debug window';
+  String get devTools => 'DevTools';
 
   @override
-  String get debugWindowDescription => 'Toggle the ZeroBox debug window';
+  String get devToolsDescriptionDesktop => 'Open DevTools in a separate window';
 
   @override
-  String get debugWindowOperationFailed =>
-      'Unable to change the debug window state';
+  String get devToolsDescriptionEntry =>
+      'Show a DevTools entry button in app bars';
+
+  @override
+  String get devToolsOperationFailed => 'Unable to change the DevTools state';
 
   @override
   String get resourceTypeErrorTitle => 'Incorrect resource type';

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zerobox/src/core/logging/logging_service.dart';
 import 'package:zerobox/src/core/models/bt_models.dart';
 import 'package:zerobox/src/core/providers/bluetooth_platform_provider.dart';
+import 'package:zerobox/src/core/services/connection_keep_alive.dart';
 import 'package:zerobox/src/core/services/shared_prefs_service.dart';
 import 'package:zerobox/src/device/core/ble_requirement.dart';
 import 'package:zerobox/src/device/core/ble_transport.dart';
@@ -297,6 +298,24 @@ class LocalDeviceManager extends DeviceManager {
     _scanSubscription = _bluetooth.scanStream.listen(_onBluetoothEndpoint);
     _eventSubscription = _runtime.eventStream.listen(_onDeviceEvent);
 
+    // Android keep-alive: hold a connectedDevice foreground service while a
+    // device link is ready so the process (and BLE connection) survives the
+    // app going to background. No-op on other platforms.
+    listenSelf((previous, next) {
+      final wasReady = previous?.protocolState == ProtocolState.ready;
+      final isReady = next.protocolState == ProtocolState.ready;
+      if (wasReady == isReady) return;
+      if (isReady) {
+        unawaited(
+          beginConnectionKeepAlive(
+            'Connected: ${next.currentDevice?.name ?? 'device'}',
+          ),
+        );
+      } else {
+        unawaited(endConnectionKeepAlive());
+      }
+    });
+
     ref.onDispose(() {
       _log.info('DeviceManager disposed');
       unawaited(_xiaoAiOpusFrames.close());
@@ -343,7 +362,7 @@ class LocalDeviceManager extends DeviceManager {
   }
 
   static final _log = getLogger('DeviceManager');
-  static const _defaultConnectMaxAttempts = 1;
+  static const _defaultConnectMaxAttempts = 2;
   static const _macOsSppConnectMaxAttempts = 2;
   static const _defaultConnectRetryDelay = Duration(milliseconds: 300);
   static const _macOsSppConnectRetryDelay = Duration(seconds: 4);
@@ -1363,8 +1382,9 @@ class LocalDeviceManager extends DeviceManager {
       throw ProtocolException('Device not ready');
     }
     final system = entity.system<ZeppOsAppSideSystem>();
-    if (system == null)
+    if (system == null) {
       throw UnsupportedError('Zepp OS app-side is unavailable');
+    }
     return system;
   }
 
@@ -1408,8 +1428,9 @@ class LocalDeviceManager extends DeviceManager {
       throw ProtocolException('Device not ready');
     }
     final system = entity.system<ZeppOsScreenshotSystem>();
-    if (system == null)
+    if (system == null) {
       throw UnsupportedError('Screenshot service unavailable');
+    }
     return system.requestScreenshot();
   }
 

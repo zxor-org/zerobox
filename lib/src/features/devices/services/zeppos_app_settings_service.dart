@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -74,8 +73,9 @@ class ZeppOsAppSettingsService {
     var method = call.method;
     if (method == 'bridge') {
       final decoded = jsonDecode(args['message']?.toString() ?? '{}');
-      if (decoded is! Map)
+      if (decoded is! Map) {
         throw const FormatException('Invalid bridge message');
+      }
       args = {...decoded, 'appId': args['appId']};
       method = args['type']?.toString() ?? '';
     }

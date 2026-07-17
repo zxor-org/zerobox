@@ -205,6 +205,11 @@ class HostDeviceManager extends DeviceManager {
       connectionTargetAddr: addr,
       connectionTargetName: name,
       connectionPhase: DeviceConnectionPhase.preparing,
+      // Mirror the backend's connect-start contract. Without this, a stale
+      // connectStatus=3 from a previous failure survives into the new
+      // attempt and lets listeners mistake any connecting->idle transition
+      // for a fresh failure (the premature input-field error).
+      connectStatus: 1,
       protocolState: ProtocolState.connecting,
       clearError: true,
     );
@@ -234,7 +239,11 @@ class HostDeviceManager extends DeviceManager {
           connecting: false,
           connectStatus: 3,
           protocolState: ProtocolState.error,
-          error: error.toString(),
+          // The daemon usually pushes the underlying failure through
+          // device.state before this command error arrives; keep that
+          // original error so one failure is not reported as two
+          // differently-worded errors.
+          error: state.error ?? error.toString(),
         );
       }
     }

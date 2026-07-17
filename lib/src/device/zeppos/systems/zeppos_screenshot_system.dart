@@ -187,9 +187,12 @@ class ZeppOsScreenshotSystem extends System {
     var offset = 2;
     String readString() {
       final start = offset;
-      while (offset < payload.length && payload[offset] != 0) offset++;
-      if (offset >= payload.length)
+      while (offset < payload.length && payload[offset] != 0) {
+        offset++;
+      }
+      if (offset >= payload.length) {
         throw const FormatException('Bad file name');
+      }
       final value = String.fromCharCodes(payload.sublist(start, offset));
       offset++;
       return value;

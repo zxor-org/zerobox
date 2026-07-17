@@ -80,6 +80,34 @@ void main() {
     expect(bus.methods, ['resource.download']);
     await queue.close();
   });
+
+  test('drops persisted install tasks on restore, keeps other tasks', () async {
+    DaemonTask task(String id, String method, String status) => DaemonTask(
+      id: id,
+      command: ZeroBoxCommand(method: method),
+      status: status,
+      createdAt: DateTime(2026),
+    );
+    await SharedPrefsService.instance.setStringList('daemon.tasks', [
+      jsonEncode(task('install-pending', 'install.local', 'pending').toJson()),
+      jsonEncode(task('install-running', 'install.local', 'running').toJson()),
+      jsonEncode(task('install-failed', 'install.local', 'failed').toJson()),
+      jsonEncode(task('download', 'resource.download', 'held').toJson()),
+    ]);
+    final bus = _DelayedBus();
+    final queue = DaemonTaskQueue(bus);
+
+    expect(queue.get('install-pending'), isNull);
+    expect(queue.get('install-running'), isNull);
+    expect(queue.get('install-failed'), isNull);
+    expect(queue.get('download')?.status, 'held');
+    await queue.close();
+
+    // The purge is also written back, so a second restart stays clean.
+    final stored = SharedPrefsService.instance.getStringList('daemon.tasks')!;
+    expect(stored, hasLength(1));
+    expect(stored.single, contains('resource.download'));
+  });
 }
 
 class _DelayedBus implements ZeroBoxCommandBus {

@@ -205,11 +205,20 @@ class NativeRfcommDriver implements RfcommDriver {
   }) async {
     _ensureEventSubscription();
     _log.info('[$deviceId] initiating SPP connection');
-    final result = await _method.invokeMapMethod<String, Object?>('connect', {
-      'addr': deviceId,
-      if (serviceUuid != null) 'serviceUuid': serviceUuid,
-      'fallbackChannels': fallbackChannels,
-    });
+    final Map<String, Object?>? result;
+    try {
+      result = await _method.invokeMapMethod<String, Object?>('connect', {
+        'addr': deviceId,
+        if (serviceUuid != null) 'serviceUuid': serviceUuid,
+        'fallbackChannels': fallbackChannels,
+      });
+    } on PlatformException catch (e) {
+      // Normalize the platform-specific native error (Android Java exception
+      // text, macOS FlutterError) into one stable shape so the UI error
+      // mapping does not have to match every native wording.
+      _log.warning('[$deviceId] SPP connect failed: ${e.code} ${e.message}');
+      throw StateError('SPP connect failed: ${e.code}: ${e.message}');
+    }
     _log.info('[$deviceId] SPP connected on channel ${result?['channel']}');
     final connection = NativeRfcommConnection(
       deviceId: deviceId,
