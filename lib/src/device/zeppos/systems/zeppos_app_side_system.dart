@@ -310,6 +310,7 @@ class ZeppOsAppSideSystem extends System {
         bootstrap: '',
         hostCall: (method, arguments) => _hostCall(session, method, arguments),
       );
+      session.runtimeStarted = true;
       await runtime.dispatchEvent('appside.lifecycle.start', '');
       _addEvent(
         appId,
@@ -659,6 +660,7 @@ class _AppSideSession {
   Future<void> settingsWrite = Future.value();
   Future<void> settingsDispatch = Future.value();
   StreamSubscription<ZeppOsSettingsChange>? settingsSubscription;
+  bool runtimeStarted = false;
   bool _destroyed = false;
 
   Future<void> destroy() async {
@@ -666,15 +668,44 @@ class _AppSideSession {
     _destroyed = true;
     await settingsSubscription?.cancel();
     await settingsDispatch.catchError((_) {});
-    await runtime.dispatchEvent('appside.lifecycle.destroy', '');
+    if (runtimeStarted) {
+      await runtime.dispatchEvent('appside.lifecycle.destroy', '');
+    }
   }
 }
 
 String _appSideBootstrap(String initialSettings) =>
-    'const __zbInitialSettings = $initialSettings;\n' +
+    'const __zbInitialSettings = $initialSettings;\n'
     r'''
 (() => {
   const listeners = [];
+  const runtimeEvents = new Map();
+  const eventApi = {
+    addEventListener(name, callback) {
+      if (typeof callback !== 'function') throw new TypeError('event listener must be a function');
+      const callbacks = runtimeEvents.get(name) || [];
+      if (!callbacks.includes(callback)) callbacks.push(callback);
+      runtimeEvents.set(name, callbacks);
+    },
+    removeEventListener(name, callback) {
+      const callbacks = runtimeEvents.get(name);
+      if (!callbacks) return;
+      if (typeof callback !== 'function') {
+        runtimeEvents.delete(name);
+        return;
+      }
+      const index = callbacks.indexOf(callback);
+      if (index !== -1) callbacks.splice(index, 1);
+      if (!callbacks.length) runtimeEvents.delete(name);
+    }
+  };
+  globalThis.AstroBox = Object.freeze({event: Object.freeze(eventApi)});
+  globalThis.__zbDispatchEvent = async (name, payload) => {
+    for (const callback of [...(runtimeEvents.get(name) || [])]) {
+      await callback(payload);
+    }
+  };
+  globalThis.__zbStartPlugin = async () => {};
   const initialSettings = __zbInitialSettings;
   if (typeof globalThis.ValueError !== 'function') {
     globalThis.ValueError = class ValueError extends Error {

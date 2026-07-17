@@ -1,12 +1,12 @@
 import 'dart:typed_data';
 
+import 'package:card_settings_ui/card_settings_ui.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:zerobox/src/app/widgets/page_container.dart';
 import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
 import 'package:zerobox/src/device/zeppos/app_side/zeppos_app_side_storage.dart';
-import 'package:zerobox/src/features/devices/services/zeppos_app_settings_service.dart';
 import 'package:zerobox/src/features/devices/pages/more/zeppos_setting_viewer_page.dart';
 
 class ZeppOsAppSettingsPage extends StatefulWidget {
@@ -145,41 +145,42 @@ class _ZeppOsAppSettingsPageState extends State<ZeppOsAppSettingsPage> {
               ),
             );
           }
-          return ListView.builder(
-            itemCount: items.length,
-            itemBuilder: (context, index) {
-              final item = items[index];
-              return Card(
-                margin: const EdgeInsets.only(bottom: 8),
-                child: ListTile(
-                  leading: Icon(
-                    item.hasSetting ? Icons.tune : Icons.extension_outlined,
-                  ),
-                  title: Text(item.name ?? _formatId(item.appId)),
-                  subtitle: Text(
-                    '${_formatId(item.appId)} · '
-                    '${item.hasAppSide ? 'app-side ✓' : 'app-side 缺失'} · '
-                    '${item.hasSetting ? 'setting ✓' : 'setting 缺失'}',
-                  ),
-                  onTap: item.hasSetting ? () => _open(item) : null,
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        onPressed: () => _editStorage(item),
-                        icon: const Icon(Icons.storage_outlined),
-                        tooltip: '编辑 settingsStorage',
+          return ListView(
+            children: [
+              SettingsSection(
+                margin: EdgeInsetsDirectional.zero,
+                tiles: [
+                  for (final item in items)
+                    SettingsTile.navigation(
+                      leading: Icon(
+                        item.hasSetting ? Icons.tune : Icons.extension_outlined,
                       ),
-                      IconButton(
-                        onPressed: () => _supplement(item: item),
-                        icon: const Icon(Icons.upload_file_outlined),
-                        tooltip: '补全或替换兼容文件',
+                      title: Text(item.name ?? _formatId(item.appId)),
+                      description: Text(
+                        '${_formatId(item.appId)} · '
+                        '${item.hasAppSide ? 'app-side ✓' : 'app-side 缺失'} · '
+                        '${item.hasSetting ? 'setting ✓' : 'setting 缺失'}',
                       ),
-                    ],
-                  ),
-                ),
-              );
-            },
+                      onPressed: item.hasSetting ? (_) => _open(item) : null,
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            onPressed: () => _editStorage(item),
+                            icon: const Icon(Icons.storage_outlined),
+                            tooltip: '编辑 settingsStorage',
+                          ),
+                          IconButton(
+                            onPressed: () => _supplement(item: item),
+                            icon: const Icon(Icons.upload_file_outlined),
+                            tooltip: '补全或替换兼容文件',
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ],
           );
         },
       ),
@@ -530,5 +531,4 @@ class _Item {
   final bool hasSetting;
 }
 
-String _formatId(int value) =>
-    '0x${value.toRadixString(16).padLeft(8, '0')}';
+String _formatId(int value) => '0x${value.toRadixString(16).padLeft(8, '0')}';

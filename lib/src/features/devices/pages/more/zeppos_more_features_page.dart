@@ -1,3 +1,4 @@
+import 'package:card_settings_ui/card_settings_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -65,162 +66,106 @@ class _ZeppOsMoreFeaturesPageState
           horizontal: StyleConstants.pagePadding,
           vertical: 16,
         ),
-        child: Align(
-          alignment: Alignment.topCenter,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 720),
-            child: Card(
-              elevation: 0,
-              color: colorScheme.surfaceContainerHigh,
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.record_voice_over),
-                      title: const Text('小爱同学'),
-                      subtitle: const Text('捕获 Opus 帧并实时解码播放'),
-                      trailing: const Icon(Icons.chevron_right),
-                      enabled: ready,
-                      onTap: ready
-                          ? () => context.push('/devices/zeppos-more/xiao-ai')
-                          : null,
-                    ),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.tune),
-                      title: const Text('应用设置'),
-                      subtitle: const Text('打开已缓存的 Zepp OS 应用设置页'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () =>
-                          context.push('/devices/zeppos-more/settings'),
-                    ),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.code),
-                      title: const Text('App-side 调试'),
-                      subtitle: const Text(
-                        '按 appId 调试 QuickJS 与 PeerSocket 消息',
-                      ),
-                      trailing: const Icon(Icons.chevron_right),
-                      enabled: ready,
-                      onTap: ready
-                          ? () => context.push('/devices/zeppos-more/app-side')
-                          : null,
-                    ),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.watch_outlined),
-                      title: const Text('屏幕镜像'),
-                      subtitle: const Text('屏幕镜像'),
-                      trailing: const Icon(Icons.keyboard_arrow_up_rounded),
-                      enabled: ready,
-                      onTap: ready ? _showMirror : null,
-                    ),
-                    const Divider(),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.vibration,
-                          color: colorScheme.primary,
-                          size: 28,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            l10n.zeppOsFindDevice,
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      l10n.zeppOsFindDeviceDescription,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      child: _finding
-                          ? OutlinedButton.icon(
-                              onPressed: ready && !_busy
-                                  ? () => _setFinding(false)
-                                  : null,
-                              icon: _busy
-                                  ? const SizedBox.square(
-                                      dimension: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(Icons.stop_circle_outlined),
-                              label: Text(l10n.zeppOsFindDeviceStop),
-                            )
-                          : FilledButton.icon(
-                              onPressed: ready && !_busy
-                                  ? () => _setFinding(true)
-                                  : null,
-                              icon: _busy
-                                  ? const SizedBox.square(
-                                      dimension: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(Icons.notifications_active),
-                              label: Text(l10n.zeppOsFindDeviceStart),
-                            ),
-                    ),
-                    const SizedBox(height: 24),
-                    const Divider(),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.bluetooth_searching,
-                          color: colorScheme.primary,
-                          size: 28,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            '实时 Zepp OS 消息',
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: state.zeppOsMessages.isEmpty
-                              ? null
-                              : () => ref
-                                    .read(deviceManagerProvider.notifier)
-                                    .clearZeppOsMessages(),
-                          tooltip: '清空消息',
-                          icon: const Icon(Icons.delete_sweep_outlined),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '显示现有分包层已经解码的设备上行 endpoint 消息，'
-                      '最多保留最近 200 条。',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    _ZeppOsMessageList(messages: state.zeppOsMessages),
-                  ],
+        child: ListView(
+          children: [
+            SettingsSection(
+              title: const Text('功能'),
+              margin: EdgeInsetsDirectional.zero,
+              tiles: [
+                SettingsTile.navigation(
+                  leading: const Icon(Icons.record_voice_over),
+                  title: const Text('小爱同学'),
+                  description: const Text('捕获 Opus 帧并实时解码播放'),
+                  enabled: ready,
+                  onPressed: (_) =>
+                      context.push('/devices/zeppos-more/xiao-ai'),
                 ),
+                SettingsTile.navigation(
+                  leading: const Icon(Icons.tune),
+                  title: const Text('应用设置'),
+                  description: const Text('打开已缓存的 Zepp OS 应用设置页'),
+                  onPressed: (_) =>
+                      context.push('/devices/zeppos-more/settings'),
+                ),
+                SettingsTile.navigation(
+                  leading: const Icon(Icons.code),
+                  title: const Text('App-side 调试'),
+                  description: const Text('按 appId 调试 QuickJS 与 PeerSocket 消息'),
+                  enabled: ready,
+                  onPressed: (_) =>
+                      context.push('/devices/zeppos-more/app-side'),
+                ),
+                SettingsTile.navigation(
+                  leading: const Icon(Icons.watch_outlined),
+                  title: const Text('屏幕镜像'),
+                  description: const Text('查看手表实时画面'),
+                  enabled: ready,
+                  onPressed: (_) => _showMirror(),
+                ),
+              ],
+            ),
+            SettingsSection(
+              title: const Text('设备'),
+              margin: EdgeInsetsDirectional.zero,
+              tiles: [
+                SettingsTile.switchTile(
+                  leading: _busy
+                      ? const SizedBox.square(
+                          dimension: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.vibration),
+                  title: Text(l10n.zeppOsFindDevice),
+                  description: Text(l10n.zeppOsFindDeviceDescription),
+                  initialValue: _finding,
+                  enabled: ready && !_busy,
+                  onToggle: (value) => _setFinding(value ?? false),
+                ),
+              ],
+            ),
+            SectionCard(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.bluetooth_searching,
+                        color: colorScheme.primary,
+                        size: 28,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          '实时 Zepp OS 消息',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: state.zeppOsMessages.isEmpty
+                            ? null
+                            : () => ref
+                                  .read(deviceManagerProvider.notifier)
+                                  .clearZeppOsMessages(),
+                        tooltip: '清空消息',
+                        icon: const Icon(Icons.delete_sweep_outlined),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '显示现有分包层已经解码的设备上行 endpoint 消息，最多保留最近 200 条。',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _ZeppOsMessageList(messages: state.zeppOsMessages),
+                ],
               ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -336,63 +281,63 @@ class _WatchMirror extends StatelessWidget {
           child: AspectRatio(
             aspectRatio: 1,
             child: Semantics(
-            label: 'Zepp OS 手表屏幕镜像',
+              label: 'Zepp OS 手表屏幕镜像',
               child: Stack(
                 alignment: Alignment.center,
                 children: [
-              if (frame == null)
-                Positioned.fill(
-                  child: SvgPicture.asset(
-                    'assets/images/devices/xiaomi-watch.svg',
-                    colorFilter: ColorFilter.mode(
-                      colors.onSurface,
-                      BlendMode.srcIn,
+                  if (frame == null)
+                    Positioned.fill(
+                      child: SvgPicture.asset(
+                        'assets/images/devices/xiaomi-watch.svg',
+                        colorFilter: ColorFilter.mode(
+                          colors.onSurface,
+                          BlendMode.srcIn,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-              if (frame == null)
-                SizedBox(
-                  width: 44,
-                  height: 44,
-                  child: CircularProgressIndicator(
-                    color: colors.primary,
-                    strokeWidth: 4,
-                    strokeCap: StrokeCap.round,
-                  ),
-                ),
-              if (frame != null)
-                Positioned.fill(
-                  child: Align(
-                    child: FractionallySizedBox(
-                      widthFactor: 13 / 16,
-                      heightFactor: 13 / 16,
-                      child: ClipOval(
-                        child: ColoredBox(
-                          color: Colors.black,
-                          child: Image.memory(
-                            frame!,
-                            fit: BoxFit.cover,
-                            gaplessPlayback: true,
-                            errorBuilder: (_, error, _) => _MirrorStatus(
-                              icon: Icons.broken_image_outlined,
-                              text: '截图格式无法显示\n$error',
+                  if (frame == null)
+                    SizedBox(
+                      width: 44,
+                      height: 44,
+                      child: CircularProgressIndicator(
+                        color: colors.primary,
+                        strokeWidth: 4,
+                        strokeCap: StrokeCap.round,
+                      ),
+                    ),
+                  if (frame != null)
+                    Positioned.fill(
+                      child: Align(
+                        child: FractionallySizedBox(
+                          widthFactor: 13 / 16,
+                          heightFactor: 13 / 16,
+                          child: ClipOval(
+                            child: ColoredBox(
+                              color: Colors.black,
+                              child: Image.memory(
+                                frame!,
+                                fit: BoxFit.cover,
+                                gaplessPlayback: true,
+                                errorBuilder: (_, error, _) => _MirrorStatus(
+                                  icon: Icons.broken_image_outlined,
+                                  text: '截图格式无法显示\n$error',
+                                ),
+                              ),
                             ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ),
-              if (frame != null)
-                Positioned.fill(
-                  child: SvgPicture.asset(
-                    'assets/images/devices/xiaomi-watch-mirror-shell.svg',
-                    colorFilter: ColorFilter.mode(
-                      colors.onSurface,
-                      BlendMode.srcIn,
+                  if (frame != null)
+                    Positioned.fill(
+                      child: SvgPicture.asset(
+                        'assets/images/devices/xiaomi-watch-mirror-shell.svg',
+                        colorFilter: ColorFilter.mode(
+                          colors.onSurface,
+                          BlendMode.srcIn,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
                 ],
               ),
             ),
@@ -404,10 +349,9 @@ class _WatchMirror extends StatelessWidget {
 }
 
 class _MirrorStatus extends StatelessWidget {
-  const _MirrorStatus({required this.icon, required this.text, this.color});
+  const _MirrorStatus({required this.icon, required this.text});
   final IconData icon;
   final String text;
-  final Color? color;
 
   @override
   Widget build(BuildContext context) => Center(
@@ -416,12 +360,12 @@ class _MirrorStatus extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: color, size: 36),
+          Icon(icon, color: Colors.white70, size: 36),
           const SizedBox(height: 12),
           Text(
             text,
             textAlign: TextAlign.center,
-            style: TextStyle(color: color ?? Colors.white70),
+            style: const TextStyle(color: Colors.white70),
           ),
         ],
       ),

@@ -26,6 +26,7 @@ class InstallTask {
     required this.name,
     required this.description,
     required this.type,
+    this.installMode = ResourceInstallMode.automatic,
     required this.filePath,
     this.bytes,
     this.resource,
@@ -39,6 +40,7 @@ class InstallTask {
   final String name;
   final String description;
   final LocalDeviceInstallType type;
+  final ResourceInstallMode installMode;
   final String filePath;
   final Uint8List? bytes;
   final CommunityResourceDetail? resource;
@@ -167,6 +169,10 @@ class InstallQueueNotifier extends Notifier<InstallQueueState> {
         'firmware' => LocalDeviceInstallType.firmware,
         _ => LocalDeviceInstallType.app,
       },
+      installMode: ResourceInstallMode.values.firstWhere(
+        (mode) => mode.name == view.params['installMode']?.toString(),
+        orElse: () => ResourceInstallMode.automatic,
+      ),
       filePath: view.path ?? '',
       resource: resource,
       file: resourceFile,
@@ -220,6 +226,46 @@ class InstallQueueNotifier extends Notifier<InstallQueueState> {
         },
       ),
     );
+  }
+
+  Future<void> enqueueConfirmedLocalFile(
+    XFile file, {
+    required LocalDeviceInstallType type,
+    required ResourceInstallMode installMode,
+  }) async {
+    final bytes = await file.readAsBytes();
+    if (kIsWeb) {
+      _addWebTask(
+        InstallTask(
+          id: '${file.path}:${DateTime.now().microsecondsSinceEpoch}',
+          name: file.name,
+          description: type.name,
+          type: type,
+          installMode: installMode,
+          filePath: file.path,
+          bytes: bytes,
+        ),
+      );
+      start();
+      return;
+    }
+    final path = await _stage(file.name, bytes);
+    await _enqueue(
+      ZeroBoxCommand(
+        method: 'install.local',
+        params: {
+          'type': type.name,
+          'installMode': installMode.name,
+          'path': path,
+          'title': file.name,
+          'deleteAfter': true,
+          'autoClean': true,
+        },
+      ),
+    );
+    await ref
+        .read(applicationHostProvider)
+        .execute(const ZeroBoxCommand(method: 'queue.start'));
   }
 
   Future<String> _stage(String name, Uint8List bytes) async {
@@ -361,6 +407,7 @@ class InstallQueueNotifier extends Notifier<InstallQueueState> {
                 name: task.name,
                 description: task.description,
                 type: task.type,
+                installMode: task.installMode,
                 filePath: task.filePath,
                 bytes: task.bytes,
                 resource: task.resource,
@@ -444,6 +491,7 @@ class InstallQueueNotifier extends Notifier<InstallQueueState> {
                 name: item.name,
                 description: item.description,
                 type: item.type,
+                installMode: item.installMode,
                 filePath: item.filePath,
                 bytes: item.bytes,
                 resource: item.resource,
@@ -469,12 +517,55 @@ class InstallQueueNotifier extends Notifier<InstallQueueState> {
         onUpdate: update,
       );
     } else {
-      await ResourceInstallService().installLocalFile(
-        filePath: task.filePath,
-        bytes: task.bytes,
-        deviceManager: manager,
-        onUpdate: update,
-      );
+      final service = ResourceInstallService();
+      final bytes = task.bytes;
+      if (bytes == null) {
+        update(ResourceTaskStatus.failed, 0, 'Missing resource bytes');
+        return;
+      }
+      try {
+        switch (task.installMode) {
+          case ResourceInstallMode.automatic:
+            await service.installLocalPayload(
+              type: task.type,
+              fileName: task.name,
+              bytes: bytes,
+              deviceManager: manager,
+              onProgress: (progress) =>
+                  update(ResourceTaskStatus.installing, progress, null),
+            );
+          case ResourceInstallMode.forceType:
+            await service.installForcedPayload(
+              type: task.type,
+              fileName: task.name,
+              bytes: bytes,
+              deviceManager: manager,
+              onProgress: (progress) =>
+                  update(ResourceTaskStatus.installing, progress, null),
+            );
+          case ResourceInstallMode.forcePlatform:
+            final analysis = service.analyzePayload(
+              fileName: task.name,
+              bytes: bytes,
+              hint: task.type,
+              source: 'web-queue-force-platform',
+            );
+            if (analysis == null) {
+              throw FormatException('Unrecognized resource: ${task.name}');
+            }
+            await service.installAnalyzedPayload(
+              analysis: analysis,
+              fileName: task.name,
+              deviceManager: manager,
+              forcePlatform: true,
+              onProgress: (progress) =>
+                  update(ResourceTaskStatus.installing, progress, null),
+            );
+        }
+        update(ResourceTaskStatus.completed, 1, null);
+      } catch (error) {
+        update(ResourceTaskStatus.failed, 0, error.toString());
+      }
     }
   }
 }

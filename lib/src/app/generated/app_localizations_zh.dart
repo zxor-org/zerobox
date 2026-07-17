@@ -628,6 +628,24 @@ class AppLocalizationsZh extends AppLocalizations {
   String get open => '打开';
 
   @override
+  String get externalLinkTitle => '跳转外部链接';
+
+  @override
+  String externalLinkDescription(String url) {
+    return '即将跳转到 $url\n\n该网站由第三方运营，与 ZeroBox 没有从属关系，安全性未知，请注意辨别，是否继续访问？';
+  }
+
+  @override
+  String get externalLinkAstroBoxResourceHint =>
+      '这似乎是一个 AstroBox 资源，您也可以在 ZeroBox内访问并安装';
+
+  @override
+  String get continueToWebsite => '继续访问';
+
+  @override
+  String get viewInZeroBox => '在 ZeroBox 中查看';
+
+  @override
   String get uninstall => '卸载';
 
   @override
@@ -1428,4 +1446,93 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get pluginSafeModeExit => '退出安全模式';
+
+  @override
+  String get debugWindow => '调试窗口';
+
+  @override
+  String get debugWindowDescription => '是否启用 ZeroBox 调试窗口';
+
+  @override
+  String get debugWindowOperationFailed => '无法更改调试窗口状态';
+
+  @override
+  String get resourceTypeErrorTitle => '错误的资源类型';
+
+  @override
+  String get resourceTypeUnknownTitle => '无法识别的资源类型';
+
+  @override
+  String resourceTypeMismatchMessage(Object detectedType, Object selectedType) {
+    return '这似乎是一个$detectedType资源，但您选择的资源类型为$selectedType，请选择安装方式';
+  }
+
+  @override
+  String resourcePlatformMismatchMessage(
+    Object resourcePlatform,
+    Object resourceType,
+    Object deviceName,
+    Object devicePlatform,
+  ) {
+    return '这似乎是一个 $resourcePlatform 设备的$resourceType资源，当前连接的设备为 $deviceName（$devicePlatform），不支持安装，强行安装可能引发不可预知的问题';
+  }
+
+  @override
+  String resourceTypeUnknownMessage(Object selectedType) {
+    return 'ZeroBox 无法识别此文件的实际资源类型，是否仍以$selectedType安装？';
+  }
+
+  @override
+  String get resourceInstallCancel => '取消安装';
+
+  @override
+  String get resourceInstallAcknowledge => '我知道了';
+
+  @override
+  String get resourceInstallForce => '强制安装';
+
+  @override
+  String resourceInstallForceCountdown(int seconds) {
+    return '强制安装 (${seconds}s)';
+  }
+
+  @override
+  String resourceInstallAsSelected(Object type) {
+    return '继续以$type安装';
+  }
+
+  @override
+  String resourceInstallAsSelectedCountdown(Object type, int seconds) {
+    return '继续以$type安装 (${seconds}s)';
+  }
+
+  @override
+  String resourceInstallAsDetected(Object type) {
+    return '以$type安装';
+  }
+
+  @override
+  String get resourceTypeApp => '小程序';
+
+  @override
+  String get resourceTypeQuickApp => '快应用';
+
+  @override
+  String get resourceTypeWatchface => '表盘';
+
+  @override
+  String get resourceTypeFirmware => '固件';
+
+  @override
+  String resourceInstallConfirmTitle(Object type) {
+    return '安装$type';
+  }
+
+  @override
+  String resourceInstallConfirmMessage(Object fileName, Object fileSize) {
+    return '确认要安装 $fileName（$fileSize）吗？';
+  }
+
+  @override
+  String get resourceInstallConfirm => '确认安装';
 }

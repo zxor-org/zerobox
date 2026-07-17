@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:zerobox/src/commands/command_protocol.dart';
+import 'package:zerobox/src/core/logging/diagnostic_event.dart';
+import 'package:zerobox/src/core/logging/logging_service.dart';
 import 'package:zerobox/src/daemon/daemon_client.dart';
 
 /// A stable GUI-side adapter over daemon process restarts
@@ -11,10 +13,47 @@ class ReconnectingDaemonClient implements ZeroBoxCommandBus {
   Future<ZeroBoxDaemonClient>? _connecting;
   Timer? _reconnectTimer;
   final _events = StreamController<CommandEvent>.broadcast();
+  StreamSubscription<DiagnosticEvent>? _diagnosticSubscription;
+  late final Future<CommandResult> _diagnosticSessionReady;
+  final _diagnosticSessionId = '$pid-${DateTime.now().microsecondsSinceEpoch}';
+  final _diagnosticSessionStartedAt = DateTime.now();
   bool _closed = false;
 
   ReconnectingDaemonClient() {
+    if (diagnosticProcess == DiagnosticProcess.frontend) {
+      _diagnosticSessionReady = execute(
+        ZeroBoxCommand(
+          method: 'debug.session.start',
+          params: {
+            'sessionId': _diagnosticSessionId,
+            'startedAt': _diagnosticSessionStartedAt.toIso8601String(),
+          },
+        ),
+      );
+    } else {
+      _diagnosticSessionReady = Future.value(const CommandResult.success());
+    }
+    if (diagnosticProcess == DiagnosticProcess.frontend ||
+        diagnosticProcess == DiagnosticProcess.pluginWindow) {
+      _diagnosticSubscription = zeroBoxDiagnosticStream.listen((event) {
+        unawaited(_publishDiagnostic(event));
+      });
+    }
     scheduleMicrotask(_reconnect);
+  }
+
+  Future<void> _publishDiagnostic(DiagnosticEvent event) async {
+    try {
+      await _diagnosticSessionReady;
+      await execute(
+        ZeroBoxCommand(
+          method: 'debug.publish',
+          params: {'sessionId': _diagnosticSessionId, 'record': event.toJson()},
+        ),
+      );
+    } catch (_) {
+      // Diagnostic forwarding must never affect the application itself.
+    }
   }
 
   @override
@@ -118,6 +157,7 @@ class ReconnectingDaemonClient implements ZeroBoxCommandBus {
     _closed = true;
     _reconnectTimer?.cancel();
     await _subscription?.cancel();
+    await _diagnosticSubscription?.cancel();
     await _client?.close();
     await _events.close();
   }

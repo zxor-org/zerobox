@@ -47,6 +47,7 @@ class PluginManager {
   final void Function(CommandEvent event) emitEvent;
   final _plugins = <String, InstalledPlugin>{};
   final _runtimeStarts = <String, Future<PluginRuntime>>{};
+  final _runtimes = <String, PluginRuntime>{};
   final _wasmHosts = <String, PluginWasmHost>{};
   final _uiNodes = <String, List<Map<String, Object?>>>{};
   final _openPages = <String, List<Map<String, Object?>>>{};
@@ -75,10 +76,6 @@ class PluginManager {
   var _requestSequence = 0;
   var _closed = false;
   bool _safeMode;
-  String? _activePluginId;
-  PluginRuntime? _activeRuntime;
-  PluginRuntime? _quickJsRuntime;
-  PluginRuntime? _wasmRuntime;
 
   Future<void> initialize() => _initialization ??= _loadInstalledPlugins();
 
@@ -99,13 +96,125 @@ class PluginManager {
       .map((failure) => failure.toJson())
       .toList(growable: false);
 
+  List<Map<String, Object?>> diagnosticSources() => _plugins.values
+      .map(
+        (plugin) => {
+          'id': plugin.manifest.id,
+          'name': plugin.manifest.name,
+          'runtime': plugin.manifest.runtime.name,
+          'running': _runtimes.containsKey(plugin.manifest.id),
+        },
+      )
+      .toList(growable: false);
+
+  List<Map<String, Object?>> diagnostics() =>
+      _plugins.keys.map(diagnosticSnapshot).toList(growable: false);
+
+  Map<String, Object?> diagnosticSnapshot(String id) {
+    final plugin = _requirePlugin(id);
+    final running = _runtimes.containsKey(id);
+    return {
+      'id': id,
+      'name': plugin.manifest.name,
+      'version': plugin.manifest.version,
+      'runtime': plugin.manifest.runtime.name,
+      'running': running,
+      'state': running ? 'running' : 'stopped',
+      'runtimeState': _runtimes[id]?.diagnostics ?? const {},
+      'layout': _uiNodes[id] ?? const <Map<String, Object?>>[],
+      'pages': _openPages[id] ?? const <Map<String, Object?>>[],
+      'storage': plugin.config,
+      'wasmInstances': _wasmHosts.containsKey(id) ? 1 : 0,
+      'permissions': plugin.manifest.permissions,
+      if (_failures[id] case final failure?) 'failure': failure.toJson(),
+    };
+  }
+
+  Future<List<Map<String, Object?>>> diagnosticStorageDirectory(
+    String id,
+    String path,
+  ) async {
+    await initialize();
+    _requirePlugin(id);
+    if (path.isEmpty) {
+      return const [
+        {'name': 'plugin', 'path': '/plugin', 'isDirectory': true},
+        {'name': 'data', 'path': '/data', 'isDirectory': true},
+        {'name': 'cache', 'path': '/cache', 'isDirectory': true},
+        {'name': 'temp', 'path': '/temp', 'isDirectory': true},
+      ];
+    }
+    final entries = await (await _storage).listDirectory(
+      id,
+      PluginStoragePath.parse(path),
+    );
+    return entries
+        .map((entry) {
+          final segments = entry.path
+              .split('/')
+              .where((part) => part.isNotEmpty);
+          return {
+            ...entry.toJson(),
+            'name': segments.isEmpty ? entry.path : segments.last,
+          };
+        })
+        .toList(growable: false)
+      ..sort((a, b) {
+        final directoryOrder =
+            (b['isDirectory'] == true ? 1 : 0) -
+            (a['isDirectory'] == true ? 1 : 0);
+        return directoryOrder != 0
+            ? directoryOrder
+            : a['name'].toString().toLowerCase().compareTo(
+                b['name'].toString().toLowerCase(),
+              );
+      });
+  }
+
+  Future<Map<String, Object?>> diagnosticStorageFile(
+    String id,
+    String path,
+  ) async {
+    await initialize();
+    _requirePlugin(id);
+    final bytes = await (await _storage).readFile(
+      id,
+      PluginStoragePath.parse(path),
+    );
+    const previewLimit = 1024 * 1024;
+    final preview = bytes.take(previewLimit).toList(growable: false);
+    final binary = preview.any((byte) => byte == 0);
+    return {
+      'path': path,
+      'size': bytes.length,
+      'truncated': bytes.length > preview.length,
+      'format': binary ? 'hex' : 'text',
+      'content': binary
+          ? preview
+                .take(4096)
+                .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+                .toList()
+                .asMap()
+                .entries
+                .map(
+                  (entry) => entry.key % 16 == 15
+                      ? '${entry.value}\n'
+                      : '${entry.value} ',
+                )
+                .join()
+                .trimRight()
+          : utf8.decode(preview, allowMalformed: true),
+    };
+  }
+
   Future<void> setSafeMode(bool enabled) async {
     await initialize();
     if (_safeMode == enabled) return;
     _safeMode = enabled;
     await SharedPrefsService.instance.setBool(_safeModePreference, enabled);
     if (enabled) {
-      await _closeActiveRuntime();
+      await _runtimeTransition.catchError((_) {});
+      await _closeAllRuntimes();
     }
     emitEvent(CommandEvent('plugin.safeMode', data: {'enabled': enabled}));
   }
@@ -171,6 +280,7 @@ class PluginManager {
     _requirePlugin(id);
     await _runtimeTransition.catchError((_) {});
     await _closeRuntime(id);
+    _emitDiagnosticState(id);
   }
 
   Future<void> clearData(String id) async {
@@ -226,6 +336,7 @@ class PluginManager {
     final provider = _providers[providerName];
     if (provider == null) throw StateError('Plugin provider not found');
     final plugin = _requirePlugin(provider.pluginId);
+    final wasRunning = _runtimes.containsKey(provider.pluginId);
     try {
       return await _runPluginOperation(plugin, 'provider.$operation', () async {
         final runtime = await _ensureRuntime(provider.pluginId);
@@ -247,7 +358,7 @@ class PluginManager {
         return runtime.invokeRegistered(callback, arguments);
       });
     } finally {
-      await closePlugin(provider.pluginId);
+      if (!wasRunning) await closePlugin(provider.pluginId);
     }
   }
 
@@ -284,9 +395,7 @@ class PluginManager {
     if (failure != null) throw PluginExecutionException.fromFailure(failure);
     final pending = _runtimeStarts[id];
     if (pending != null) return pending;
-    if (_activePluginId == id && _activeRuntime != null) {
-      return _activeRuntime!;
-    }
+    if (_runtimes[id] case final runtime?) return runtime;
     final start = _runtimeTransition
         .catchError((_) {})
         .then((_) => _startRuntime(id));
@@ -303,13 +412,12 @@ class PluginManager {
 
   Future<PluginRuntime> _startRuntime(String id) async {
     final plugin = _requirePlugin(id);
-    await _closeActiveRuntime();
+    await _closeRuntime(id);
     _uiNodes.remove(id);
     _openPages.remove(id);
     _providers.removeWhere((_, provider) => provider.pluginId == id);
-    final runtime = await _runtimeFor(plugin.manifest.runtime);
-    _activePluginId = id;
-    _activeRuntime = runtime;
+    final runtime = await _createRuntime(plugin.manifest.runtime);
+    _runtimes[id] = runtime;
     try {
       await runtime.start(
         pluginId: id,
@@ -323,12 +431,10 @@ class PluginManager {
         hostCall: (method, arguments) =>
             _handleHostCall(plugin, method, arguments),
       );
+      _emitDiagnosticState(id);
       return runtime;
     } catch (_) {
-      if (_activePluginId == id) {
-        _activePluginId = null;
-        _activeRuntime = null;
-      }
+      _runtimes.remove(id);
       _providers.removeWhere((_, provider) => provider.pluginId == id);
       await runtime.close();
       rethrow;
@@ -336,34 +442,24 @@ class PluginManager {
   }
 
   Future<void> _closeRuntime(String id) async {
-    if (_activePluginId == id) await _closeActiveRuntime();
+    await _runtimes.remove(id)?.close();
     await _wasmHosts.remove(id)?.dispose();
     _permissionBroker.endSession(id);
     _interconnectObservers.remove(id);
     _rawProtocolObservers.remove(id);
   }
 
-  Future<PluginRuntime> _runtimeFor(PluginRuntimeType type) async {
+  Future<PluginRuntime> _createRuntime(PluginRuntimeType type) async {
     if (type == PluginRuntimeType.wasm) {
-      return _wasmRuntime ??= createPluginRuntime(
-        type,
-        storage: await _storage,
-      );
+      return createPluginRuntime(type, storage: await _storage);
     }
-    return _quickJsRuntime ??= createJavaScriptPluginRuntime();
+    return createJavaScriptPluginRuntime();
   }
 
-  Future<void> _closeActiveRuntime() async {
-    final id = _activePluginId;
-    final runtime = _activeRuntime;
-    _activePluginId = null;
-    _activeRuntime = null;
-    if (runtime != null) await runtime.close();
-    if (id == null) return;
-    await _wasmHosts.remove(id)?.dispose();
-    _permissionBroker.endSession(id);
-    _interconnectObservers.remove(id);
-    _rawProtocolObservers.remove(id);
+  Future<void> _closeAllRuntimes() async {
+    for (final id in _runtimes.keys.toList(growable: false)) {
+      await _closeRuntime(id);
+    }
   }
 
   Future<Object?> _handleHostCall(
@@ -399,7 +495,8 @@ class PluginManager {
     }
 
     return switch (method) {
-      'log.debug' || 'log.info' => _pluginLog(id, arguments, 'info'),
+      'log.debug' => _pluginLog(id, arguments, 'fine'),
+      'log.info' => _pluginLog(id, arguments, 'info'),
       'log.warning' => _pluginLog(id, arguments, 'warning'),
       'log.error' => _pluginLog(id, arguments, 'severe'),
       'storage.get' => _storageGet(id, arguments),
@@ -568,16 +665,19 @@ class PluginManager {
   }
 
   Object? _pluginLog(String id, List<Object?> values, String level) {
-    final log = getLogger('Plugin.$id');
+    final runtime = _plugins[id]?.manifest.runtime.name ?? 'unknown';
     final message = values.join(' ');
-    switch (level) {
-      case 'warning':
-        log.warning(message);
-      case 'severe':
-        log.severe(message);
-      default:
-        log.info(message);
-    }
+    logPluginDiagnostic(
+      pluginId: id,
+      runtime: runtime,
+      level: switch (level) {
+        'fine' => Level.FINE,
+        'warning' => Level.WARNING,
+        'severe' => Level.SEVERE,
+        _ => Level.INFO,
+      },
+      message: message,
+    );
     return null;
   }
 
@@ -595,6 +695,7 @@ class PluginManager {
       ..[key] = arguments.elementAtOrNull(1);
     await (await _storage).writeConfig(id, config);
     _plugins[id] = current.copyWith(config: config);
+    _emitDiagnosticState(id);
   }
 
   Future<void> _storageRemove(String id, List<Object?> arguments) async {
@@ -604,12 +705,14 @@ class PluginManager {
     final config = Map<String, Object?>.of(current.config)..remove(key);
     await (await _storage).writeConfig(id, config);
     _plugins[id] = current.copyWith(config: config);
+    _emitDiagnosticState(id);
   }
 
   Future<void> _storageClear(String id) async {
     final current = _requirePlugin(id);
     await (await _storage).writeConfig(id, const {});
     _plugins[id] = current.copyWith(config: const {});
+    _emitDiagnosticState(id);
   }
 
   Future<Map<String, Object?>?> _pickSandboxFile(
@@ -1060,32 +1163,31 @@ class PluginManager {
             'dispatching interconnect message from $packageName '
             '(${bytes.length} bytes)',
           );
-          final id = _activePluginId;
-          final runtime = _activeRuntime;
-          final plugin = id == null ? null : _plugins[id];
-          if (id == null ||
-              runtime == null ||
-              plugin == null ||
-              _failures.containsKey(id) ||
-              !_interconnectObservers.contains(id)) {
-            return;
-          }
-          try {
-            await runtime.dispatchEvent(
-              plugin.manifest.runtime == PluginRuntimeType.legacy
-                  ? 'onQAICMessage_$packageName'
-                  : 'interconnect',
-              plugin.manifest.runtime == PluginRuntimeType.legacy
-                  ? payload
-                  : jsonEncode({'packageName': packageName, 'data': payload}),
-            );
-          } catch (error, stackTrace) {
-            await _recordFailure(
-              plugin,
-              error,
-              stackTrace,
-              phase: 'interconnect',
-            );
+          for (final id in _interconnectObservers.toList(growable: false)) {
+            final runtime = _runtimes[id];
+            final plugin = _plugins[id];
+            if (runtime == null ||
+                plugin == null ||
+                _failures.containsKey(id)) {
+              continue;
+            }
+            try {
+              await runtime.dispatchEvent(
+                plugin.manifest.runtime == PluginRuntimeType.legacy
+                    ? 'onQAICMessage_$packageName'
+                    : 'interconnect',
+                plugin.manifest.runtime == PluginRuntimeType.legacy
+                    ? payload
+                    : jsonEncode({'packageName': packageName, 'data': payload}),
+              );
+            } catch (error, stackTrace) {
+              await _recordFailure(
+                plugin,
+                error,
+                stackTrace,
+                phase: 'interconnect',
+              );
+            }
           }
         });
   }
@@ -1094,20 +1196,17 @@ class PluginManager {
     final payload = jsonEncode({'data': base64Encode(bytes)});
     _rawProtocolDispatchTail = _rawProtocolDispatchTail.catchError((_) {}).then(
       (_) async {
-        final id = _activePluginId;
-        final runtime = _activeRuntime;
-        final plugin = id == null ? null : _plugins[id];
-        if (id == null ||
-            runtime == null ||
-            plugin == null ||
-            _failures.containsKey(id) ||
-            !_rawProtocolObservers.contains(id)) {
-          return;
-        }
-        try {
-          await runtime.dispatchEvent('protocol.data', payload);
-        } catch (error, stackTrace) {
-          await _recordFailure(plugin, error, stackTrace, phase: 'protocol');
+        for (final id in _rawProtocolObservers.toList(growable: false)) {
+          final runtime = _runtimes[id];
+          final plugin = _plugins[id];
+          if (runtime == null || plugin == null || _failures.containsKey(id)) {
+            continue;
+          }
+          try {
+            await runtime.dispatchEvent('protocol.data', payload);
+          } catch (error, stackTrace) {
+            await _recordFailure(plugin, error, stackTrace, phase: 'protocol');
+          }
         }
       },
     );
@@ -1244,6 +1343,7 @@ class PluginManager {
     emitEvent(
       CommandEvent('plugin.ui', data: {'id': id, 'nodes': nodes, 'page': true}),
     );
+    _emitDiagnosticState(id);
     return null;
   }
 
@@ -1252,6 +1352,7 @@ class PluginManager {
     _uiNodes[id] = nodes;
     _openPages.remove(id);
     emitEvent(CommandEvent('plugin.ui', data: {'id': id, 'nodes': nodes}));
+    _emitDiagnosticState(id);
     return null;
   }
 
@@ -1390,6 +1491,16 @@ class PluginManager {
 
   void _emitState(String id) {
     emitEvent(CommandEvent('plugin.state', data: {'id': id}));
+    if (_plugins.containsKey(id)) _emitDiagnosticState(id);
+  }
+
+  void _emitDiagnosticState(String id) {
+    emitEvent(
+      CommandEvent(
+        'debug.plugin.changed',
+        data: {'plugin': diagnosticSnapshot(id)},
+      ),
+    );
   }
 
   Map<String, Object?> _summary(
@@ -1400,7 +1511,7 @@ class PluginManager {
     if (_failures[plugin.manifest.id] case final failure?)
       'failure': failure.toJson(),
     'safeMode': _safeMode,
-    'running': _activePluginId == plugin.manifest.id,
+    'running': _runtimes.containsKey(plugin.manifest.id),
   };
 
   Future<T> _runPluginOperation<T>(
@@ -1470,18 +1581,12 @@ class PluginManager {
     _closed = true;
     await _interconnectSubscription.cancel();
     await _rawProtocolSubscription.cancel();
-    await _closeActiveRuntime();
+    await _closeAllRuntimes();
     _runtimeStarts.clear();
     for (final host in _wasmHosts.values) {
       await host.dispose();
     }
     _wasmHosts.clear();
-    final runtimes = {_quickJsRuntime, _wasmRuntime}.whereType<PluginRuntime>();
-    for (final runtime in runtimes) {
-      await runtime.close();
-    }
-    _quickJsRuntime = null;
-    _wasmRuntime = null;
     for (final completer in _hostRequests.values) {
       if (!completer.isCompleted) {
         completer.completeError(StateError('Plugin host is closing'));

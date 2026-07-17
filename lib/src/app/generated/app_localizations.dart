@@ -1310,6 +1310,36 @@ abstract class AppLocalizations {
   /// **'Open'**
   String get open;
 
+  /// No description provided for @externalLinkTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Open external link'**
+  String get externalLinkTitle;
+
+  /// No description provided for @externalLinkDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'You are about to visit {url}\n\nThis website is operated by a third party, is not affiliated with ZeroBox, and its security is unknown. Please proceed with caution. Do you want to continue?'**
+  String externalLinkDescription(String url);
+
+  /// No description provided for @externalLinkAstroBoxResourceHint.
+  ///
+  /// In en, this message translates to:
+  /// **'This appears to be an AstroBox resource. You can also view and install it within ZeroBox'**
+  String get externalLinkAstroBoxResourceHint;
+
+  /// No description provided for @continueToWebsite.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue'**
+  String get continueToWebsite;
+
+  /// No description provided for @viewInZeroBox.
+  ///
+  /// In en, this message translates to:
+  /// **'View in ZeroBox'**
+  String get viewInZeroBox;
+
   /// No description provided for @uninstall.
   ///
   /// In en, this message translates to:
@@ -2857,6 +2887,143 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Exit safe mode'**
   String get pluginSafeModeExit;
+
+  /// No description provided for @debugWindow.
+  ///
+  /// In en, this message translates to:
+  /// **'Debug window'**
+  String get debugWindow;
+
+  /// No description provided for @debugWindowDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Toggle the ZeroBox debug window'**
+  String get debugWindowDescription;
+
+  /// No description provided for @debugWindowOperationFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to change the debug window state'**
+  String get debugWindowOperationFailed;
+
+  /// No description provided for @resourceTypeErrorTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Incorrect resource type'**
+  String get resourceTypeErrorTitle;
+
+  /// No description provided for @resourceTypeUnknownTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Unrecognized resource type'**
+  String get resourceTypeUnknownTitle;
+
+  /// No description provided for @resourceTypeMismatchMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'This appears to be a {detectedType} resource, but you selected {selectedType}. Choose how to install it'**
+  String resourceTypeMismatchMessage(Object detectedType, Object selectedType);
+
+  /// No description provided for @resourcePlatformMismatchMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'This appears to be a {resourceType} resource for a {resourcePlatform} device, but the connected device is {deviceName} ({devicePlatform}). It is not supported and forcing installation may cause unexpected problems'**
+  String resourcePlatformMismatchMessage(
+    Object resourcePlatform,
+    Object resourceType,
+    Object deviceName,
+    Object devicePlatform,
+  );
+
+  /// No description provided for @resourceTypeUnknownMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'ZeroBox cannot identify the actual resource type. Install it as {selectedType} anyway?'**
+  String resourceTypeUnknownMessage(Object selectedType);
+
+  /// No description provided for @resourceInstallCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel installation'**
+  String get resourceInstallCancel;
+
+  /// No description provided for @resourceInstallAcknowledge.
+  ///
+  /// In en, this message translates to:
+  /// **'I understand'**
+  String get resourceInstallAcknowledge;
+
+  /// No description provided for @resourceInstallForce.
+  ///
+  /// In en, this message translates to:
+  /// **'Force install'**
+  String get resourceInstallForce;
+
+  /// No description provided for @resourceInstallForceCountdown.
+  ///
+  /// In en, this message translates to:
+  /// **'Force install ({seconds}s)'**
+  String resourceInstallForceCountdown(int seconds);
+
+  /// No description provided for @resourceInstallAsSelected.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue as {type}'**
+  String resourceInstallAsSelected(Object type);
+
+  /// No description provided for @resourceInstallAsSelectedCountdown.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue as {type} ({seconds}s)'**
+  String resourceInstallAsSelectedCountdown(Object type, int seconds);
+
+  /// No description provided for @resourceInstallAsDetected.
+  ///
+  /// In en, this message translates to:
+  /// **'Install as {type}'**
+  String resourceInstallAsDetected(Object type);
+
+  /// No description provided for @resourceTypeApp.
+  ///
+  /// In en, this message translates to:
+  /// **'miniprogram'**
+  String get resourceTypeApp;
+
+  /// No description provided for @resourceTypeQuickApp.
+  ///
+  /// In en, this message translates to:
+  /// **'quick app'**
+  String get resourceTypeQuickApp;
+
+  /// No description provided for @resourceTypeWatchface.
+  ///
+  /// In en, this message translates to:
+  /// **'watchface'**
+  String get resourceTypeWatchface;
+
+  /// No description provided for @resourceTypeFirmware.
+  ///
+  /// In en, this message translates to:
+  /// **'firmware'**
+  String get resourceTypeFirmware;
+
+  /// No description provided for @resourceInstallConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Install {type}'**
+  String resourceInstallConfirmTitle(Object type);
+
+  /// No description provided for @resourceInstallConfirmMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Install {fileName} ({fileSize})?'**
+  String resourceInstallConfirmMessage(Object fileName, Object fileSize);
+
+  /// No description provided for @resourceInstallConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Install'**
+  String get resourceInstallConfirm;
 }
 
 class _AppLocalizationsDelegate

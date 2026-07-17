@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
+import 'package:card_settings_ui/card_settings_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -299,26 +299,25 @@ class _ZeppOsAppSideDebugPageState
                 ),
               )
             else
-              Card(
-                child: Column(
-                  children: [
-                    for (final id in _observed)
-                      RadioListTile<int>(
-                        value: id,
-                        groupValue: selected,
-                        onChanged: (value) =>
-                            value == null ? null : _select(value),
-                        title: Text(_formatId(id)),
-                        subtitle: Text(
-                          '${_cached.contains(id) ? '有缓存' : '无缓存'} · '
-                          '${_sessions.any((e) => e.appId == id) ? 'runtime 已运行' : 'runtime 未运行'}',
-                        ),
-                        secondary: Icon(
-                          _cached.contains(id) ? Icons.code : Icons.code_off,
-                        ),
+              SettingsSection(
+                margin: EdgeInsetsDirectional.zero,
+                tiles: [
+                  for (final id in _observed)
+                    SettingsTile<int>.radioTile(
+                      radioValue: id,
+                      groupValue: selected,
+                      onChanged: (value) =>
+                          value == null ? null : _select(value),
+                      leading: Icon(
+                        _cached.contains(id) ? Icons.code : Icons.code_off,
                       ),
-                  ],
-                ),
+                      title: Text(_formatId(id)),
+                      description: Text(
+                        '${_cached.contains(id) ? '有缓存' : '无缓存'} · '
+                        '${_sessions.any((e) => e.appId == id) ? 'runtime 已运行' : 'runtime 未运行'}',
+                      ),
+                    ),
+                ],
               ),
             if (selected != null) ...[
               const SizedBox(height: 12),

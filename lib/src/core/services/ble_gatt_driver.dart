@@ -28,11 +28,12 @@ class BleConnection {
   StreamSubscription<Uint8List>? _valueSubscription;
   bool _disposed = false;
   Future<void> _writeTail = Future<void>.value();
+  final _loggedCharacteristicFallbacks = <String>{};
 
   Stream<bool> get connectionState => _connectionController.stream;
 
   Future<void> start() async {
-    _log.info('[$deviceId] starting connection state listener');
+    _log.fine('[$deviceId] starting connection state listener');
     _connectionSubscription = UniversalBle.connectionStream(deviceId).listen(
       _onConnectionStateChanged,
       onError: (Object e) =>
@@ -65,10 +66,13 @@ class BleConnection {
     for (final service in services) {
       for (final characteristic in service.characteristics) {
         if (BleUuidParser.compareStrings(characteristic.uuid, targetChar)) {
-          _log.info(
-            '[$deviceId] characteristic $charUuid found under '
-            '${service.uuid} instead of $serviceUuid',
-          );
+          final fallback = '$serviceUuid|$charUuid|${service.uuid}';
+          if (_loggedCharacteristicFallbacks.add(fallback)) {
+            _log.info(
+              '[$deviceId] characteristic $charUuid found under '
+              '${service.uuid} instead of $serviceUuid',
+            );
+          }
           return characteristic;
         }
       }
@@ -77,7 +81,7 @@ class BleConnection {
   }
 
   Future<void> discoverServices() async {
-    _log.info('[$deviceId] discovering services');
+    _log.fine('[$deviceId] discovering services');
     services = await UniversalBle.discoverServices(deviceId).timeout(
       const Duration(seconds: 10),
       onTimeout: () => throw TimeoutException(
@@ -85,7 +89,7 @@ class BleConnection {
         const Duration(seconds: 10),
       ),
     );
-    _log.info('[$deviceId] discovered ${services.length} services');
+    _log.fine('[$deviceId] discovered ${services.length} services');
     for (final service in services) {
       _log.fine(
         '[$deviceId] service ${service.uuid} with ${service.characteristics.length} characteristics',
@@ -108,7 +112,7 @@ class BleConnection {
       _log.severe('[$deviceId] characteristic $charUuid not found');
       throw StateError('Characteristic $charUuid not found');
     }
-    _log.info('[$deviceId] subscribing to $charUuid');
+    _log.fine('[$deviceId] subscribing to $charUuid');
     await characteristic.notifications.subscribe().timeout(
       const Duration(seconds: 8),
       onTimeout: () => throw TimeoutException(
@@ -129,7 +133,7 @@ class BleConnection {
   Future<void> unsubscribe(String serviceUuid, String charUuid) async {
     final characteristic = findCharacteristic(serviceUuid, charUuid);
     if (characteristic == null) return;
-    _log.info('[$deviceId] unsubscribing from $charUuid');
+    _log.fine('[$deviceId] unsubscribing from $charUuid');
     await characteristic.notifications.unsubscribe().timeout(
       const Duration(seconds: 8),
       onTimeout: () => throw TimeoutException(
@@ -171,27 +175,29 @@ class BleConnection {
       ),
     };
     final completer = Completer<void>();
-    _writeTail = _writeTail.then((_) async {
-      if (_disposed) throw StateError('BLE connection is disposed');
-      _log.fine(
-        '[$deviceId] writing ${data.length} bytes to $charUuid '
-        'withResponse=$effectiveWithResponse '
-        '(requested=$withResponse, properties=${characteristic.properties})',
-      );
-      await characteristic
-          .write(data, withResponse: effectiveWithResponse)
-          .timeout(
-            const Duration(seconds: 5),
-            onTimeout: () => throw TimeoutException(
-              'BLE write timed out for $charUuid',
-              const Duration(seconds: 5),
-            ),
+    _writeTail = _writeTail
+        .then((_) async {
+          if (_disposed) throw StateError('BLE connection is disposed');
+          _log.fine(
+            '[$deviceId] writing ${data.length} bytes to $charUuid '
+            'withResponse=$effectiveWithResponse '
+            '(requested=$withResponse, properties=${characteristic.properties})',
           );
-    }).then(
-      (_) => completer.complete(),
-      onError: (Object error, StackTrace stackTrace) =>
-          completer.completeError(error, stackTrace),
-    );
+          await characteristic
+              .write(data, withResponse: effectiveWithResponse)
+              .timeout(
+                const Duration(seconds: 5),
+                onTimeout: () => throw TimeoutException(
+                  'BLE write timed out for $charUuid',
+                  const Duration(seconds: 5),
+                ),
+              );
+        })
+        .then(
+          (_) => completer.complete(),
+          onError: (Object error, StackTrace stackTrace) =>
+              completer.completeError(error, stackTrace),
+        );
     // Keep a failed operation from poisoning all later queued writes.
     _writeTail = _writeTail.catchError((Object _) {});
     await completer.future;
@@ -199,18 +205,15 @@ class BleConnection {
 
   Future<int> requestMtu(int desiredMtu) async {
     try {
-      _log.info('[$deviceId] requesting MTU $desiredMtu');
-      mtu = await UniversalBle.requestMtu(
-        deviceId,
-        desiredMtu,
-      ).timeout(
+      _log.fine('[$deviceId] requesting MTU $desiredMtu');
+      mtu = await UniversalBle.requestMtu(deviceId, desiredMtu).timeout(
         const Duration(seconds: 5),
         onTimeout: () => throw TimeoutException(
           'BLE MTU negotiation timed out',
           const Duration(seconds: 5),
         ),
       );
-      _log.info('[$deviceId] MTU granted: $mtu');
+      _log.fine('[$deviceId] MTU granted: $mtu');
     } catch (e) {
       _log.warning('[$deviceId] MTU request failed, keeping $mtu', e);
     }
@@ -220,7 +223,7 @@ class BleConnection {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    _log.info('[$deviceId] disposing');
+    _log.fine('[$deviceId] disposing');
     await _valueSubscription?.cancel();
     _valueSubscription = null;
     await _connectionSubscription?.cancel();
@@ -483,7 +486,7 @@ class BleGattDriver {
   }
 
   Future<void> dispose() async {
-    _log.info('disposing BleGattDriver');
+    _log.fine('disposing BleGattDriver');
     await stopScan();
     await _scanController.close();
   }

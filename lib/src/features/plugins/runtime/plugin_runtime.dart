@@ -15,6 +15,8 @@ void settlePluginHostCall(Object? result, void Function() dispatch) {
 }
 
 abstract interface class PluginRuntime {
+  Map<String, Object?> get diagnostics;
+
   Future<void> start({
     required String pluginId,
     required String pluginName,

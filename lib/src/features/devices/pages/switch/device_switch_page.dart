@@ -16,6 +16,7 @@ import 'package:zerobox/src/core/utils/layout.dart';
 import 'package:zerobox/src/device/core/connect_type.dart';
 import 'package:zerobox/src/device/core/device_profile.dart';
 import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
+import 'package:zerobox/src/features/devices/widgets/device_connection_text.dart';
 import 'package:zerobox/src/features/devices/services/device_share_link.dart';
 import 'package:zerobox/src/features/devices/providers/pending_shared_device_provider.dart';
 import 'package:zerobox/src/protocols/common/device_protocol.dart' as proto;
@@ -997,7 +998,12 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
                           ),
                         if (isConnectingThisDevice)
                           Text(
-                            _connectionPhaseLabel(l10n, state),
+                            deviceConnectionPhaseText(
+                              l10n,
+                              state,
+                              fallbackDeviceName: widget.device.name,
+                              connectType: widget.device.connectType,
+                            ),
                             textAlign: TextAlign.center,
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(color: colorScheme.onSurfaceVariant),
@@ -1010,27 +1016,6 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
         ],
       ),
     );
-  }
-
-  String _connectionPhaseLabel(
-    AppLocalizations l10n,
-    DeviceManagerState state,
-  ) {
-    final deviceName = state.connectionTargetName ?? widget.device.name;
-    return switch (state.connectionPhase) {
-      DeviceConnectionPhase.preparing => l10n.deviceConnectionPreparing,
-      DeviceConnectionPhase.connectingTransport =>
-        l10n.deviceConnectionEstablishing(
-          widget.device.connectType.toUpperCase(),
-        ),
-      DeviceConnectionPhase.initializingProtocol =>
-        l10n.deviceConnectionInitializing,
-      DeviceConnectionPhase.authenticating =>
-        l10n.deviceConnectionAuthenticating,
-      DeviceConnectionPhase.fetchingDeviceStatus =>
-        l10n.deviceConnectionFetchingStatus,
-      null => l10n.deviceConnectingTo(deviceName),
-    };
   }
 
   Future<void> _showQrDialog(BuildContext context, MiWearState device) async {

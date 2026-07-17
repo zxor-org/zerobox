@@ -185,12 +185,8 @@ class BandBbsAuthNotifier extends Notifier<BandBbsAuthState> {
         },
       );
       _log.info(
-        'BandBBS OAuth start request\n'
-        'method=GET\n'
-        'url=$uri\n'
-        'headers=null\n'
-        'query=${_formatBody(uri.queryParameters)}\n'
-        'body=null',
+        'BandBBS OAuth start method=GET endpoint=${_endpoint(uri)} '
+        'platform=${_platformName()} appVersion=${BuildInfoService.appVersion}',
       );
       final launched = await launchUrl(
         uri,
@@ -367,17 +363,11 @@ class BandBbsAuthNotifier extends Notifier<BandBbsAuthState> {
 
   void _logResponse(Response<Object?> response) {
     final request = response.requestOptions;
+    final summary = _responseSummary(request.uri.path, response.data);
     _log.info(
-      'BandBBS OAuth request\n'
-      'method=${request.method}\n'
-      'url=${request.uri}\n'
-      'headers=${_formatBody(request.headers)}\n'
-      'query=${_formatBody(request.queryParameters)}\n'
-      'body=${_formatBody(request.data)}\n'
-      'BandBBS OAuth response\n'
-      'status=${response.statusCode}\n'
-      'headers=${_formatBody(response.headers.map)}\n'
-      'body=${_formatBody(response.data)}',
+      'BandBBS OAuth request method=${request.method} '
+      'endpoint=${_endpoint(request.uri)} status=${response.statusCode}'
+      '${summary.isEmpty ? '' : ' $summary'}',
     );
   }
 
@@ -385,29 +375,49 @@ class BandBbsAuthNotifier extends Notifier<BandBbsAuthState> {
     final request = error.requestOptions;
     final response = error.response;
     _log.severe(
-      'BandBBS OAuth request failed\n'
-      'method=${request.method}\n'
-      'url=${request.uri}\n'
-      'headers=${_formatBody(request.headers)}\n'
-      'query=${_formatBody(request.queryParameters)}\n'
-      'body=${_formatBody(request.data)}\n'
-      'response_status=${response?.statusCode}\n'
-      'response_headers=${_formatBody(response?.headers.map)}\n'
-      'response_body=${_formatBody(response?.data)}',
-      error,
+      'BandBBS OAuth request failed method=${request.method} '
+      'endpoint=${_endpoint(request.uri)} status=${response?.statusCode} '
+      'errorType=${error.type.name}',
+      null,
       stackTrace,
     );
   }
 
-  String _formatBody(Object? value) {
-    if (value == null) return 'null';
-    if (value is List<int>) return '<bytes length=${value.length}>';
-    try {
-      return const JsonEncoder.withIndent('  ').convert(value);
-    } catch (_) {
-      return value.toString();
+  String _responseSummary(String path, Object? data) {
+    final root = _objectMap(data);
+    if (path == '/api/oauth2/token') {
+      final scopes = root['scope'];
+      return _fields({
+        'userId': root['user_id'],
+        'expiresIn': root['expires_in'],
+        'scopeCount': scopes is Map ? scopes.length : null,
+      });
     }
+    if (path == '/api/me') {
+      final me = _objectMap(root['me']);
+      return _fields({'userId': me['user_id'], 'username': me['username']});
+    }
+    if (path == '/api/oauth/bandbbs/exchange' ||
+        path == '/api/oauth/bandbbs/refresh') {
+      return _fields({
+        'tokenType': root['token_type'],
+        'expiresIn': root['expires_in'],
+        'scope': root['scope'],
+        'accessTokenReceived':
+            root['access_token']?.toString().isNotEmpty == true,
+        'refreshTokenReceived':
+            root['refresh_token']?.toString().isNotEmpty == true,
+      });
+    }
+    return '';
   }
+
+  String _endpoint(Uri uri) => '${uri.scheme}://${uri.host}${uri.path}';
+
+  String _fields(Map<String, Object?> values) => values.entries
+      .where((entry) => entry.value != null)
+      .map((entry) => '${entry.key}=${entry.value}')
+      .join(' ');
 }
 
 final bandBbsAuthProvider =

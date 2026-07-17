@@ -114,7 +114,7 @@ class WebSerialRfcommConnection implements RfcommConnection {
 
           final done = result.done.toDart;
           if (done) {
-            _log.info('[$deviceId] serial read done');
+            _log.fine('[$deviceId] serial read done');
             _onDisconnected();
             break;
           }
@@ -160,7 +160,7 @@ class WebSerialRfcommConnection implements RfcommConnection {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    _log.info('[$deviceId] disposing web serial connection');
+    _log.fine('[$deviceId] disposing web serial connection');
 
     final reader = _reader;
     _reader = null;

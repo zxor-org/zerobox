@@ -1,4 +1,3 @@
-import 'package:cross_file/cross_file.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:card_settings_ui/card_settings_ui.dart';
 import 'package:file_picker/file_picker.dart';
@@ -14,7 +13,9 @@ import 'package:zerobox/src/core/models/bt_models.dart';
 import 'package:zerobox/src/core/models/device.dart';
 import 'package:zerobox/src/core/utils/layout.dart';
 import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
-import 'package:zerobox/src/features/resources/services/install_queue_notifier.dart';
+import 'package:zerobox/src/features/devices/widgets/device_connection_text.dart';
+import 'package:zerobox/src/features/resources/services/resource_install_service.dart';
+import 'package:zerobox/src/features/resources/widgets/resource_install_confirmation.dart';
 import 'package:zerobox/src/protocols/common/device_protocol.dart' as proto;
 
 class DevicesPage extends ConsumerStatefulWidget {
@@ -61,19 +62,37 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
     return DropTarget(
       onDragEntered: (_) => setState(() => _dragging = true),
       onDragExited: (_) => setState(() => _dragging = false),
-      onDragDone: (detail) {
+      onDragDone: (detail) async {
         setState(() => _dragging = false);
         final files = detail.files
             .where((file) => file.path.isNotEmpty)
             .toList();
         if (files.isEmpty) return;
-        final queue = ref.read(installQueueProvider.notifier);
+        var enqueued = 0;
         for (final file in files) {
-          queue.enqueueLocalFile(file);
+          final bytes = await file.readAsBytes();
+          final detectedType = ResourceInstallService()
+              .analyzePayload(
+                fileName: file.name,
+                bytes: bytes,
+                source: 'device-page-drop',
+              )
+              ?.type;
+          if (!context.mounted) return;
+          if (await confirmAndEnqueueResourceFile(
+            context: context,
+            ref: ref,
+            fileName: file.name,
+            bytes: bytes,
+            selectedType: detectedType ?? LocalDeviceInstallType.app,
+          )) {
+            enqueued++;
+          }
         }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.queueAddedFiles(files.length))),
-        );
+        if (!context.mounted || enqueued == 0) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.queueAddedFiles(enqueued))));
       },
       child: Scaffold(
         appBar: SysAppBar(
@@ -98,8 +117,11 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
                 final infoPanel = _DeviceInfoPanel(
                   device: device,
                   isReady: isReady,
+                  connectionState: state,
                   battery: state.battery,
                   onReconnect: reconnectCurrent,
+                  onCancelConnect: () =>
+                      ref.read(deviceManagerProvider.notifier).cancelConnect(),
                   onSwitch: () {
                     context.push('/devices/switch');
                   },
@@ -182,18 +204,26 @@ class _DeviceInfoPanel extends StatelessWidget {
   const _DeviceInfoPanel({
     required this.device,
     required this.isReady,
+    required this.connectionState,
     this.battery,
     required this.onReconnect,
+    required this.onCancelConnect,
     required this.onSwitch,
   });
 
   final MiWearState? device;
   final bool isReady;
+  final DeviceManagerState connectionState;
   final BatteryStatus? battery;
   final VoidCallback onReconnect;
+  final VoidCallback onCancelConnect;
   final VoidCallback onSwitch;
 
   bool get _isConnected => isReady && device != null && !device!.disconnected;
+  bool get _isConnecting =>
+      device != null &&
+      connectionState.connecting &&
+      connectionState.connectionTargetAddr == device?.addr;
 
   @override
   Widget build(BuildContext context) {
@@ -219,11 +249,28 @@ class _DeviceInfoPanel extends StatelessWidget {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (_isConnecting) ...[
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 8),
+              ],
               Text(
-                _isConnected ? l10n.deviceConnected : l10n.deviceDisconnected,
+                _isConnecting
+                    ? deviceConnectionPhaseText(
+                        l10n,
+                        connectionState,
+                        fallbackDeviceName: device!.name,
+                        connectType: device!.connectType,
+                      )
+                    : _isConnected
+                    ? l10n.deviceConnected
+                    : l10n.deviceDisconnected,
                 style: textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.w500,
-                  color: _isConnected
+                  color: _isConnected || _isConnecting
                       ? colorScheme.primary
                       : colorScheme.onSurfaceVariant,
                 ),
@@ -239,7 +286,13 @@ class _DeviceInfoPanel extends StatelessWidget {
             spacing: 8,
             alignment: WrapAlignment.center,
             children: [
-              if (!_isConnected)
+              if (_isConnecting)
+                _ActionButton(
+                  icon: Icons.close,
+                  label: l10n.cancel,
+                  onPressed: onCancelConnect,
+                )
+              else if (!_isConnected)
                 _ActionButton(
                   icon: Icons.link,
                   label: l10n.deviceReconnect,
@@ -338,21 +391,30 @@ class _DeviceFeaturesPanel extends ConsumerWidget {
               title: Text(l10n.install),
               tiles: [
                 SettingsTile.navigation(
-                  onPressed: (_) => _pickAndEnqueue(context, ref),
+                  onPressed: (_) =>
+                      _pickAndEnqueue(context, ref, LocalDeviceInstallType.app),
                   enabled: enabled,
                   leading: const Icon(Icons.apps_outlined),
                   title: Text(l10n.deviceFeaturesInstallApp),
                   description: Text(l10n.deviceFeaturesInstallAppDesc),
                 ),
                 SettingsTile.navigation(
-                  onPressed: (_) => _pickAndEnqueue(context, ref),
+                  onPressed: (_) => _pickAndEnqueue(
+                    context,
+                    ref,
+                    LocalDeviceInstallType.watchface,
+                  ),
                   enabled: enabled,
                   leading: const Icon(Icons.watch_outlined),
                   title: Text(l10n.deviceFeaturesInstallWatchface),
                   description: Text(l10n.deviceFeaturesInstallWatchfaceDesc),
                 ),
                 SettingsTile.navigation(
-                  onPressed: (_) => _pickAndEnqueue(context, ref),
+                  onPressed: (_) => _pickAndEnqueue(
+                    context,
+                    ref,
+                    LocalDeviceInstallType.firmware,
+                  ),
                   enabled: enabled,
                   leading: const Icon(Icons.memory_outlined),
                   title: Text(l10n.deviceFeaturesInstallFirmware),
@@ -363,6 +425,14 @@ class _DeviceFeaturesPanel extends ConsumerWidget {
             SettingsSection(
               title: Text(l10n.manage),
               tiles: [
+                if (isZeppOs)
+                  SettingsTile.navigation(
+                    onPressed: (_) => context.push('/devices/zeppos-more'),
+                    enabled: enabled,
+                    leading: const Icon(Icons.functions),
+                    title: Text(l10n.zeppOsMoreFeatures),
+                    description: Text(l10n.zeppOsMoreFeaturesDescription),
+                  ),
                 SettingsTile.navigation(
                   onPressed: (_) => context.push('/devices/apps'),
                   enabled: enabled,
@@ -377,14 +447,6 @@ class _DeviceFeaturesPanel extends ConsumerWidget {
                   title: Text(l10n.deviceFeaturesManageWatchfaces),
                   description: Text(l10n.deviceFeaturesManageWatchfacesDesc),
                 ),
-                if (isZeppOs)
-                  SettingsTile.navigation(
-                    onPressed: (_) => context.push('/devices/zeppos-more'),
-                    enabled: enabled,
-                    leading: const Icon(Icons.functions),
-                    title: Text(l10n.zeppOsMoreFeatures),
-                    description: Text(l10n.zeppOsMoreFeaturesDescription),
-                  ),
                 SettingsTile.navigation(
                   onPressed: (_) => context.push('/devices/info'),
                   enabled: hasDevice,
@@ -403,6 +465,7 @@ class _DeviceFeaturesPanel extends ConsumerWidget {
   Future<void> _pickAndEnqueue(
     BuildContext context,
     WidgetRef ref,
+    LocalDeviceInstallType selectedType,
   ) async {
     final result = await FilePicker.pickFiles(
       type: FileType.any,
@@ -412,10 +475,14 @@ class _DeviceFeaturesPanel extends ConsumerWidget {
     final file = result.files.first;
     final bytes = file.bytes;
     if (bytes == null) return;
+    if (!context.mounted) return;
 
-    final queue = ref.read(installQueueProvider.notifier);
-    queue.enqueueLocalFile(
-      XFile.fromData(bytes, name: file.name, path: file.path ?? ''),
+    await confirmAndEnqueueResourceFile(
+      context: context,
+      ref: ref,
+      fileName: file.name,
+      bytes: bytes,
+      selectedType: selectedType,
     );
   }
 }

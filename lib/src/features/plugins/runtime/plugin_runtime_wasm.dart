@@ -18,8 +18,18 @@ final class WasmPluginRuntime implements PluginRuntime {
   ScopedWasmInstance? _instance;
   PluginWasiSandbox? _sandbox;
   PluginHostCall? _hostCall;
+  StreamSubscription<Uint8List>? _stdoutSubscription;
+  StreamSubscription<Uint8List>? _stderrSubscription;
   var _requestSequence = 0;
   var _closed = true;
+
+  @override
+  Map<String, Object?> get diagnostics => {
+    'engine': 'wasm_run',
+    'running': !_closed,
+    'pendingRequests': _requests.length,
+    'instantiated': _instance != null,
+  };
 
   @override
   Future<void> start({
@@ -49,6 +59,12 @@ final class WasmPluginRuntime implements PluginRuntime {
         configure: _configureHostImports,
       );
       _instance = instance;
+      _stdoutSubscription = instance.stdout.listen(
+        (bytes) => _emitStdio('log.info', bytes),
+      );
+      _stderrSubscription = instance.stderr.listen(
+        (bytes) => _emitStdio('log.error', bytes),
+      );
       final start = instance.functionOrNull('zerobox_start');
       final wasiStart = instance.functionOrNull('_start');
       if (start == null && wasiStart == null) {
@@ -147,6 +163,12 @@ final class WasmPluginRuntime implements PluginRuntime {
       if (_closed) return;
       _instance?.functionOrNull('zerobox_on_result')?.call([id]);
     });
+  }
+
+  void _emitStdio(String method, Uint8List bytes) {
+    final message = utf8.decode(bytes, allowMalformed: true).trimRight();
+    if (message.isEmpty) return;
+    unawaited(Future.sync(() => _hostCall?.call(method, [message])));
   }
 
   int _readResult(int id, int pointer, int capacity) {
@@ -255,6 +277,10 @@ final class WasmPluginRuntime implements PluginRuntime {
   Future<void> close() async {
     _closed = true;
     _requests.clear();
+    await _stdoutSubscription?.cancel();
+    await _stderrSubscription?.cancel();
+    _stdoutSubscription = null;
+    _stderrSubscription = null;
     _hostCall = null;
     _instance = null;
     _scope?.dispose();

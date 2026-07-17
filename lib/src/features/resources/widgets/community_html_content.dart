@@ -18,10 +18,16 @@ import 'package:zerobox/src/app/widgets/network_img_layer.dart';
 ///   into a block flow.
 /// - XenForo unfurl blocks render as link cards.
 class CommunityHtmlContent extends StatelessWidget {
-  const CommunityHtmlContent({super.key, required this.html, this.baseUri});
+  const CommunityHtmlContent({
+    super.key,
+    required this.html,
+    this.baseUri,
+    this.onOpenLink,
+  });
 
   final String html;
   final Uri? baseUri;
+  final ValueChanged<Uri>? onOpenLink;
 
   static final _plainUrlPattern = RegExp(
     r'(https?:\/\/[^\s<>"\u3000]+|www\.[^\s<>"\u3000]+)',
@@ -788,6 +794,11 @@ class CommunityHtmlContent extends StatelessWidget {
   }
 
   void _launch(Uri uri) {
+    final callback = onOpenLink;
+    if (callback != null) {
+      callback(uri);
+      return;
+    }
     launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 

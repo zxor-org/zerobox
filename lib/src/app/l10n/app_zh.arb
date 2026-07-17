@@ -221,6 +221,16 @@
   "watchfaceManagementTitle": "表盘管理",
   "watchfaceManagementNone": "没有已安装的表盘",
   "open": "打开",
+  "externalLinkTitle": "跳转外部链接",
+  "externalLinkDescription": "即将跳转到 {url}\n\n该网站由第三方运营，与 ZeroBox 没有从属关系，安全性未知，请注意辨别，是否继续访问？",
+  "@externalLinkDescription": {
+    "placeholders": {
+      "url": {"type": "String"}
+    }
+  },
+  "externalLinkAstroBoxResourceHint": "这似乎是一个 AstroBox 资源，您也可以在 ZeroBox内访问并安装",
+  "continueToWebsite": "继续访问",
+  "viewInZeroBox": "在 ZeroBox 中查看",
   "uninstall": "卸载",
   "enable": "设为当前",
   "fail": "失败",
@@ -538,5 +548,78 @@
   "pluginErrorSafeMode": "进入安全模式",
   "pluginSafeModeTitle": "插件安全模式已启用",
   "pluginSafeModeDescription": "所有插件均已停止，退出安全模式后才会重新加载。",
-  "pluginSafeModeExit": "退出安全模式"
+  "pluginSafeModeExit": "退出安全模式",
+  "debugWindow": "调试窗口",
+  "debugWindowDescription": "是否启用 ZeroBox 调试窗口",
+  "debugWindowOperationFailed": "无法更改调试窗口状态",
+  "resourceTypeErrorTitle": "错误的资源类型",
+  "resourceTypeUnknownTitle": "无法识别的资源类型",
+  "resourceTypeMismatchMessage": "这似乎是一个{detectedType}资源，但您选择的资源类型为{selectedType}，请选择安装方式",
+  "@resourceTypeMismatchMessage": {
+    "placeholders": {
+      "detectedType": {},
+      "selectedType": {}
+    }
+  },
+  "resourcePlatformMismatchMessage": "这似乎是一个 {resourcePlatform} 设备的{resourceType}资源，当前连接的设备为 {deviceName}（{devicePlatform}），不支持安装，强行安装可能引发不可预知的问题",
+  "@resourcePlatformMismatchMessage": {
+    "placeholders": {
+      "resourcePlatform": {},
+      "resourceType": {},
+      "deviceName": {},
+      "devicePlatform": {}
+    }
+  },
+  "resourceTypeUnknownMessage": "ZeroBox 无法识别此文件的实际资源类型，是否仍以{selectedType}安装？",
+  "@resourceTypeUnknownMessage": {
+    "placeholders": {
+      "selectedType": {}
+    }
+  },
+  "resourceInstallCancel": "取消安装",
+  "resourceInstallAcknowledge": "我知道了",
+  "resourceInstallForce": "强制安装",
+  "resourceInstallForceCountdown": "强制安装 ({seconds}s)",
+  "@resourceInstallForceCountdown": {
+    "placeholders": {
+      "seconds": {"type": "int"}
+    }
+  },
+  "resourceInstallAsSelected": "继续以{type}安装",
+  "@resourceInstallAsSelected": {
+    "placeholders": {
+      "type": {}
+    }
+  },
+  "resourceInstallAsSelectedCountdown": "继续以{type}安装 ({seconds}s)",
+  "@resourceInstallAsSelectedCountdown": {
+    "placeholders": {
+      "type": {},
+      "seconds": {"type": "int"}
+    }
+  },
+  "resourceInstallAsDetected": "以{type}安装",
+  "@resourceInstallAsDetected": {
+    "placeholders": {
+      "type": {}
+    }
+  },
+  "resourceTypeApp": "小程序",
+  "resourceTypeQuickApp": "快应用",
+  "resourceTypeWatchface": "表盘",
+  "resourceTypeFirmware": "固件",
+  "resourceInstallConfirmTitle": "安装{type}",
+  "@resourceInstallConfirmTitle": {
+    "placeholders": {
+      "type": {}
+    }
+  },
+  "resourceInstallConfirmMessage": "确认要安装 {fileName}（{fileSize}）吗？",
+  "@resourceInstallConfirmMessage": {
+    "placeholders": {
+      "fileName": {},
+      "fileSize": {}
+    }
+  },
+  "resourceInstallConfirm": "确认安装"
 }

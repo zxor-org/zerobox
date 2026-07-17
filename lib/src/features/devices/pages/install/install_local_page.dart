@@ -1,7 +1,5 @@
-import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,8 +10,8 @@ import 'package:zerobox/src/app/widgets/page_container.dart';
 import 'package:zerobox/src/app/widgets/smooth_linear_progress_indicator.dart';
 import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
-import 'package:zerobox/src/core/logging/logging_service.dart';
-import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
+import 'package:zerobox/src/features/resources/services/resource_install_service.dart';
+import 'package:zerobox/src/features/resources/widgets/resource_install_confirmation.dart';
 
 class InstallLocalPage extends ConsumerStatefulWidget {
   const InstallLocalPage({super.key, required this.type});
@@ -27,31 +25,11 @@ class InstallLocalPage extends ConsumerStatefulWidget {
 enum InstallType { app, watchface, firmware }
 
 class _InstallLocalPageState extends ConsumerState<InstallLocalPage> {
-  static final _log = getLogger('InstallLocalPage');
-
-  late final TextEditingController _packageController;
-  late final TextEditingController _watchfaceController;
   String? _fileName;
   Uint8List? _fileBytes;
-  String? _packageName;
-  String? _watchfaceId;
   bool _installing = false;
   double _progress = 0;
   String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _packageController = TextEditingController();
-    _watchfaceController = TextEditingController();
-  }
-
-  @override
-  void dispose() {
-    _packageController.dispose();
-    _watchfaceController.dispose();
-    super.dispose();
-  }
 
   Future<void> _pickFile() async {
     final result = await FilePicker.pickFiles(
@@ -65,177 +43,51 @@ class _InstallLocalPageState extends ConsumerState<InstallLocalPage> {
     final bytes = file.bytes;
     if (bytes == null) return;
 
-    String? detectedPackageName;
-    String? detectedWatchfaceId;
-    try {
-      if (widget.type == InstallType.app) {
-        detectedPackageName =
-            _extractAppPackageName(bytes) ?? _guessPackageName(file.name);
-      } else if (widget.type == InstallType.watchface) {
-        detectedWatchfaceId =
-            _extractWatchfaceId(bytes) ?? _guessWatchfaceId(file.name);
-      }
-    } catch (e, st) {
-      _log.warning('failed to detect metadata from ${file.name}', e, st);
-    }
-
     setState(() {
       _fileName = file.name;
       _fileBytes = bytes;
       _error = null;
       _progress = 0;
-      if (widget.type == InstallType.app) {
-        _packageName = detectedPackageName;
-        _packageController.text = _packageName ?? '';
-      } else if (widget.type == InstallType.watchface) {
-        _watchfaceId = detectedWatchfaceId;
-        _watchfaceController.text = _watchfaceId ?? '';
-      }
     });
+    await _confirmAndEnqueue();
   }
 
-  String _guessPackageName(String fileName) {
-    final name = fileName.split('.').first;
-    if (name.isEmpty) return 'com.zerobox.unknown';
-    final sanitized = name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9_]'), '_');
-    return 'com.zerobox.$sanitized';
-  }
-
-  String _guessWatchfaceId(String fileName) {
-    return fileName.split('.').first;
-  }
-
-  String? _extractAppPackageName(Uint8List bytes) {
-    if (!_looksLikeZip(bytes)) return null;
-    try {
-      final archive = ZipDecoder().decodeBytes(bytes);
-      const candidates = ['manifest.json', 'app.json'];
-      for (final entry in archive) {
-        if (!entry.isFile) continue;
-        final name = entry.name.toLowerCase();
-        if (!candidates.contains(name)) continue;
-        final text = utf8.decode(entry.content);
-        final json = jsonDecode(text) as Map<String, dynamic>;
-        final pkg =
-            json['package'] ?? json['packageName'] ?? json['package_name'];
-        if (pkg is String && pkg.isNotEmpty) return pkg;
-      }
-    } catch (e, st) {
-      _log.warning('failed to parse app zip manifest', e, st);
-    }
-    return null;
-  }
-
-  String? _extractWatchfaceId(Uint8List bytes) {
-    if (_looksLikeZip(bytes)) {
-      try {
-        final archive = ZipDecoder().decodeBytes(bytes);
-        for (final entry in archive) {
-          if (!entry.isFile) continue;
-          if (entry.name.toLowerCase().endsWith('.json')) {
-            final text = utf8.decode(entry.content);
-            final json = jsonDecode(text) as Map<String, dynamic>;
-            final id =
-                json['id'] ?? json['watchfaceId'] ?? json['watchface_id'];
-            if (id is String && _isValidWatchfaceId(id)) return id;
-          }
-        }
-      } catch (e, st) {
-        _log.warning('failed to parse watchface zip manifest', e, st);
-      }
-      return null;
-    }
-
-    final id = _extractWatchfaceIdFromBin(bytes);
-    if (id != null && _isValidWatchfaceId(id)) return id;
-    return null;
-  }
-
-  static String? _extractWatchfaceIdFromBin(Uint8List bytes) {
-    const idOffset = 0x28;
-    const idLength = 12;
-    if (bytes.length < idOffset + idLength) return null;
-    final raw = bytes.sublist(idOffset, idOffset + idLength);
-    final trimmed = raw
-        .takeWhile((b) => b != 0)
-        .map((b) => String.fromCharCode(b))
-        .join();
-    return trimmed.isEmpty ? null : trimmed;
-  }
-
-  static bool _isValidWatchfaceId(String id) {
-    if (id.isEmpty || id.length > 12) return false;
-    if (RegExp(r'^[0]+$').hasMatch(id)) return false;
-    return RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(id);
-  }
-
-  bool _looksLikeZip(Uint8List bytes) =>
-      bytes.length >= 4 &&
-      bytes[0] == 0x50 &&
-      bytes[1] == 0x4B &&
-      bytes[2] == 0x03 &&
-      bytes[3] == 0x04;
+  LocalDeviceInstallType get _selectedType => switch (widget.type) {
+    InstallType.app => LocalDeviceInstallType.app,
+    InstallType.watchface => LocalDeviceInstallType.watchface,
+    InstallType.firmware => LocalDeviceInstallType.firmware,
+  };
 
   Future<void> _install() async {
     final bytes = _fileBytes;
-    if (bytes == null) return;
-    final manager = ref.read(deviceManagerProvider.notifier);
-
-    setState(() {
-      _installing = true;
-      _error = null;
-      _progress = 0;
-    });
-
-    var appSideMissing = false;
+    final fileName = _fileName;
+    if (bytes == null || fileName == null) return;
     try {
-      switch (widget.type) {
-        case InstallType.app:
-          await manager.installApp(
-            bytes,
-            packageName: _packageName ?? 'com.zerobox.unknown',
-            onProgress: (progress) {
-              if (mounted) setState(() => _progress = progress);
-            },
-            onAppSideMissing: () => appSideMissing = true,
-          );
-        case InstallType.watchface:
-          await manager.installWatchface(
-            bytes,
-            watchfaceId: _watchfaceId ?? 'unknown',
-            onProgress: (progress) {
-              if (mounted) setState(() => _progress = progress);
-            },
-          );
-        case InstallType.firmware:
-          await manager.installFirmware(
-            bytes,
-            onProgress: (progress) {
-              if (mounted) setState(() => _progress = progress);
-            },
-          );
-      }
-      if (mounted) {
-        final message = appSideMissing
-            ? '安装成功，但包内没有 app-side.js；设备安装已完成，伴生服务不可用。'
-            : null;
+      setState(() => _installing = true);
+      final enqueued = await confirmAndEnqueueResourceFile(
+        context: context,
+        ref: ref,
+        selectedType: _selectedType,
+        fileName: fileName,
+        bytes: bytes,
+      );
+      if (!mounted) return;
+      if (enqueued) {
         context.pop();
-        if (message != null) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(message)));
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _error = e.toString());
-      }
-    } finally {
-      if (mounted) {
+      } else {
         setState(() => _installing = false);
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _installing = false;
+          _error = error.toString();
+        });
       }
     }
   }
+
+  Future<void> _confirmAndEnqueue() => _install();
 
   @override
   Widget build(BuildContext context) {
@@ -293,30 +145,6 @@ class _InstallLocalPageState extends ConsumerState<InstallLocalPage> {
                 ),
               ),
             ),
-            if (widget.type == InstallType.app && _fileBytes != null) ...[
-              const SizedBox(height: 16),
-              TextField(
-                decoration: InputDecoration(
-                  labelText: l10n.installPackageName,
-                  border: const OutlineInputBorder(),
-                ),
-                controller: _packageController,
-                onChanged: (value) => _packageName = value.trim(),
-                enabled: !_installing,
-              ),
-            ],
-            if (widget.type == InstallType.watchface && _fileBytes != null) ...[
-              const SizedBox(height: 16),
-              TextField(
-                decoration: InputDecoration(
-                  labelText: l10n.installWatchfaceId,
-                  border: const OutlineInputBorder(),
-                ),
-                controller: _watchfaceController,
-                onChanged: (value) => _watchfaceId = value.trim(),
-                enabled: !_installing,
-              ),
-            ],
             if (_error != null) ...[
               const SizedBox(height: 16),
               Text(

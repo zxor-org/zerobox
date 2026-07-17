@@ -52,7 +52,7 @@ class XiaomiInfoSystem extends XiaomiPbSystem {
   }
 
   Future<models.SystemInfo> fetchDeviceInfo() async {
-    _log.info('[${entity.id}] fetching device info');
+    _log.fine('[${entity.id}] fetching device info');
     final response = await component.requestPool.request<pb_system.DeviceInfo>(
       packet: buildSystemPacket(pb_system.System_SystemID.GET_DEVICE_INFO),
       typeMatcher: (p) =>
@@ -66,7 +66,7 @@ class XiaomiInfoSystem extends XiaomiPbSystem {
       imei: response.imei,
       model: response.model,
     );
-    _log.info(
+    _log.fine(
       '[${entity.id}] device info: model=${info.model}, fw=${info.firmwareVersion}, serial=${info.serialNumber}, imei=${info.imei}',
     );
     entity.emit(DeviceInfoUpdated(deviceId: entity.id, info: info));
@@ -74,7 +74,7 @@ class XiaomiInfoSystem extends XiaomiPbSystem {
   }
 
   Future<String?> fetchEuiccImei() async {
-    _log.info('[${entity.id}] fetching eUICC info');
+    _log.fine('[${entity.id}] fetching eUICC info');
     final response = await component.requestPool.request<pb_lpa.EuiccInfo>(
       packet: pb.WearPacket(
         type: pb.WearPacket_Type.LPA,
@@ -90,14 +90,14 @@ class XiaomiInfoSystem extends XiaomiPbSystem {
     );
     final imei = response.hasImei() ? response.imei.trim() : '';
     final eidLength = response.hasEid() ? response.eid.length : 0;
-    _log.info(
+    _log.fine(
       '[${entity.id}] eUICC info: imei_present=${imei.isNotEmpty}, eid_bytes=$eidLength',
     );
     return imei.isEmpty ? null : imei;
   }
 
   Future<models.StorageInfo> fetchStorageInfo() async {
-    _log.info('[${entity.id}] fetching storage info');
+    _log.fine('[${entity.id}] fetching storage info');
     final response = await component.requestPool.request<pb_system.StorageInfo>(
       packet: buildSystemPacket(pb_system.System_SystemID.GET_STORAGE_INFO),
       typeMatcher: (p) =>
@@ -109,7 +109,7 @@ class XiaomiInfoSystem extends XiaomiPbSystem {
       used: response.used.toInt(),
       total: response.total.toInt(),
     );
-    _log.info(
+    _log.fine(
       '[${entity.id}] storage info: used=${info.used}, total=${info.total}',
     );
     entity.emit(StorageInfoUpdated(deviceId: entity.id, info: info));
@@ -117,7 +117,7 @@ class XiaomiInfoSystem extends XiaomiPbSystem {
   }
 
   Future<List<models.AppInfo>> fetchInstalledApps() async {
-    _log.info('[${entity.id}] fetching installed apps');
+    _log.fine('[${entity.id}] fetching installed apps');
     final response = await component.requestPool.request<pb_system.App_List>(
       packet: buildSystemPacket(pb_system.System_SystemID.GET_ORDERED_APP_LIST),
       typeMatcher: (p) =>
@@ -128,13 +128,13 @@ class XiaomiInfoSystem extends XiaomiPbSystem {
     final apps = response.list
         .map((app) => models.AppInfo(packageName: app.id, appName: app.name))
         .toList();
-    _log.info('[${entity.id}] installed apps: ${apps.length}');
+    _log.fine('[${entity.id}] installed apps: ${apps.length}');
     entity.emit(AppListUpdated(deviceId: entity.id, apps: apps));
     return apps;
   }
 
   Future<List<models.WatchfaceInfo>> fetchInstalledWatchfaces() async {
-    _log.info('[${entity.id}] fetching installed watchfaces');
+    _log.fine('[${entity.id}] fetching installed watchfaces');
     final response = await component.requestPool
         .request<pb_watchface.WatchFaceItem_List>(
           packet: pb.WearPacket(
@@ -165,7 +165,7 @@ class XiaomiInfoSystem extends XiaomiPbSystem {
           ),
         )
         .toList();
-    _log.info('[${entity.id}] installed watchfaces: ${watchfaces.length}');
+    _log.fine('[${entity.id}] installed watchfaces: ${watchfaces.length}');
     entity.emit(
       WatchfaceListUpdated(deviceId: entity.id, watchfaces: watchfaces),
     );

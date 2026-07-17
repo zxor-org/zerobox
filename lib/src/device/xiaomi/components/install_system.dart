@@ -349,11 +349,14 @@ class XiaomiInstallSystem extends XiaomiPbSystem {
 
   static String _generateWatchfaceId() {
     final random = Random.secure();
-    final buffer = StringBuffer();
-    for (var i = 0; i < 12; i++) {
+    final length = 9 + random.nextInt(4);
+    final buffer = StringBuffer(1 + random.nextInt(9));
+    for (var i = 1; i < length; i++) {
       buffer.write(random.nextInt(10));
     }
-    return buffer.toString();
+    final id = buffer.toString();
+    _log.info('[watchface] generated missing watchface id: $id');
+    return id;
   }
 
   @override

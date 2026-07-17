@@ -1,20 +1,19 @@
-import 'dart:convert';
-import 'dart:developer';
 import 'dart:io';
 
-import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:zerobox/src/device/zeppos/install/zeppos_package_parser.dart';
+import 'package:zerobox/src/core/logging/logging_service.dart';
+import 'package:zerobox/src/device/core/device_kind.dart';
 import 'package:zerobox/src/features/devices/controllers/device_manager.dart';
 import 'package:zerobox/src/features/resources/domain/community_resource.dart';
 import 'package:zerobox/src/features/resources/domain/resource_catalog.dart';
+import 'package:zerobox/src/features/resources/services/resource_payload_analyzer.dart';
 
 export 'resource_task_status.dart';
+export 'resource_payload_analyzer.dart'
+    show LocalDeviceInstallType, ResourceInstallMode;
 
 enum ResourceTaskStatus { pending, downloading, installing, completed, failed }
-
-enum LocalDeviceInstallType { app, watchface, firmware }
 
 class DownloadedResource {
   const DownloadedResource({
@@ -29,6 +28,24 @@ class DownloadedResource {
 }
 
 class ResourceInstallService {
+  ResourceInstallService({ResourcePayloadAnalyzer? analyzer})
+    : _analyzer = analyzer ?? ResourcePayloadAnalyzer();
+
+  final ResourcePayloadAnalyzer _analyzer;
+  static final _log = getLogger('ResourceInstallService');
+
+  ResourcePayloadAnalysis? analyzePayload({
+    required String fileName,
+    required Uint8List bytes,
+    LocalDeviceInstallType? hint,
+    String source = 'manual',
+  }) => _analyzer.analyze(
+    fileName: fileName,
+    bytes: bytes,
+    hint: hint,
+    source: source,
+  );
+
   Future<DownloadedResource?> downloadResource({
     required CommunityResourceDetail resource,
     required CommunityResourceFile file,
@@ -81,9 +98,10 @@ class ResourceInstallService {
     onUpdate(ResourceTaskStatus.installing, 0, null);
     try {
       final payload = bytes ?? await File(filePath).readAsBytes();
-      await _installByType(
-        resource: resource,
-        file: file,
+      await _analyzeAndInstall(
+        typeHint: _catalogTypeHint(resource.type),
+        source: 'catalog:${resource.ref.source.storageKey}',
+        fileName: file.fileName,
         bytes: payload,
         deviceManager: deviceManager,
         onProgress: (progress) =>
@@ -159,8 +177,12 @@ class ResourceInstallService {
       return;
     }
 
-    final type = detectLocalInstallType(fileName, payload);
-    if (type == null) {
+    final analysis = _analyzer.analyze(
+      fileName: fileName,
+      bytes: payload,
+      source: 'local',
+    );
+    if (analysis == null) {
       onUpdate(
         ResourceTaskStatus.failed,
         0,
@@ -170,10 +192,9 @@ class ResourceInstallService {
     }
 
     try {
-      await installLocalPayload(
-        type: type,
+      await _installAnalysis(
+        analysis: analysis,
         fileName: fileName,
-        bytes: payload,
         deviceManager: deviceManager,
         onProgress: (progress) =>
             onUpdate(ResourceTaskStatus.installing, progress, null),
@@ -194,19 +215,129 @@ class ResourceInstallService {
     required DeviceManager deviceManager,
     required void Function(double progress) onProgress,
   }) async {
-    switch (type) {
+    await _analyzeAndInstall(
+      typeHint: type,
+      source: 'local-explicit',
+      fileName: fileName,
+      bytes: bytes,
+      deviceManager: deviceManager,
+      onProgress: onProgress,
+    );
+  }
+
+  Future<void> installAnalyzedPayload({
+    required ResourcePayloadAnalysis analysis,
+    required String fileName,
+    required DeviceManager deviceManager,
+    required void Function(double progress) onProgress,
+    String? identifierOverride,
+    bool forcePlatform = false,
+  }) async {
+    if (forcePlatform) {
+      _log.warning(
+        'forcing cross-platform resource install file="$fileName" '
+        'platform=${analysis.platform.name} type=${analysis.type.name}',
+      );
+    }
+    await _installAnalysis(
+      analysis: analysis,
+      fileName: fileName,
+      deviceManager: deviceManager,
+      onProgress: onProgress,
+      identifierOverride: identifierOverride,
+      validatePlatform: !forcePlatform,
+    );
+  }
+
+  Future<void> installForcedPayload({
+    required LocalDeviceInstallType type,
+    required String fileName,
+    required Uint8List bytes,
+    required DeviceManager deviceManager,
+    required void Function(double progress) onProgress,
+    String? identifierOverride,
+  }) async {
+    _log.warning(
+      'forcing resource install file="$fileName" bytes=${bytes.length} '
+      'type=${type.name}',
+    );
+    await _installAnalysis(
+      analysis: ResourcePayloadAnalysis(
+        type: type,
+        platform: ResourcePlatform.vela,
+        packageKind: ResourcePackageKind.rawPayload,
+        payload: bytes,
+        evidence: const ['user forced install type'],
+      ),
+      fileName: fileName,
+      deviceManager: deviceManager,
+      onProgress: onProgress,
+      identifierOverride: identifierOverride,
+      validatePlatform: false,
+    );
+  }
+
+  Future<void> _analyzeAndInstall({
+    required LocalDeviceInstallType? typeHint,
+    required String source,
+    required String fileName,
+    required Uint8List bytes,
+    required DeviceManager deviceManager,
+    required void Function(double progress) onProgress,
+  }) async {
+    final analysis = _analyzer.analyze(
+      fileName: fileName,
+      bytes: bytes,
+      hint: typeHint,
+      source: source,
+    );
+    if (analysis == null) {
+      throw FormatException('Unsupported or unrecognized resource: $fileName');
+    }
+    await _installAnalysis(
+      analysis: analysis,
+      fileName: fileName,
+      deviceManager: deviceManager,
+      onProgress: onProgress,
+    );
+  }
+
+  Future<void> _installAnalysis({
+    required ResourcePayloadAnalysis analysis,
+    required String fileName,
+    required DeviceManager deviceManager,
+    required void Function(double progress) onProgress,
+    String? identifierOverride,
+    bool validatePlatform = true,
+  }) async {
+    final resourceKind = analysis.platform == ResourcePlatform.zeppOs
+        ? DeviceKind.zepp
+        : DeviceKind.xiaomi;
+    final deviceKind = deviceManager.currentDeviceKind;
+    if (validatePlatform && deviceKind != null && deviceKind != resourceKind) {
+      throw UnsupportedError(
+        '${analysis.platform.name} resource cannot be installed on '
+        '${deviceKind == DeviceKind.zepp ? 'ZeppOS' : 'VelaOS'}',
+      );
+    }
+    final bytes = analysis.payload;
+    switch (analysis.type) {
       case LocalDeviceInstallType.app:
         await deviceManager.installApp(
           bytes,
           packageName:
-              _extractAppPackageName(bytes) ?? _guessPackageName(fileName),
+              identifierOverride ??
+              analysis.identifier ??
+              _guessPackageName(fileName),
           onProgress: onProgress,
         );
       case LocalDeviceInstallType.watchface:
         await deviceManager.installWatchface(
           bytes,
           watchfaceId:
-              _extractWatchfaceId(bytes) ?? _guessWatchfaceId(fileName),
+              identifierOverride ??
+              analysis.identifier ??
+              _guessWatchfaceId(fileName),
           onProgress: onProgress,
         );
       case LocalDeviceInstallType.firmware:
@@ -218,70 +349,19 @@ class ResourceInstallService {
     String fileName,
     Uint8List bytes,
   ) {
-    // Zepp OS packages are ZIP containers whose extension is routinely
-    // changed by browsers, download managers and users. Their manifest and
-    // nested package structure are authoritative; the name is only a hint.
-    try {
-      final package = const ZeppOsPackageParser().parse(bytes);
-      return switch (package.type) {
-        ZeppOsPackageType.app => LocalDeviceInstallType.app,
-        ZeppOsPackageType.watchface => LocalDeviceInstallType.watchface,
-        ZeppOsPackageType.firmware => LocalDeviceInstallType.firmware,
+    return _analyzer
+        .analyze(fileName: fileName, bytes: bytes, source: 'type-probe')
+        ?.type;
+  }
+
+  static LocalDeviceInstallType? _catalogTypeHint(CommunityResourceType type) =>
+      switch (type) {
+        CommunityResourceType.quickApp => LocalDeviceInstallType.app,
+        CommunityResourceType.watchface => LocalDeviceInstallType.watchface,
+        CommunityResourceType.firmware => LocalDeviceInstallType.firmware,
+        CommunityResourceType.fontpack ||
+        CommunityResourceType.iconpack => null,
       };
-    } catch (_) {
-      // Not a recognized Zepp OS container. Continue with other formats and
-      // finally use the extension as a compatibility fallback.
-    }
-
-    final lower = fileName.toLowerCase();
-    final extension = lower.contains('.') ? lower.split('.').last : '';
-
-    if (_extractAppPackageName(bytes) != null) {
-      return LocalDeviceInstallType.app;
-    }
-    if (_extractWatchfaceId(bytes) != null) {
-      return LocalDeviceInstallType.watchface;
-    }
-    if (extension == 'rpk' || extension == 'zpk' || extension == 'zab') {
-      return LocalDeviceInstallType.app;
-    }
-    if (extension == 'face' || extension == 'mwz') {
-      return LocalDeviceInstallType.watchface;
-    }
-    return null;
-  }
-
-  Future<void> _installByType({
-    required CommunityResourceDetail resource,
-    required CommunityResourceFile file,
-    required Uint8List bytes,
-    required DeviceManager deviceManager,
-    required void Function(double progress) onProgress,
-  }) async {
-    switch (resource.type) {
-      case CommunityResourceType.quickApp:
-        final packageName =
-            _extractAppPackageName(bytes) ?? _guessPackageName(file.fileName);
-        await deviceManager.installApp(
-          bytes,
-          packageName: packageName,
-          onProgress: onProgress,
-        );
-      case CommunityResourceType.watchface:
-        final watchfaceId =
-            _extractWatchfaceId(bytes) ?? _guessWatchfaceId(file.fileName);
-        await deviceManager.installWatchface(
-          bytes,
-          watchfaceId: watchfaceId,
-          onProgress: onProgress,
-        );
-      case CommunityResourceType.firmware:
-        await deviceManager.installFirmware(bytes, onProgress: onProgress);
-      case CommunityResourceType.fontpack:
-      case CommunityResourceType.iconpack:
-        throw UnsupportedError('${resource.type} install not implemented yet');
-    }
-  }
 
   String _guessPackageName(String fileName) {
     final name = fileName.split('.').first;
@@ -293,85 +373,6 @@ class ResourceInstallService {
   String _guessWatchfaceId(String fileName) {
     return fileName.split('.').first;
   }
-
-  String? _extractAppPackageName(Uint8List bytes) {
-    if (!_looksLikeZip(bytes)) return null;
-    try {
-      final archive = ZipDecoder().decodeBytes(bytes);
-      const candidates = ['manifest.json', 'app.json'];
-      for (final entry in archive) {
-        if (!entry.isFile) continue;
-        final name = entry.name.toLowerCase();
-        if (!candidates.contains(name)) continue;
-        final text = utf8.decode(entry.content);
-        final json = jsonDecode(text) as Map<String, dynamic>;
-        final pkg =
-            json['package'] ?? json['packageName'] ?? json['package_name'];
-        if (pkg is String && pkg.isNotEmpty) return pkg;
-      }
-    } catch (e) {
-      log(
-        'failed to parse app zip manifest',
-        error: e,
-        name: 'ResourceInstallService',
-      );
-    }
-    return null;
-  }
-
-  String? _extractWatchfaceId(Uint8List bytes) {
-    if (_looksLikeZip(bytes)) {
-      try {
-        final archive = ZipDecoder().decodeBytes(bytes);
-        for (final entry in archive) {
-          if (!entry.isFile) continue;
-          if (entry.name.toLowerCase().endsWith('.json')) {
-            final text = utf8.decode(entry.content);
-            final json = jsonDecode(text) as Map<String, dynamic>;
-            final id =
-                json['id'] ?? json['watchfaceId'] ?? json['watchface_id'];
-            if (id is String && _isValidWatchfaceId(id)) return id;
-          }
-        }
-      } catch (e) {
-        log(
-          'failed to parse watchface zip manifest',
-          error: e,
-          name: 'ResourceInstallService',
-        );
-      }
-      return null;
-    }
-
-    final id = _extractWatchfaceIdFromBin(bytes);
-    if (id != null && _isValidWatchfaceId(id)) return id;
-    return null;
-  }
-
-  static String? _extractWatchfaceIdFromBin(Uint8List bytes) {
-    const idOffset = 0x28;
-    const idLength = 12;
-    if (bytes.length < idOffset + idLength) return null;
-    final raw = bytes.sublist(idOffset, idOffset + idLength);
-    final trimmed = raw
-        .takeWhile((b) => b != 0)
-        .map((b) => String.fromCharCode(b))
-        .join();
-    return trimmed.isEmpty ? null : trimmed;
-  }
-
-  static bool _isValidWatchfaceId(String id) {
-    if (id.isEmpty || id.length > 12) return false;
-    if (RegExp(r'^[0]+$').hasMatch(id)) return false;
-    return RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(id);
-  }
-
-  bool _looksLikeZip(Uint8List bytes) =>
-      bytes.length >= 4 &&
-      bytes[0] == 0x50 &&
-      bytes[1] == 0x4B &&
-      bytes[2] == 0x03 &&
-      bytes[3] == 0x04;
 }
 
 final resourceInstallServiceProvider = Provider<ResourceInstallService>((ref) {

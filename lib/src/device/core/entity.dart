@@ -56,7 +56,7 @@ class DeviceEntity {
   void emit(DeviceEvent event) => eventBus.emit(event);
 
   void startListening() {
-    _log.info('[$id] start listening');
+    _log.fine('[$id] start listening');
     _incomingSubscription = transport.incomingData.listen(
       _onIncomingData,
       onError: (Object e) {
@@ -98,7 +98,7 @@ class DeviceEntity {
   }
 
   Future<void> dispose() async {
-    _log.info('[$id] disposing entity');
+    _log.fine('[$id] disposing entity');
     await _incomingSubscription?.cancel();
     await _connectionSubscription?.cancel();
     await _rawIncomingController.close();

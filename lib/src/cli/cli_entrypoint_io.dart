@@ -82,9 +82,12 @@ Future<CliExitCode> _run(CliInvocation invocation) async {
     if (event.event == 'device.state') return;
     if (event.event == 'task.removed') return;
     if (event.event == 'task' && !watchingQueue) return;
-    if (event.event == 'log') {
+    if (event.event == 'log' || event.event == 'debug.log') {
       if (!watchingLogs) return;
-      final message = event.data['message']?.toString();
+      final record = event.data['record'];
+      final message = record is Map
+          ? record['message']?.toString()
+          : event.data['message']?.toString();
       if (message != null) stdout.writeln(message);
       return;
     }

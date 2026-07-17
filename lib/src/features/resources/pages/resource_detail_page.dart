@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:zerobox/src/app/generated/app_localizations.dart';
 import 'package:zerobox/src/app/utils/error_localization.dart';
 import 'package:zerobox/src/app/widgets/horizontal_scroller.dart';
@@ -17,6 +16,7 @@ import 'package:zerobox/src/features/resources/domain/community_resource.dart';
 import 'package:zerobox/src/features/resources/services/download_queue_notifier.dart';
 import 'package:zerobox/src/features/resources/services/install_queue_notifier.dart';
 import 'package:zerobox/src/features/resources/widgets/community_html_content.dart';
+import 'package:zerobox/src/features/resources/widgets/resource_external_link.dart';
 
 class ResourceDetailPage extends ConsumerWidget {
   const ResourceDetailPage({super.key, required this.resource});
@@ -27,7 +27,10 @@ class ResourceDetailPage extends ConsumerWidget {
     final l10n = AppLocalizations.of(context)!;
     final detail = ref.watch(communityResourceDetailProvider(resource.ref));
     return Scaffold(
-      appBar: SysAppBar(secondary: true, title: Text(resource.name)),
+      appBar: SysAppBar(
+        secondary: true,
+        title: Text(detail.value?.name ?? resource.name),
+      ),
       body: detail.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) =>
@@ -163,6 +166,7 @@ class _DetailContent extends ConsumerWidget {
                   ResourceContentFormat.html => CommunityHtmlContent(
                     html: detail.content.value,
                     baseUri: detail.content.baseUri,
+                    onOpenLink: (uri) => openResourceExternalLink(context, uri),
                   ),
                   ResourceContentFormat.plainText => SelectableText(
                     detail.content.value,
@@ -255,7 +259,7 @@ class _Authors extends StatelessWidget {
     }
     final url = author.url;
     if (url != null) {
-      launchUrl(url, mode: LaunchMode.externalApplication);
+      openResourceExternalLink(context, url);
     }
   }
 }
@@ -443,8 +447,7 @@ class _Actions extends ConsumerWidget {
               ),
             for (final link in detail.links)
               TextButton.icon(
-                onPressed: () =>
-                    launchUrl(link.url, mode: LaunchMode.externalApplication),
+                onPressed: () => openResourceExternalLink(context, link.url),
                 icon: const Icon(Icons.open_in_new),
                 label: Text(link.title),
               ),

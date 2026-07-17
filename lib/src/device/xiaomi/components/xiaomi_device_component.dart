@@ -132,6 +132,15 @@ class XiaomiDeviceComponent {
     await sar.sendData(l2.toBytes());
   }
 
+  Future<void> sendL2NetworkData(Uint8List l2Payload) async {
+    final l2 = L2Packet(
+      channel: L2Channel.network,
+      opcode: L2OpCode.write,
+      payload: l2Payload,
+    );
+    await sar.sendData(l2.toBytes());
+  }
+
   Future<RegisteredAck> sendL2MassDataRegisterAck(
     Uint8List l2Payload, {
     Duration? timeout,

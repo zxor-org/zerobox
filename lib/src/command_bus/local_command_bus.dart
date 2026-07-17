@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zerobox/src/commands/command_protocol.dart';
 import 'package:zerobox/src/core/models/bt_models.dart';
 import 'package:zerobox/src/core/logging/logging_service.dart';
+import 'package:zerobox/src/core/logging/diagnostic_event.dart';
 import 'package:zerobox/src/core/providers/app_settings_providers.dart';
 import 'package:zerobox/src/core/services/shared_prefs_service.dart';
 import 'package:zerobox/src/device/core/connect_type.dart';
@@ -19,6 +20,7 @@ import 'package:zerobox/src/features/accounts/services/huami_auth_service.dart';
 import 'package:zerobox/src/features/accounts/services/mi_account_service.dart';
 import 'package:zerobox/src/features/accounts/models/mi_account_models.dart';
 import 'package:zerobox/src/features/resources/services/resource_install_service.dart';
+import 'package:zerobox/src/features/debug/application/debug_environment.dart';
 import 'package:zerobox/src/features/plugins/application/plugin_community_catalog.dart';
 import 'package:zerobox/src/features/plugins/application/plugin_manager.dart';
 import 'package:zerobox/src/features/resources/application/resource_catalog_providers.dart';
@@ -40,8 +42,10 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
       ),
       fireImmediately: true,
     );
-    _logSubscription = zeroBoxLogStream.listen(
-      (line) => _events.add(CommandEvent('log', data: {'message': line})),
+    _logSubscription = zeroBoxDiagnosticStream.listen(
+      (event) => _events.add(
+        CommandEvent('debug.log', data: {'record': event.toJson()}),
+      ),
     );
     _xiaoAiSubscription = _manager.xiaoAiOpusFrames.listen(
       (frame) => _events.add(
@@ -61,9 +65,12 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
 
   final ProviderContainer container;
   final _events = StreamController<CommandEvent>.broadcast();
+  final _externalDiagnostics = <Map<String, Object?>>[];
+  String? _debugSessionId;
+  DateTime? _debugSessionStartedAt;
   late final ProviderSubscription<DeviceManagerState>
   _deviceManagerSubscription;
-  late final StreamSubscription<String> _logSubscription;
+  late final StreamSubscription<DiagnosticEvent> _logSubscription;
   late final StreamSubscription<Uint8List> _xiaoAiSubscription;
   bool _activeCommandCancelled = false;
   Future<void> _commandTail = Future<void>.value();
@@ -77,6 +84,45 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
 
   @override
   Future<CommandResult> execute(ZeroBoxCommand command) async {
+    if (command.method == 'debug.session.start') {
+      final sessionId = command.params['sessionId']?.toString() ?? '';
+      if (sessionId.isEmpty) {
+        return const CommandResult.failure(
+          CommandError('usage', 'Diagnostic session ID is required'),
+        );
+      }
+      _debugSessionId = sessionId;
+      _debugSessionStartedAt =
+          DateTime.tryParse(command.params['startedAt']?.toString() ?? '') ??
+          DateTime.now();
+      _externalDiagnostics.clear();
+      return CommandResult.success({
+        'sessionId': sessionId,
+        'startedAt': _debugSessionStartedAt!.toIso8601String(),
+      });
+    }
+    if (command.method == 'debug.publish') {
+      final record = (command.params['record'] as Map?)
+          ?.cast<String, Object?>();
+      if (record == null) {
+        return const CommandResult.failure(
+          CommandError('usage', 'Diagnostic record is required'),
+        );
+      }
+      final sessionId = command.params['sessionId']?.toString();
+      final process = record['process']?.toString();
+      if (process == DiagnosticProcess.frontend.name &&
+          _debugSessionId != null &&
+          sessionId != _debugSessionId) {
+        return const CommandResult.success({'accepted': false, 'stale': true});
+      }
+      _externalDiagnostics.add(record);
+      if (_externalDiagnostics.length > 1000) {
+        _externalDiagnostics.removeAt(0);
+      }
+      _events.add(CommandEvent('debug.log', data: {'record': record}));
+      return const CommandResult.success({'accepted': true});
+    }
     if (command.method == 'plugin.host.respond') {
       try {
         await _pluginManager.respondToHostRequest(
@@ -252,6 +298,13 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
       () => _accountList(),
     ),
     'logs.recent' => Future.value(recentZeroBoxLogs),
+    'debug.snapshot' => _debugSnapshot(),
+    'debug.sources' => _debugSources(),
+    'debug.plugin.snapshot' => _debugPluginSnapshot(command.params),
+    'debug.runtime' => collectDebugRuntimeEnvironment(),
+    'debug.storage.roots' => debugHostStorageRoots(),
+    'debug.storage.list' => _debugStorageList(command.params),
+    'debug.storage.read' => _debugStorageRead(command.params),
     'plugin.list' => _pluginManager.list(
       includeIcons: command.params['includeIcons'] != false,
     ),
@@ -298,6 +351,61 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
     final result = await operation();
     _events.add(CommandEvent(event, data: {'state': snapshot()}));
     return result;
+  }
+
+  Future<Map<String, Object?>> _debugSnapshot() async {
+    await _pluginManager.initialize();
+    final records =
+        [
+            ...recentZeroBoxDiagnostics.map((event) => event.toJson()),
+            ..._externalDiagnostics,
+          ].where((record) {
+            final startedAt = _debugSessionStartedAt;
+            if (startedAt == null) return true;
+            final time = DateTime.tryParse(record['time']?.toString() ?? '');
+            return time != null && !time.isBefore(startedAt);
+          }).toList()
+          ..sort(
+            (a, b) => a['time'].toString().compareTo(b['time'].toString()),
+          );
+    return {'records': records, 'plugins': _pluginManager.diagnostics()};
+  }
+
+  Future<Map<String, Object?>> _debugSources() async {
+    await _pluginManager.initialize();
+    return {
+      'processes': const ['frontend', 'backend'],
+      'plugins': _pluginManager.diagnosticSources(),
+    };
+  }
+
+  Future<Map<String, Object?>> _debugPluginSnapshot(
+    Map<String, Object?> params,
+  ) async {
+    await _pluginManager.initialize();
+    return _pluginManager.diagnosticSnapshot(params['id']?.toString() ?? '');
+  }
+
+  Future<List<Map<String, Object?>>> _debugStorageList(
+    Map<String, Object?> params,
+  ) async {
+    final pluginId = params['pluginId']?.toString();
+    final path = params['path']?.toString() ?? '';
+    if (pluginId != null && pluginId.isNotEmpty) {
+      return _pluginManager.diagnosticStorageDirectory(pluginId, path);
+    }
+    return listDebugHostDirectory(params['root']?.toString() ?? '', path);
+  }
+
+  Future<Map<String, Object?>> _debugStorageRead(
+    Map<String, Object?> params,
+  ) async {
+    final pluginId = params['pluginId']?.toString();
+    final path = params['path']?.toString() ?? '';
+    if (pluginId != null && pluginId.isNotEmpty) {
+      return _pluginManager.diagnosticStorageFile(pluginId, path);
+    }
+    return readDebugHostFile(params['root']?.toString() ?? '', path);
   }
 
   Future<Object?> _installPlugin(Map<String, Object?> params) async {
@@ -891,6 +999,10 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
     final fileName = params['fileName']?.toString().isNotEmpty == true
         ? params['fileName'].toString()
         : file!.uri.pathSegments.last;
+    final installMode = ResourceInstallMode.values.firstWhere(
+      (mode) => mode.name == params['installMode']?.toString(),
+      orElse: () => ResourceInstallMode.automatic,
+    );
     var installed = false;
     try {
       final service = container.read(resourceInstallServiceProvider);
@@ -910,15 +1022,47 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
       _throwIfCancelled();
       await _ensureConnected(params['device']?.toString());
       _throwIfCancelled();
-      await service.installLocalPayload(
-        type: type,
-        fileName: fileName,
-        bytes: bytes,
-        deviceManager: _manager,
-        onProgress: (progress) => _events.add(
-          CommandEvent('progress', data: {'progress': progress, 'path': path}),
-        ),
+      void onProgress(double progress) => _events.add(
+        CommandEvent('progress', data: {'progress': progress, 'path': path}),
       );
+      switch (installMode) {
+        case ResourceInstallMode.automatic:
+          await service.installLocalPayload(
+            type: type,
+            fileName: fileName,
+            bytes: bytes,
+            deviceManager: _manager,
+            onProgress: onProgress,
+          );
+        case ResourceInstallMode.forceType:
+          await service.installForcedPayload(
+            type: type,
+            fileName: fileName,
+            bytes: bytes,
+            deviceManager: _manager,
+            onProgress: onProgress,
+          );
+        case ResourceInstallMode.forcePlatform:
+          final analysis = service.analyzePayload(
+            fileName: fileName,
+            bytes: bytes,
+            hint: type,
+            source: 'daemon-queue-force-platform',
+          );
+          if (analysis == null) {
+            throw CommandFailure(
+              'validation',
+              'Unrecognized resource: $fileName',
+            );
+          }
+          await service.installAnalyzedPayload(
+            analysis: analysis,
+            fileName: fileName,
+            deviceManager: _manager,
+            forcePlatform: true,
+            onProgress: onProgress,
+          );
+      }
       installed = true;
       _events.add(CommandEvent('completed', data: {'path': path}));
       return {'installed': true, 'path': path, 'type': type.name};

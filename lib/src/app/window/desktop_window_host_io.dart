@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +8,7 @@ import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:zerobox/src/app/generated/app_localizations.dart';
 import 'package:zerobox/src/app/router/app_router.dart';
+import 'package:zerobox/src/app/window/window_launcher.dart';
 import 'package:zerobox/src/commands/command_protocol.dart';
 import 'package:zerobox/src/core/services/shared_prefs_service.dart';
 import 'package:zerobox/src/host/application_host_provider.dart';
@@ -24,6 +26,8 @@ class _DesktopWindowHostState extends ConsumerState<DesktopWindowHost>
   static const _exitBehaviorKey = 'desktop.exit_behavior';
   bool _initialized = false;
   bool _showingDialog = false;
+  bool _exiting = false;
+  AppLifecycleListener? _lifecycleListener;
 
   bool get _isDesktop =>
       Platform.isWindows || Platform.isLinux || Platform.isMacOS;
@@ -34,6 +38,19 @@ class _DesktopWindowHostState extends ConsumerState<DesktopWindowHost>
     if (!_initialized && _isDesktop) {
       _initialized = true;
       _initialize();
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (_isDesktop) {
+      _lifecycleListener = AppLifecycleListener(
+        onExitRequested: () async {
+          unawaited(_exitApplication());
+          return AppExitResponse.cancel;
+        },
+      );
     }
   }
 
@@ -60,6 +77,7 @@ class _DesktopWindowHostState extends ConsumerState<DesktopWindowHost>
 
   @override
   void dispose() {
+    _lifecycleListener?.dispose();
     if (_isDesktop) {
       windowManager.removeListener(this);
       trayManager.removeListener(this);
@@ -86,11 +104,29 @@ class _DesktopWindowHostState extends ConsumerState<DesktopWindowHost>
   }
 
   Future<void> _exitApplication() async {
+    if (_exiting) return;
+    _exiting = true;
+    final host = ref.read(applicationHostProvider);
+    final forcedExit = Timer(const Duration(seconds: 8), () => exit(0));
     try {
-      await ref
-          .read(applicationHostProvider)
-          .execute(const ZeroBoxCommand(method: 'daemon.stop'));
+      await windowManager.hide().timeout(const Duration(seconds: 1));
+    } catch (_) {}
+    try {
+      await shutdownSecondaryWindows().timeout(const Duration(seconds: 5));
+    } catch (_) {}
+    try {
+      await host
+          .execute(const ZeroBoxCommand(method: 'daemon.stop'))
+          .timeout(const Duration(seconds: 2));
+    } catch (_) {}
+    try {
+      await host.close().timeout(const Duration(seconds: 2));
+    } catch (_) {}
+    try {
+      await trayManager.destroy().timeout(const Duration(seconds: 1));
+    } catch (_) {
     } finally {
+      forcedExit.cancel();
       exit(0);
     }
   }

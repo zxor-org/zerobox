@@ -37,9 +37,13 @@ class ZeppOsInstallPackage {
 class ZeppOsPackageParser {
   const ZeppOsPackageParser();
 
-  static const _maxFiles = 512;
-  static const _maxFileBytes = 8 * 1024 * 1024;
-  static const _maxTotalBytes = 32 * 1024 * 1024;
+  // Firmware bundles legitimately contain several thousand small resources,
+  // while ebook-style apps may contain individual assets larger than 8 MiB.
+  // ZipDecoder keeps entry bodies lazy, and this parser only materializes the
+  // manifests and nested packages it needs.
+  static const _maxFiles = 8192;
+  static const _maxFileBytes = 64 * 1024 * 1024;
+  static const _maxTotalBytes = 512 * 1024 * 1024;
 
   ZeppOsInstallPackage parse(
     Uint8List input, {
@@ -177,14 +181,17 @@ class ZeppOsPackageParser {
     for (final entry in archive) {
       if (!entry.isFile) continue;
       files++;
-      if (files > _maxFiles)
+      if (files > _maxFiles) {
         throw const FormatException('ZIP has too many files');
+      }
       final size = entry.size;
-      if (size > _maxFileBytes)
+      if (size > _maxFileBytes) {
         throw const FormatException('ZIP file is too large');
+      }
       total += size;
-      if (total > _maxTotalBytes)
+      if (total > _maxTotalBytes) {
         throw const FormatException('ZIP is too large');
+      }
       if (_safeRelativePath(entry.name) == null) {
         throw FormatException('Unsafe ZIP path: ${entry.name}');
       }

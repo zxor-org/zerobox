@@ -92,7 +92,7 @@ class BleTransport implements CharacteristicTransport {
   }
 
   Future<void> start() async {
-    _log.info('[$deviceId] starting transport on recv=$_recvCharUuid');
+    _log.fine('[$deviceId] starting transport on recv=$_recvCharUuid');
     final bleConnection = _bleConnection;
     if (bleConnection != null) {
       _valueSubscription = await bleConnection.subscribe(
@@ -236,7 +236,7 @@ class BleTransport implements CharacteristicTransport {
 
   @override
   Future<void> dispose() async {
-    _log.info('[$deviceId] disposing transport');
+    _log.fine('[$deviceId] disposing transport');
     await _valueSubscription?.cancel();
     _valueSubscription = null;
     for (final subscription in _characteristicSubscriptions) {

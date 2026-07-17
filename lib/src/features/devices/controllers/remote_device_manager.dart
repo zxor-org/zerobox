@@ -199,6 +199,15 @@ class HostDeviceManager extends DeviceManager {
     String connectType = 'ble',
   }) async {
     final generation = ++_connectGeneration;
+    _pendingConnectionAddr = addr;
+    state = state.copyWith(
+      connecting: true,
+      connectionTargetAddr: addr,
+      connectionTargetName: name,
+      connectionPhase: DeviceConnectionPhase.preparing,
+      protocolState: ProtocolState.connecting,
+      clearError: true,
+    );
     try {
       await importSharedDevice(
         MiWearState(
@@ -210,15 +219,6 @@ class HostDeviceManager extends DeviceManager {
         ),
       );
       if (generation != _connectGeneration) return;
-      _pendingConnectionAddr = addr;
-      state = state.copyWith(
-        connecting: true,
-        connectionTargetAddr: addr,
-        connectionTargetName: name,
-        connectionPhase: DeviceConnectionPhase.preparing,
-        protocolState: ProtocolState.connecting,
-        clearError: true,
-      );
       await _execute(
         ZeroBoxCommand(method: 'device.connect', params: {'device': addr}),
       );

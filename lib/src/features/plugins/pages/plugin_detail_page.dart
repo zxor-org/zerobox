@@ -11,6 +11,7 @@ import 'package:zerobox/src/commands/command_protocol.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
 import 'package:zerobox/src/host/application_host_provider.dart';
 import 'package:zerobox/src/features/resources/widgets/community_html_content.dart';
+import 'package:zerobox/src/app/window/window_launcher.dart';
 
 import 'plugins_page.dart';
 
@@ -19,12 +20,14 @@ class PluginDetailPage extends ConsumerStatefulWidget {
     super.key,
     required this.pluginId,
     this.embedded = false,
+    this.allowDetach = true,
     this.onClose,
     this.onRemoved,
   });
 
   final String pluginId;
   final bool embedded;
+  final bool allowDetach;
   final VoidCallback? onClose;
   final FutureOr<void> Function()? onRemoved;
 
@@ -188,6 +191,9 @@ class _PluginDetailPageState extends ConsumerState<PluginDetailPage>
                 plugin: plugin,
                 tabs: _tabs,
                 onClose: widget.embedded ? widget.onClose : null,
+                onDetach: widget.allowDetach && supportsSecondaryWindows
+                    ? () => openPluginWindow(widget.pluginId)
+                    : null,
               ),
               Expanded(
                 child: TabBarView(
@@ -232,10 +238,16 @@ class _PluginDetailPageState extends ConsumerState<PluginDetailPage>
 }
 
 class _PluginHeader extends StatelessWidget {
-  const _PluginHeader({required this.plugin, required this.tabs, this.onClose});
+  const _PluginHeader({
+    required this.plugin,
+    required this.tabs,
+    this.onClose,
+    this.onDetach,
+  });
   final Map<String, Object?> plugin;
   final TabController tabs;
   final VoidCallback? onClose;
+  final VoidCallback? onDetach;
 
   @override
   Widget build(BuildContext context) {
@@ -252,7 +264,11 @@ class _PluginHeader extends StatelessWidget {
               padding: EdgeInsets.fromLTRB(
                 16,
                 16,
-                onClose != null ? 48 : 16,
+                onClose != null && onDetach != null
+                    ? 96
+                    : onClose != null || onDetach != null
+                    ? 48
+                    : 16,
                 12,
               ),
               child: Row(
@@ -297,15 +313,29 @@ class _PluginHeader extends StatelessWidget {
             ),
           ],
         ),
-        if (onClose != null)
+        if (onClose != null || onDetach != null)
           Positioned(
             top: 0,
             right: 0,
-            child: IconButton(
-              onPressed: onClose,
-              icon: const Icon(Icons.close),
-              visualDensity: VisualDensity.compact,
-              tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+            child: Row(
+              children: [
+                if (onDetach != null)
+                  IconButton(
+                    onPressed: onDetach,
+                    icon: const Icon(Icons.open_in_new),
+                    visualDensity: VisualDensity.compact,
+                    tooltip: 'Open in new window',
+                  ),
+                if (onClose != null)
+                  IconButton(
+                    onPressed: onClose,
+                    icon: const Icon(Icons.close),
+                    visualDensity: VisualDensity.compact,
+                    tooltip: MaterialLocalizations.of(
+                      context,
+                    ).closeButtonTooltip,
+                  ),
+              ],
             ),
           ),
       ],

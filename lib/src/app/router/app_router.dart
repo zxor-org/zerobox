@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zerobox/src/app/layout/app_scaffold.dart';
 import 'package:zerobox/src/app/widgets/dialog_helper.dart';
+import 'package:zerobox/src/data/community/community_source.dart';
 import 'package:zerobox/src/features/resources/application/resource_catalog_providers.dart';
 import 'package:zerobox/src/features/resources/domain/community_resource.dart';
 import 'package:zerobox/src/features/devices/pages/apps/device_apps_page.dart';
@@ -81,7 +82,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                       return ResourceDetailPage(
                         resource: CommunityResource(
                           ref: ResourceRef(
-                            source: ref.read(selectedCommunitySourceProvider),
+                            source:
+                                communitySourceIdByName(
+                                  state.uri.queryParameters['source'] ?? '',
+                                ) ??
+                                ref.read(selectedCommunitySourceProvider),
                             id: state.pathParameters['id']!,
                           ),
                           name: 'Unknown',

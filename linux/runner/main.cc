@@ -11,10 +11,13 @@ void IgnoreHeadlessAtkCritical(const gchar*,
 
 int main(int argc, char** argv) {
   gboolean no_gui = FALSE;
+  gboolean secondary_window = FALSE;
   for (int index = 1; index < argc; index++) {
     if (g_strcmp0(argv[index], "--nogui") == 0) {
       no_gui = TRUE;
-      break;
+    }
+    if (g_strcmp0(argv[index], "--window") == 0) {
+      secondary_window = TRUE;
     }
   }
   if (no_gui) {
@@ -27,6 +30,7 @@ int main(int argc, char** argv) {
     g_log_set_handler("Atk", G_LOG_LEVEL_CRITICAL,
                       IgnoreHeadlessAtkCritical, nullptr);
   }
-  g_autoptr(MyApplication) app = my_application_new(no_gui);
+  g_autoptr(MyApplication) app =
+      my_application_new(no_gui || secondary_window);
   return g_application_run(G_APPLICATION(app), argc, argv);
 }

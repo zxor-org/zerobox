@@ -5,6 +5,12 @@ PluginRuntime createPluginRuntime() => _UnsupportedPluginRuntime();
 
 class _UnsupportedPluginRuntime implements PluginRuntime {
   @override
+  Map<String, Object?> get diagnostics => const {
+    'engine': 'unsupported',
+    'running': false,
+  };
+
+  @override
   Future<void> start({
     required String pluginId,
     required String pluginName,

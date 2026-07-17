@@ -645,6 +645,24 @@ class AppLocalizationsEn extends AppLocalizations {
   String get open => 'Open';
 
   @override
+  String get externalLinkTitle => 'Open external link';
+
+  @override
+  String externalLinkDescription(String url) {
+    return 'You are about to visit $url\n\nThis website is operated by a third party, is not affiliated with ZeroBox, and its security is unknown. Please proceed with caution. Do you want to continue?';
+  }
+
+  @override
+  String get externalLinkAstroBoxResourceHint =>
+      'This appears to be an AstroBox resource. You can also view and install it within ZeroBox';
+
+  @override
+  String get continueToWebsite => 'Continue';
+
+  @override
+  String get viewInZeroBox => 'View in ZeroBox';
+
+  @override
   String get uninstall => 'Uninstall';
 
   @override
@@ -1492,4 +1510,94 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get pluginSafeModeExit => 'Exit safe mode';
+
+  @override
+  String get debugWindow => 'Debug window';
+
+  @override
+  String get debugWindowDescription => 'Toggle the ZeroBox debug window';
+
+  @override
+  String get debugWindowOperationFailed =>
+      'Unable to change the debug window state';
+
+  @override
+  String get resourceTypeErrorTitle => 'Incorrect resource type';
+
+  @override
+  String get resourceTypeUnknownTitle => 'Unrecognized resource type';
+
+  @override
+  String resourceTypeMismatchMessage(Object detectedType, Object selectedType) {
+    return 'This appears to be a $detectedType resource, but you selected $selectedType. Choose how to install it';
+  }
+
+  @override
+  String resourcePlatformMismatchMessage(
+    Object resourcePlatform,
+    Object resourceType,
+    Object deviceName,
+    Object devicePlatform,
+  ) {
+    return 'This appears to be a $resourceType resource for a $resourcePlatform device, but the connected device is $deviceName ($devicePlatform). It is not supported and forcing installation may cause unexpected problems';
+  }
+
+  @override
+  String resourceTypeUnknownMessage(Object selectedType) {
+    return 'ZeroBox cannot identify the actual resource type. Install it as $selectedType anyway?';
+  }
+
+  @override
+  String get resourceInstallCancel => 'Cancel installation';
+
+  @override
+  String get resourceInstallAcknowledge => 'I understand';
+
+  @override
+  String get resourceInstallForce => 'Force install';
+
+  @override
+  String resourceInstallForceCountdown(int seconds) {
+    return 'Force install (${seconds}s)';
+  }
+
+  @override
+  String resourceInstallAsSelected(Object type) {
+    return 'Continue as $type';
+  }
+
+  @override
+  String resourceInstallAsSelectedCountdown(Object type, int seconds) {
+    return 'Continue as $type (${seconds}s)';
+  }
+
+  @override
+  String resourceInstallAsDetected(Object type) {
+    return 'Install as $type';
+  }
+
+  @override
+  String get resourceTypeApp => 'miniprogram';
+
+  @override
+  String get resourceTypeQuickApp => 'quick app';
+
+  @override
+  String get resourceTypeWatchface => 'watchface';
+
+  @override
+  String get resourceTypeFirmware => 'firmware';
+
+  @override
+  String resourceInstallConfirmTitle(Object type) {
+    return 'Install $type';
+  }
+
+  @override
+  String resourceInstallConfirmMessage(Object fileName, Object fileSize) {
+    return 'Install $fileName ($fileSize)?';
+  }
+
+  @override
+  String get resourceInstallConfirm => 'Install';
 }

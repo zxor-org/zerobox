@@ -143,6 +143,12 @@ packages/wasm_run_flutter/android/.cxx/
 packages/wasm_run_flutter/android/src/main/jniLibs/
 packages/wasm_run_flutter/android/wasm_run-*.tar.gz
 
+# Downloaded wasm_run desktop native library cache
+packages/wasm_run_flutter/linux/wasm_run-*/
+packages/wasm_run_flutter/linux/wasm_run-*.tar.gz
+packages/wasm_run_flutter/windows/wasm_run-*/
+packages/wasm_run_flutter/windows/wasm_run-*.tar.gz
+
 # AI Agent Dir
 .agents/
 .codex/

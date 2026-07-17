@@ -7,6 +7,8 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:zerobox/src/app/generated/app_localizations.dart';
 import 'package:zerobox/src/app/utils/error_localization.dart';
+import 'package:zerobox/src/app/window/debug_window_preference.dart';
+import 'package:zerobox/src/app/window/window_launcher.dart';
 import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
 import 'package:zerobox/src/core/providers/app_settings_providers.dart';
@@ -21,6 +23,21 @@ import 'package:zerobox/src/features/accounts/services/mi_account_two_factor_res
 final _desktopExitBehaviorProvider = Provider<int?>((ref) {
   return SharedPrefsService.instance.getInt('desktop.exit_behavior');
 });
+
+final _debugWindowEnabledProvider =
+    NotifierProvider<_DebugWindowEnabledNotifier, bool>(
+      _DebugWindowEnabledNotifier.new,
+    );
+
+class _DebugWindowEnabledNotifier extends Notifier<bool> {
+  @override
+  bool build() => isDebugWindowEnabled();
+
+  Future<void> setEnabled(bool enabled) async {
+    state = enabled;
+    await setDebugWindowEnabled(enabled);
+  }
+}
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -48,6 +65,7 @@ class SettingsPage extends ConsumerWidget {
             defaultTargetPlatform == TargetPlatform.linux ||
             defaultTargetPlatform == TargetPlatform.macOS);
     final themeSettings = ref.watch(themeSettingsProvider);
+    final debugWindowEnabled = ref.watch(_debugWindowEnabledProvider);
 
     return Scaffold(
       appBar: SysAppBar(title: Text(l10n.settingsTab)),
@@ -335,6 +353,15 @@ class SettingsPage extends ConsumerWidget {
                 title: Text(l10n.settingsAboutWebsite),
                 description: Text(l10n.settingsAboutWebsiteDesc),
               ),
+              if (showDesktopWindowSettings)
+                SettingsTile.switchTile(
+                  onToggle: (value) =>
+                      _setDebugWindowEnabled(context, ref, value ?? false),
+                  initialValue: debugWindowEnabled,
+                  leading: const Icon(Icons.developer_mode_outlined),
+                  title: Text(l10n.debugWindow),
+                  description: Text(l10n.debugWindowDescription),
+                ),
             ],
           ),
         ],
@@ -348,6 +375,30 @@ class SettingsPage extends ConsumerWidget {
     required List<AbstractSettingsTile> tiles,
   }) {
     return SettingsSection(title: Text(title), tiles: tiles);
+  }
+
+  Future<void> _setDebugWindowEnabled(
+    BuildContext context,
+    WidgetRef ref,
+    bool enabled,
+  ) async {
+    final notifier = ref.read(_debugWindowEnabledProvider.notifier);
+    final succeeded = enabled
+        ? await openDebugWindow()
+        : await closeDebugWindow();
+    if (succeeded) {
+      await notifier.setEnabled(enabled);
+      return;
+    }
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            AppLocalizations.of(context)!.debugWindowOperationFailed,
+          ),
+        ),
+      );
+    }
   }
 
   String _localeLabel(AppLocalizations l10n, AppLocale locale) {

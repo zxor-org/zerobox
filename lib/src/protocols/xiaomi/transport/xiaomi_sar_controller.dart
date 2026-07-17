@@ -107,7 +107,7 @@ class XiaomiSarController {
   void markAckConsumed(int seq) => _acked.remove(seq);
 
   void start() {
-    _log.info('SAR start, sending L1 start request');
+    _log.fine('SAR start, sending L1 start request');
     _sendGeneration++;
     _cmdExchanged = false;
     _txNextSeq = 0;
@@ -221,7 +221,7 @@ class XiaomiSarController {
   }
 
   void stop() {
-    _log.info('SAR stop');
+    _log.fine('SAR stop');
     _sendGeneration++;
     _timeoutTimer?.cancel();
     _rxCumAckTimer?.cancel();

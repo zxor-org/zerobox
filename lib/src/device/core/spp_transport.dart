@@ -48,7 +48,7 @@ class SppTransport implements Transport {
       _bluetoothConnection!.connectionState;
 
   Future<void> start() async {
-    _log.info('[$deviceId] starting SPP transport');
+    _log.fine('[$deviceId] starting SPP transport');
     final incomingData =
         _rfcommConnection?.incomingData ?? _bluetoothConnection!.incomingData;
     _dataSubscription = incomingData.listen(
@@ -81,7 +81,7 @@ class SppTransport implements Transport {
 
   @override
   Future<void> dispose() async {
-    _log.info('[$deviceId] disposing SPP transport');
+    _log.fine('[$deviceId] disposing SPP transport');
     await _dataSubscription?.cancel();
     _dataSubscription = null;
     await _connectionSubscription?.cancel();

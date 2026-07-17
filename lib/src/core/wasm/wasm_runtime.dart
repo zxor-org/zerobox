@@ -104,6 +104,9 @@ final class ScopedWasmInstance {
   final void Function() _onDispose;
   bool _disposed = false;
 
+  Stream<Uint8List> get stdout => _instance.stdout;
+  Stream<Uint8List> get stderr => _instance.stderr;
+
   WasmFunction function(String name) {
     _ensureActive();
     final function = _instance.getFunction(name);

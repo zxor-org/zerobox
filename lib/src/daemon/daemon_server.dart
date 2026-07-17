@@ -23,7 +23,9 @@ class ZeroBoxDaemonServer {
   RandomAccessFile? _windowsLock;
   final DateTime startedAt = DateTime.now();
   Socket? _activeOperationClient;
-  final _pluginClients = <Socket, String>{};
+  Future<void>? _activeDeviceConnect;
+  final _pluginClients = <Socket, Set<String>>{};
+  final _pluginOwners = <String, Socket>{};
   static final _log = getLogger('DaemonServer');
 
   Future<void> run() async {
@@ -132,18 +134,48 @@ class ZeroBoxDaemonServer {
         if (command.method == 'plugin.open' ||
             command.method == 'plugin.invoke' ||
             command.method == 'device.connect') {
-          unawaited(
-            command.method.startsWith('plugin.')
-                ? _executePluginAndWrite(client, id, command)
-                : _executeAndWrite(client, id, command),
-          );
+          if (command.method == 'device.connect') {
+            final operation = _executeAndWrite(client, id, command);
+            _activeDeviceConnect = operation;
+            unawaited(
+              operation.whenComplete(() {
+                if (identical(_activeDeviceConnect, operation)) {
+                  _activeDeviceConnect = null;
+                }
+              }),
+            );
+          } else {
+            unawaited(_executePluginAndWrite(client, id, command));
+          }
           continue;
         }
         if (command.method == 'plugin.close') {
-          _pluginClients.remove(client);
+          final pluginId = command.params['id']?.toString() ?? '';
+          _pluginClients[client]?.remove(pluginId);
+          if (_pluginClients[client]?.isEmpty == true) {
+            _pluginClients.remove(client);
+          }
+          if (identical(_pluginOwners[pluginId], client)) {
+            _reassignPluginOwner(pluginId);
+          }
+          if (_pluginClients.values.any((ids) => ids.contains(pluginId))) {
+            _write(client, {
+              'id': id,
+              ...const CommandResult.success({'closed': true}).toJson(),
+            });
+            continue;
+          }
         }
         if (command.method == 'device.connect.cancel') {
+          final activeConnect = _activeDeviceConnect;
           await host.cancelActiveOperation();
+          if (activeConnect != null) {
+            try {
+              await activeConnect.timeout(const Duration(seconds: 3));
+            } on TimeoutException {
+              _log.warning('cancelled device connection did not settle');
+            }
+          }
           _write(client, {
             'id': id,
             ...const CommandResult.success({'cancelled': true}).toJson(),
@@ -160,8 +192,14 @@ class ZeroBoxDaemonServer {
       // A disconnected CLI client is expected and does not stop the daemon.
     } finally {
       _clients.remove(client);
-      final pluginId = _pluginClients.remove(client);
-      if (pluginId != null && !_pluginClients.containsValue(pluginId)) {
+      final pluginIds = _pluginClients.remove(client) ?? const <String>{};
+      for (final pluginId in pluginIds) {
+        if (identical(_pluginOwners[pluginId], client)) {
+          _reassignPluginOwner(pluginId);
+        }
+        if (_pluginClients.values.any((ids) => ids.contains(pluginId))) {
+          continue;
+        }
         await host.execute(
           ZeroBoxCommand(method: 'plugin.close', params: {'id': pluginId}),
         );
@@ -202,7 +240,8 @@ class ZeroBoxDaemonServer {
     if (result.ok) {
       final pluginId = command.params['id']?.toString() ?? '';
       if (_clients.contains(client)) {
-        _pluginClients[client] = pluginId;
+        (_pluginClients[client] ??= <String>{}).add(pluginId);
+        _pluginOwners[pluginId] = client;
       } else {
         await host.execute(
           ZeroBoxCommand(method: 'plugin.close', params: {'id': pluginId}),
@@ -232,6 +271,12 @@ class ZeroBoxDaemonServer {
         'broadcasting plugin host request '
         '${event.data['requestId']} to ${_clients.length} clients',
       );
+      final pluginId = event.data['pluginId']?.toString() ?? '';
+      final owner = _pluginOwners[pluginId];
+      if (owner != null && _clients.contains(owner)) {
+        _write(owner, {'messageType': 'event', ...event.toJson()});
+        return;
+      }
     }
     final message = {'messageType': 'event', ...event.toJson()};
     final broadcast =
@@ -239,6 +284,7 @@ class ZeroBoxDaemonServer {
         event.event == 'account.state' ||
         event.event == 'settings.state' ||
         event.event == 'log' ||
+        event.event.startsWith('debug.') ||
         event.event == 'task' ||
         event.event == 'task.removed' ||
         event.event.startsWith('plugin.');
@@ -253,6 +299,16 @@ class ZeroBoxDaemonServer {
 
   void _write(Socket client, Map<String, Object?> value) {
     client.writeln(jsonEncode(value));
+  }
+
+  void _reassignPluginOwner(String pluginId) {
+    for (final entry in _pluginClients.entries) {
+      if (entry.value.contains(pluginId)) {
+        _pluginOwners[pluginId] = entry.key;
+        return;
+      }
+    }
+    _pluginOwners.remove(pluginId);
   }
 
   Future<void> close() async {

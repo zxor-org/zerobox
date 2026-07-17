@@ -7,6 +7,7 @@ import 'package:zerobox/src/device/xiaomi/components/info_system.dart';
 import 'package:zerobox/src/device/xiaomi/components/install_system.dart';
 import 'package:zerobox/src/device/xiaomi/components/mass_system.dart';
 import 'package:zerobox/src/device/xiaomi/components/media_system.dart';
+import 'package:zerobox/src/device/xiaomi/components/network_system.dart';
 import 'package:zerobox/src/device/xiaomi/components/report_system.dart';
 import 'package:zerobox/src/device/xiaomi/components/request_pool_system.dart';
 import 'package:zerobox/src/device/xiaomi/components/resource_system.dart';
@@ -47,6 +48,7 @@ class XiaomiDeviceFactory implements DeviceEntityFactory {
 
     entity.registerSystem(XiaomiMassSystem());
     entity.registerSystem(XiaomiMediaSystem());
+    entity.registerSystem(XiaomiNetworkSystem());
 
     entity.registerSystem(XiaomiInstallSystem());
     entity.registerSystem(XiaomiInfoSystem());

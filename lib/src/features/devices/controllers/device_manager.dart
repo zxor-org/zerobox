@@ -22,6 +22,7 @@ import 'package:zerobox/src/device/core/xiaomi_wearable_catalog.dart';
 import 'package:zerobox/src/device/xiaomi/components/auth_system.dart';
 import 'package:zerobox/src/device/xiaomi/components/info_system.dart';
 import 'package:zerobox/src/device/xiaomi/components/install_system.dart';
+import 'package:zerobox/src/device/xiaomi/components/network_system.dart';
 import 'package:zerobox/src/device/xiaomi/components/resource_system.dart';
 import 'package:zerobox/src/device/xiaomi/components/thirdparty_app_system.dart';
 import 'package:zerobox/src/device/xiaomi/components/xiaomi_device_component.dart';
@@ -205,6 +206,15 @@ abstract class DeviceManager extends Notifier<DeviceManagerState> {
   Stream<InterconnectMessage> get interconnectMessages =>
       _interconnectMessages.stream;
   Stream<Uint8List> get rawProtocolFrames => _rawProtocolFrames.stream;
+
+  DeviceKind? get currentDeviceKind {
+    final device = state.currentDevice;
+    if (device == null) return null;
+    return DeviceRegistry.resolveIdentity(
+      name: device.name,
+      codename: device.codename,
+    ).kind;
+  }
 
   @protected
   void emitXiaoAiOpusFrame(Uint8List frame) {
@@ -831,6 +841,8 @@ class LocalDeviceManager extends DeviceManager {
             .timeout(const Duration(seconds: 10));
         _throwIfConnectCancelled(generation);
         _log.info('authentication succeeded');
+        await entity.system<XiaomiNetworkSystem>()!.start();
+        _throwIfConnectCancelled(generation);
       }
 
       final connected = MiWearState(
@@ -872,9 +884,11 @@ class LocalDeviceManager extends DeviceManager {
       unawaited(_loadInitialDeviceData(entity));
     } on _DeviceConnectCancelled {
       _log.info('connect to $addr cancelled');
+      await _cleanupConnection();
     } catch (e, st) {
       if (generation != _connectGeneration) {
         _log.info('connect to $addr cancelled after error: $e');
+        await _cleanupConnection();
         return;
       }
       _log.severe('connect to $addr failed', e, st);
@@ -1394,7 +1408,8 @@ class LocalDeviceManager extends DeviceManager {
       throw ProtocolException('Device not ready');
     }
     final system = entity.system<ZeppOsScreenshotSystem>();
-    if (system == null) throw UnsupportedError('Screenshot service unavailable');
+    if (system == null)
+      throw UnsupportedError('Screenshot service unavailable');
     return system.requestScreenshot();
   }
 
@@ -1776,6 +1791,28 @@ class LocalDeviceManager extends DeviceManager {
     if (entity == null || state.protocolState != ProtocolState.ready) {
       throw ProtocolException('Device not ready');
     }
+    if (entity.system<ZeppOsAppsSystem>() != null) {
+      final installer = entity.system<ZeppOsAppInstallSystem>();
+      if (installer == null) {
+        throw StateError('Zepp OS installer was not loaded for this session');
+      }
+      final source = entity.system<ZeppOsDeviceInfoSystem>()?.deviceSource;
+      final package = const ZeppOsPackageParser().parse(
+        watchfaceBytes,
+        deviceSources: source == null ? const {} : {source},
+      );
+      if (package.type != ZeppOsPackageType.watchface) {
+        throw FormatException(
+          'Selected package is ${package.type.name}, not a Zepp OS watchface',
+        );
+      }
+      _log.info(
+        'installing Zepp OS watchface ${package.name ?? watchfaceId} '
+        '(${package.bytes.length} bytes)',
+      );
+      await installer.install(package, onProgress: onProgress);
+      return;
+    }
     _log.info(
       'installing watchface $watchfaceId (${watchfaceBytes.length} bytes)',
     );
@@ -1795,6 +1832,25 @@ class LocalDeviceManager extends DeviceManager {
     final entity = _currentEntity;
     if (entity == null || state.protocolState != ProtocolState.ready) {
       throw ProtocolException('Device not ready');
+    }
+    if (entity.system<ZeppOsAppsSystem>() != null) {
+      final installer = entity.system<ZeppOsAppInstallSystem>();
+      if (installer == null) {
+        throw StateError('Zepp OS installer was not loaded for this session');
+      }
+      final source = entity.system<ZeppOsDeviceInfoSystem>()?.deviceSource;
+      final package = const ZeppOsPackageParser().parse(
+        firmwareBytes,
+        deviceSources: source == null ? const {} : {source},
+      );
+      if (package.type != ZeppOsPackageType.firmware) {
+        throw FormatException(
+          'Selected package is ${package.type.name}, not Zepp OS firmware',
+        );
+      }
+      _log.info('installing Zepp OS firmware (${package.bytes.length} bytes)');
+      await installer.install(package, onProgress: onProgress);
+      return;
     }
     _log.info('installing firmware (${firmwareBytes.length} bytes)');
     final installSystem = entity.system<XiaomiInstallSystem>()!;

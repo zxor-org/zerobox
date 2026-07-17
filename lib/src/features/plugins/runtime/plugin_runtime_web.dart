@@ -47,6 +47,13 @@ class _WebPluginRuntime implements PluginRuntime {
   final _timers = <int, Timer>{};
 
   @override
+  Map<String, Object?> get diagnostics => {
+    'engine': 'quickjs-emscripten',
+    'running': _pluginId != null,
+    'timers': _timers.length,
+  };
+
+  @override
   Future<void> start({
     required String pluginId,
     required String pluginName,

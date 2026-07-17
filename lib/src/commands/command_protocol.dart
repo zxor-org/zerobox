@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-const zeroBoxProtocolVersion = 4;
+const zeroBoxProtocolVersion = 5;
 
 const zeroBoxDaemonCapabilities = <String>[
   'device',
@@ -13,6 +13,7 @@ const zeroBoxDaemonCapabilities = <String>[
   'tasks',
   'logs',
   'plugins',
+  'debug',
 ];
 
 class ZeroBoxCommand {

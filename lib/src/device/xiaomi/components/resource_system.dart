@@ -15,7 +15,7 @@ class XiaomiResourceSystem extends XiaomiPbSystem {
   final _quickAppWaiters = <Completer<List<pb_thirdparty.AppItem>>>[];
 
   Future<List<pb_watchface.WatchFaceItem>> fetchInstalledWatchfaces() async {
-    _log.info('[${entity.id}] fetching installed watchfaces');
+    _log.fine('[${entity.id}] fetching installed watchfaces');
     final completer = Completer<List<pb_watchface.WatchFaceItem>>();
     _watchfaceWaiters.add(completer);
     await component.sendPbPacket(_buildWatchfaceGetInstalled());
@@ -23,7 +23,7 @@ class XiaomiResourceSystem extends XiaomiPbSystem {
   }
 
   Future<List<pb_thirdparty.AppItem>> fetchInstalledQuickApps() async {
-    _log.info('[${entity.id}] fetching installed quick apps');
+    _log.fine('[${entity.id}] fetching installed quick apps');
     final completer = Completer<List<pb_thirdparty.AppItem>>();
     _quickAppWaiters.add(completer);
     await component.sendPbPacket(_buildThirdpartyAppGetInstalled());

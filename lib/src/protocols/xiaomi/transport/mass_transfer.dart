@@ -248,7 +248,7 @@ class MassTransfer {
     final fileMd5 = _md5(fileData);
     final fileLen = fileData.length;
 
-    _log.info('Building MASS Prepare response listener...');
+    _log.fine('Building MASS Prepare response listener...');
 
     final prepareResponse = await requestPool.request<PrepareResponse>(
       packet: _buildMassPrepareRequest(dataType, fileMd5, fileLen),
@@ -277,7 +277,7 @@ class MassTransfer {
         : 0;
     var sentLength = remainedDataLength.clamp(0, fileLen);
     if (sentLength > 0) {
-      _log.info(
+      _log.fine(
         '[Mass] device retained $sentLength / $fileLen bytes from a previous transfer, resuming from there',
       );
     }
@@ -543,7 +543,7 @@ class MassTransfer {
       );
     }
 
-    _log.info('[Mass] All mass data parts acknowledged.');
+    _log.fine('[Mass] All mass data parts acknowledged.');
   }
 
   Future<void> _flushMassBatch({

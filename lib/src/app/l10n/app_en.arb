@@ -221,6 +221,16 @@
   "watchfaceManagementTitle": "Watchface management",
   "watchfaceManagementNone": "No installed watchfaces",
   "open": "Open",
+  "externalLinkTitle": "Open external link",
+  "externalLinkDescription": "You are about to visit {url}\n\nThis website is operated by a third party, is not affiliated with ZeroBox, and its security is unknown. Please proceed with caution. Do you want to continue?",
+  "@externalLinkDescription": {
+    "placeholders": {
+      "url": {"type": "String"}
+    }
+  },
+  "externalLinkAstroBoxResourceHint": "This appears to be an AstroBox resource. You can also view and install it within ZeroBox",
+  "continueToWebsite": "Continue",
+  "viewInZeroBox": "View in ZeroBox",
   "uninstall": "Uninstall",
   "enable": "Enable",
   "fail": "Failed",
@@ -538,5 +548,78 @@
   "pluginErrorSafeMode": "Enter safe mode",
   "pluginSafeModeTitle": "Plugin safe mode is enabled",
   "pluginSafeModeDescription": "All plugins are stopped and will reload after safe mode is disabled.",
-  "pluginSafeModeExit": "Exit safe mode"
+  "pluginSafeModeExit": "Exit safe mode",
+  "debugWindow": "Debug window",
+  "debugWindowDescription": "Toggle the ZeroBox debug window",
+  "debugWindowOperationFailed": "Unable to change the debug window state",
+  "resourceTypeErrorTitle": "Incorrect resource type",
+  "resourceTypeUnknownTitle": "Unrecognized resource type",
+  "resourceTypeMismatchMessage": "This appears to be a {detectedType} resource, but you selected {selectedType}. Choose how to install it",
+  "@resourceTypeMismatchMessage": {
+    "placeholders": {
+      "detectedType": {},
+      "selectedType": {}
+    }
+  },
+  "resourcePlatformMismatchMessage": "This appears to be a {resourceType} resource for a {resourcePlatform} device, but the connected device is {deviceName} ({devicePlatform}). It is not supported and forcing installation may cause unexpected problems",
+  "@resourcePlatformMismatchMessage": {
+    "placeholders": {
+      "resourcePlatform": {},
+      "resourceType": {},
+      "deviceName": {},
+      "devicePlatform": {}
+    }
+  },
+  "resourceTypeUnknownMessage": "ZeroBox cannot identify the actual resource type. Install it as {selectedType} anyway?",
+  "@resourceTypeUnknownMessage": {
+    "placeholders": {
+      "selectedType": {}
+    }
+  },
+  "resourceInstallCancel": "Cancel installation",
+  "resourceInstallAcknowledge": "I understand",
+  "resourceInstallForce": "Force install",
+  "resourceInstallForceCountdown": "Force install ({seconds}s)",
+  "@resourceInstallForceCountdown": {
+    "placeholders": {
+      "seconds": {"type": "int"}
+    }
+  },
+  "resourceInstallAsSelected": "Continue as {type}",
+  "@resourceInstallAsSelected": {
+    "placeholders": {
+      "type": {}
+    }
+  },
+  "resourceInstallAsSelectedCountdown": "Continue as {type} ({seconds}s)",
+  "@resourceInstallAsSelectedCountdown": {
+    "placeholders": {
+      "type": {},
+      "seconds": {"type": "int"}
+    }
+  },
+  "resourceInstallAsDetected": "Install as {type}",
+  "@resourceInstallAsDetected": {
+    "placeholders": {
+      "type": {}
+    }
+  },
+  "resourceTypeApp": "miniprogram",
+  "resourceTypeQuickApp": "quick app",
+  "resourceTypeWatchface": "watchface",
+  "resourceTypeFirmware": "firmware",
+  "resourceInstallConfirmTitle": "Install {type}",
+  "@resourceInstallConfirmTitle": {
+    "placeholders": {
+      "type": {}
+    }
+  },
+  "resourceInstallConfirmMessage": "Install {fileName} ({fileSize})?",
+  "@resourceInstallConfirmMessage": {
+    "placeholders": {
+      "fileName": {},
+      "fileSize": {}
+    }
+  },
+  "resourceInstallConfirm": "Install"
 }

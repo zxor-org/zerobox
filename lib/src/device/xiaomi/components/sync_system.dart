@@ -13,12 +13,12 @@ class XiaomiSyncSystem extends XiaomiPbSystem {
   static final _log = getLogger('XiaomiSyncSystem');
 
   Future<void> syncTime(TimeSyncProps props) async {
-    _log.info('[${entity.id}] syncing time: ${props.toJson()}');
+    _log.fine('[${entity.id}] syncing time: ${props.toJson()}');
     await component.sendPbPacket(_buildTimeSyncPacket(props));
   }
 
   Future<void> setLanguage(String locale) async {
-    _log.info('[${entity.id}] setting language: $locale');
+    _log.fine('[${entity.id}] setting language: $locale');
     await component.sendPbPacket(_buildSetLanguagePacket(locale));
   }
 
