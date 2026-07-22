@@ -203,7 +203,7 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
     'device.status' => Future.value(_status()),
     'device.connect' => _connect(command.params['device']?.toString()),
     'device.connect.cancel' => _cancelConnect(),
-    'device.disconnect' => _disconnect(),
+    'device.disconnect' => _disconnect(command.params['device']?.toString()),
     'device.scan' => _scan(command.params),
     'device.scan.start' => _scanStart(command.params),
     'device.scan.stop' => _scanStop(),
@@ -564,9 +564,13 @@ class LocalCommandBus implements ZeroBoxCommandBus, ActiveOperationController {
     return _deviceJson(_state.currentDevice ?? target);
   }
 
-  Future<Object?> _disconnect() async {
-    await _manager.disconnect();
-    _events.add(const CommandEvent('disconnected'));
+  Future<Object?> _disconnect(String? address) async {
+    final disconnectedActiveDevice =
+        address == null || address == _state.currentDevice?.addr;
+    await _manager.disconnect(address);
+    if (disconnectedActiveDevice) {
+      _events.add(const CommandEvent('disconnected'));
+    }
     return const {'disconnected': true};
   }
 

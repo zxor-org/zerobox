@@ -20,7 +20,6 @@ import 'package:zerobox/src/features/resources/domain/community_resource.dart';
 import 'package:zerobox/src/features/resources/domain/resource_catalog.dart';
 import 'package:zerobox/src/features/resources/widgets/bandbbs_category_sidebar.dart';
 import 'package:zerobox/src/features/resources/widgets/bandbbs_resource_card.dart';
-import 'package:zerobox/src/features/resources/widgets/unsupported_resource_warning.dart';
 
 class ResourcesPage extends ConsumerWidget {
   const ResourcesPage({super.key});
@@ -373,7 +372,6 @@ class _ResourceLibraryViewState extends ConsumerState<_ResourceLibraryView> {
     final filters = ref.watch(resourceFiltersProvider);
     final source = ref.watch(selectedCommunitySourceProvider);
     ref.listen(resourceFiltersProvider, (_, _) => _reset());
-    ref.listen(selectedCommunitySourceProvider, (_, _) => _reset());
     ref.listen(resourceRefreshProvider, (_, _) => _reset());
     ref.listen(
       appSettingsProvider.select(
@@ -578,14 +576,23 @@ class _CommunitySourceMenu extends ConsumerWidget {
               onPressed: candidate == source
                   ? null
                   : () async {
-                      if (candidate == CommunitySourceId.bandbbs &&
-                          !ref.read(hostAccountsProvider).bandbbs.isSignedIn) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(l10n.settingsBandBbsAccountRequired),
-                          ),
-                        );
-                        return;
+                      if (candidate == CommunitySourceId.bandbbs) {
+                        final host = ref.read(hostAccountsProvider.notifier);
+                        await host.refresh();
+                        if (!context.mounted) return;
+                        if (!ref
+                            .read(hostAccountsProvider)
+                            .bandbbs
+                            .isSignedIn) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                l10n.settingsBandBbsAccountRequired,
+                              ),
+                            ),
+                          );
+                          return;
+                        }
                       }
                       if (candidate == CommunitySourceId.huamiAppStore &&
                           !ref.read(hostAccountsProvider).amazfit.isSignedIn) {
@@ -596,18 +603,10 @@ class _CommunitySourceMenu extends ConsumerWidget {
                         );
                         return;
                       }
-                      if (candidate == CommunitySourceId.huamiAppStore) {
-                        await showUnsupportedResourceWarning(context, l10n);
-                        if (!context.mounted) return;
-                      }
                       await ref
                           .read(appSettingsProvider.notifier)
                           .setCommunitySource(candidate);
-                      if (candidate != CommunitySourceId.astroboxRepo) {
-                        ref
-                            .read(resourceFiltersProvider.notifier)
-                            .setHideForcePaid(false);
-                      }
+                      ref.read(resourceFiltersProvider.notifier).reset();
                     },
               child: Text(_communitySourceLabel(l10n, candidate)),
             ),
@@ -860,16 +859,7 @@ class _FilterSheet extends ConsumerWidget {
                 (option) => FilterChip(
                   label: Text(option.label),
                   selected: option.ids.any(filters.selectedDevices.contains),
-                  onSelected: (_) async {
-                    final selected = option.ids.any(
-                      filters.selectedDevices.contains,
-                    );
-                    if (!selected &&
-                        source == CommunitySourceId.bandbbs &&
-                        needsUnsupportedResourceWarning(option.label)) {
-                      await showUnsupportedResourceWarning(context, l10n);
-                      if (!context.mounted) return;
-                    }
+                  onSelected: (_) {
                     ref
                         .read(resourceFiltersProvider.notifier)
                         .toggleDeviceGroup(option.ids);

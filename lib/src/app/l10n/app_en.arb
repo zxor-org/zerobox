@@ -347,8 +347,6 @@
   "settingsHuamiAccountLoginAndSave": "Sign in and save",
   "settingsHuamiAccountMissingCredentials": "Enter your Amazfit account and password",
   "settingsHuamiAccountRequired": "Sign in to your Amazfit account in Settings first",
-  "unsupportedDeviceResourceTitle": "Unsupported device/resource type",
-  "unsupportedDeviceResourceMessage": "ZeroBox does not currently support this device or resource type. Do not attempt to install resources from this category, as unexpected issues may occur.",
   "understood": "I understand",
   "settingsGeneralLanguage": "Language",
   "settingsGeneralLanguageDesc": "Change app display language",
@@ -535,6 +533,8 @@
   "pluginPermissionOperateDevice": "operate a device",
   "pluginPermissionObserveProtocol": "read raw device protocol data",
   "pluginPermissionSendProtocol": "send raw protocol data to a device",
+  "pluginPermissionReadAppSide": "read AppSide scripts and events",
+  "pluginPermissionOperateAppSide": "manage AppSide sessions",
   "pluginErrorTitle": "Plugin runtime error",
   "pluginErrorMessage": "\"{plugin}\" encountered a runtime error:\n\n{error}",
   "@pluginErrorMessage": {

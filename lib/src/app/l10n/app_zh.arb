@@ -347,8 +347,6 @@
   "settingsHuamiAccountLoginAndSave": "登录并保存",
   "settingsHuamiAccountMissingCredentials": "请输入华米账号和密码",
   "settingsHuamiAccountRequired": "请先在设置中登录华米账号",
-  "unsupportedDeviceResourceTitle": "尚未支持的设备/资源类型",
-  "unsupportedDeviceResourceMessage": "ZeroBox 暂不支持此设备或资源类型，请勿尝试安装该分区中的资源，以免出现不可预期的问题",
   "understood": "我知道了",
   "settingsGeneralLanguage": "语言",
   "settingsGeneralLanguageDesc": "更改应用显示语言",
@@ -535,6 +533,8 @@
   "pluginPermissionOperateDevice": "操作设备",
   "pluginPermissionObserveProtocol": "读取设备原始协议数据",
   "pluginPermissionSendProtocol": "向设备发送原始协议数据",
+  "pluginPermissionReadAppSide": "读取 AppSide 脚本与事件",
+  "pluginPermissionOperateAppSide": "管理 AppSide 会话",
   "pluginErrorTitle": "插件运行错误",
   "pluginErrorMessage": "“{plugin}”运行时发生错误：\n\n{error}",
   "@pluginErrorMessage": {

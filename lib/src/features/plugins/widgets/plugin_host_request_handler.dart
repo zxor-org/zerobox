@@ -61,6 +61,8 @@ class _PluginHostRequestHandlerState
         'pickFile' => await _pickFile(request),
         'saveFile' => await _saveFile(request),
         'openUrl' => await _openUrl(request),
+        'dialog' => await _dialog(request),
+        'renderSize' => await _renderSize(),
         _ => const {'cancelled': true, 'error': 'Unsupported host request'},
       };
     } catch (error) {
@@ -74,6 +76,66 @@ class _PluginHostRequestHandlerState
             params: {'requestId': requestId, 'response': response},
           ),
         );
+  }
+
+  Future<Map<String, Object?>> _dialog(Map<String, Object?> request) async {
+    final navigator = await _waitForNavigator();
+    if (!mounted || navigator == null) return const {'cancelled': true};
+    final dialogContext = navigator.context;
+    if (!dialogContext.mounted) return const {'cancelled': true};
+    final l10n = AppLocalizations.of(dialogContext)!;
+    final buttons =
+        (request['buttons'] as List?)
+            ?.whereType<Map>()
+            .map((button) => button.cast<String, Object?>())
+            .take(4)
+            .toList(growable: false) ??
+        const <Map<String, Object?>>[];
+    final clicked = await showDialog<String>(
+      context: dialogContext,
+      builder: (context) => AlertDialog(
+        title: Text(request['title']?.toString() ?? ''),
+        content: Text(request['message']?.toString() ?? ''),
+        actions: buttons.isEmpty
+            ? [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, 'ok'),
+                  child: Text(l10n.understood),
+                ),
+              ]
+            : buttons
+                  .map((button) {
+                    final id = button['id']?.toString() ?? '';
+                    final label = button['text']?.toString() ?? id;
+                    return button['primary'] == true
+                        ? FilledButton(
+                            onPressed: id.isEmpty
+                                ? null
+                                : () => Navigator.pop(context, id),
+                            child: Text(label),
+                          )
+                        : TextButton(
+                            onPressed: id.isEmpty
+                                ? null
+                                : () => Navigator.pop(context, id),
+                            child: Text(label),
+                          );
+                  })
+                  .toList(growable: false),
+      ),
+    );
+    return clicked == null
+        ? const {'cancelled': true}
+        : {'clickedBtnId': clicked};
+  }
+
+  Future<Map<String, Object?>> _renderSize() async {
+    final navigator = await _waitForNavigator();
+    if (!mounted || navigator == null) {
+      return const {'width': 0.0, 'height': 0.0};
+    }
+    final size = MediaQuery.sizeOf(navigator.context);
+    return {'width': size.width, 'height': size.height};
   }
 
   Future<Map<String, Object?>> _permission(Map<String, Object?> request) async {
@@ -132,14 +194,25 @@ class _PluginHostRequestHandlerState
       'provider.unregister' => l10n.pluginPermissionProvider,
       'device.list' ||
       'device.info' ||
-      'device.apps.list' => l10n.pluginPermissionReadDevice,
+      'device.apps.list' ||
+      'watchface.list' => l10n.pluginPermissionReadDevice,
       'device.connect' ||
       'device.disconnect' ||
       'device.apps.launch' ||
       'device.apps.uninstall' ||
-      'device.install' => l10n.pluginPermissionOperateDevice,
+      'device.install' ||
+      'watchface.set' => l10n.pluginPermissionOperateDevice,
       'protocol.observe' => l10n.pluginPermissionObserveProtocol,
-      'protocol.send' => l10n.pluginPermissionSendProtocol,
+      'protocol.send' ||
+      'protocol.request' => l10n.pluginPermissionSendProtocol,
+      'appside.list' ||
+      'appside.sessions' ||
+      'appside.events' => l10n.pluginPermissionReadAppSide,
+      'appside.start' ||
+      'appside.stop' ||
+      'appside.send' ||
+      'appside.inject' ||
+      'appside.clearEvents' => l10n.pluginPermissionOperateAppSide,
       _ => request['description']?.toString() ?? method,
     };
     final resource = request['resource']?.toString().trim() ?? '';

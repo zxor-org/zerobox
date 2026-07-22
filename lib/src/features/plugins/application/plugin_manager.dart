@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
 import 'package:zerobox/src/commands/command_protocol.dart';
 import 'package:zerobox/src/core/logging/logging_service.dart';
 import 'package:zerobox/src/core/models/bt_models.dart';
@@ -14,6 +15,7 @@ import 'package:zerobox/src/features/plugins/domain/plugin_permission.dart';
 import 'package:zerobox/src/features/plugins/legacy/astrobox_legacy_adapter.dart';
 import 'package:zerobox/src/features/plugins/application/plugin_permission_broker.dart';
 import 'package:zerobox/src/features/plugins/application/plugin_text_file_codec.dart';
+import 'package:zerobox/src/features/plugins/application/plugin_host_environment.dart';
 import 'package:zerobox/src/features/plugins/runtime/plugin_runtime.dart';
 import 'package:zerobox/src/features/plugins/runtime/plugin_runtime_factory.dart';
 import 'package:zerobox/src/features/plugins/runtime/plugin_wasm_host.dart';
@@ -49,8 +51,8 @@ class PluginManager {
   final _runtimeStarts = <String, Future<PluginRuntime>>{};
   final _runtimes = <String, PluginRuntime>{};
   final _wasmHosts = <String, PluginWasmHost>{};
-  final _uiNodes = <String, List<Map<String, Object?>>>{};
-  final _openPages = <String, List<Map<String, Object?>>>{};
+  final _uiNodes = <String, Object?>{};
+  final _openPages = <String, Object?>{};
   final _hostRequests = <String, Completer<Map<String, Object?>>>{};
   final _providers = <String, _PluginProvider>{};
   final _failures = <String, PluginExecutionFailure>{};
@@ -248,31 +250,38 @@ class PluginManager {
     final plugin = _requirePlugin(id);
     return {
       ..._summary(plugin),
-      'ui': _uiNodes[id] ?? const [],
+      'ui': _uiNodes[id] ?? const <Object?>[],
       if (_openPages[id] != null) 'page': _openPages[id],
     };
   }
 
-  Future<List<Map<String, Object?>>> open(String id) async {
+  Future<Object?> open(String id) async {
     await initialize();
     final plugin = _requirePlugin(id);
+    _failures.remove(id);
     return _runPluginOperation(plugin, 'open', () async {
       await _ensureRuntime(id);
-      return _uiNodes[id] ?? const [];
+      return _uiNodes[id] ?? const <Object?>[];
     });
   }
 
-  Future<List<Map<String, Object?>>> invoke(
-    String id,
-    String callbackId,
-    String? value,
-  ) async {
+  Future<Object?> invoke(String id, String callbackId, String? value) async {
+    await initialize();
     final plugin = _requirePlugin(id);
-    return _runPluginOperation(plugin, 'callback', () async {
+    try {
+      final failure = _failures[id];
+      if (failure != null) throw PluginExecutionException.fromFailure(failure);
       final runtime = await _ensureRuntime(id);
       await runtime.invokeCallback(callbackId, value);
-      return _uiNodes[id] ?? const [];
-    });
+    } catch (error, stackTrace) {
+      if (error is PluginExecutionException) rethrow;
+      _log.warning(
+        'Plugin ${plugin.manifest.name} callback failed',
+        error,
+        stackTrace,
+      );
+    }
+    return _uiNodes[id] ?? const <Object?>[];
   }
 
   Future<void> closePlugin(String id) async {
@@ -521,24 +530,46 @@ class PluginManager {
       'provider.register' => _registerProvider(id, arguments),
       'provider.unregister' => _unregisterProvider(id, arguments),
       'device.list' => _deviceList(),
-      'device.info' => _deviceInfo(),
+      'device.info' => _deviceInfo(arguments),
       'device.connect' => _connectDevice(arguments),
-      'device.disconnect' => deviceManager.disconnect(),
-      'device.apps.list' => _deviceApps(),
+      'device.disconnect' => _disconnectDevice(arguments),
+      'device.apps.list' => _deviceApps(arguments),
       'device.apps.launch' => _launchPluginApp(arguments),
       'device.apps.uninstall' => _uninstallPluginApp(arguments),
       'device.install' => _installSandboxFile(id, arguments),
       'protocol.send' => _sendProtocol(arguments),
+      'protocol.request' => _sendProtocolRequest(arguments),
       'protocol.observe' => _rawProtocolObservers.add(id),
       'protocol.unobserve' => _rawProtocolObservers.remove(id),
+      'os.arch' => _osArch(),
+      'os.hostname' => _osHostname(),
+      'os.locale' => _osLocale(),
+      'os.platform' => _osPlatform(),
+      'os.version' => _osVersion(),
+      'os.language' => _osLanguage(),
+      'os.appearance' => _osAppearance(),
+      'os.timezone' => _osTimezone(),
+      'watchface.list' => _watchfaceList(arguments),
+      'watchface.set' => _setWatchface(arguments),
+      'appside.list' => _appSideList(),
+      'appside.start' => _appSideStart(arguments),
+      'appside.stop' => _appSideStop(arguments),
+      'appside.send' => _appSideSend(arguments),
+      'appside.inject' => _appSideInject(arguments),
+      'appside.sessions' => _appSideSessions(),
+      'appside.events' => _appSideEvents(arguments),
+      'appside.clearEvents' => _appSideClearEvents(arguments),
       'wasm.load' => _wasmLoad(plugin, arguments),
       'wasm.call' => _wasmCall(plugin, arguments),
       'wasm.memory.read' => _wasmMemoryRead(plugin, arguments),
       'wasm.memory.write' => _wasmMemoryWrite(plugin, arguments),
       'wasm.dispose' => _wasmDispose(plugin, arguments),
-      'ui.update' => _updateSettingsUi(id, arguments),
+      'ui.render' => _renderUi(id, arguments),
+      'ui.update' => _renderUi(id, arguments), // legacy alias
       'ui.openPage' => _openPageWithNodes(id, arguments),
       'ui.openExternal' => _openUrl(id, arguments),
+      'ui.getRenderSize' => _getRenderSize(id),
+      'ui.dialog' => _showDialog(id, arguments),
       _ => throw UnsupportedError('Unsupported ZeroBox Host API: $method'),
     };
   }
@@ -549,8 +580,10 @@ class PluginManager {
     List<Object?> arguments,
   ) {
     final policy = switch (method) {
-      'ui.update' || 'ui.openPage' => ('ui', PluginPermissionRisk.low),
-      'ui.openExternal' => ('ui', PluginPermissionRisk.medium),
+      'ui.render' ||
+      'ui.openPage' ||
+      'ui.getRenderSize' => ('ui', PluginPermissionRisk.low),
+      'ui.dialog' || 'ui.openExternal' => ('ui', PluginPermissionRisk.medium),
       'file.read' ||
       'file.write' ||
       'file.list' ||
@@ -568,14 +601,25 @@ class PluginManager {
       'provider.unregister' => ('provider', PluginPermissionRisk.medium),
       'device.list' ||
       'device.info' ||
-      'device.apps.list' => ('device', PluginPermissionRisk.medium),
+      'device.apps.list' ||
+      'watchface.list' => ('device', PluginPermissionRisk.medium),
       'device.connect' ||
       'device.disconnect' ||
       'device.apps.launch' ||
       'device.apps.uninstall' ||
-      'device.install' => ('device', PluginPermissionRisk.high),
+      'device.install' ||
+      'watchface.set' => ('device', PluginPermissionRisk.high),
       'protocol.observe' => ('protocol', PluginPermissionRisk.medium),
-      'protocol.send' => ('protocol', PluginPermissionRisk.high),
+      'protocol.send' ||
+      'protocol.request' => ('protocol', PluginPermissionRisk.high),
+      'appside.list' ||
+      'appside.sessions' ||
+      'appside.events' => ('appside', PluginPermissionRisk.medium),
+      'appside.start' ||
+      'appside.stop' ||
+      'appside.send' ||
+      'appside.inject' ||
+      'appside.clearEvents' => ('appside', PluginPermissionRisk.high),
       _ => null,
     };
     if (policy == null) return null;
@@ -585,7 +629,9 @@ class PluginManager {
         method == 'ui.openExternal' ||
         method.startsWith('interconnect.') ||
         method.startsWith('device.') ||
-        method.startsWith('protocol.');
+        method.startsWith('protocol.') ||
+        method.startsWith('watchface.') ||
+        method.startsWith('appside.');
     return PluginPermissionRequest(
       pluginId: plugin.manifest.id,
       pluginName: plugin.manifest.name,
@@ -604,12 +650,21 @@ class PluginManager {
         method == 'ui.openExternal') {
       return Uri.tryParse(arguments.firstOrNull?.toString() ?? '')?.host;
     }
-    if (method == 'interconnect.send' || method.startsWith('device.apps.')) {
+    if (method == 'interconnect.send' ||
+        method.startsWith('device.apps.') ||
+        method == 'watchface.set') {
       return arguments.firstOrNull?.toString();
     }
-    if (method == 'device.connect') return arguments.firstOrNull?.toString();
-    if (method.startsWith('device.') || method.startsWith('protocol.')) {
+    if (method == 'device.connect' || method == 'device.disconnect') {
+      return arguments.firstOrNull?.toString();
+    }
+    if (method.startsWith('device.') ||
+        method.startsWith('protocol.') ||
+        method.startsWith('watchface.')) {
       return readDeviceState().currentDevice?.name;
+    }
+    if (method.startsWith('appside.')) {
+      return arguments.firstOrNull?.toString();
     }
     if (method == 'file.unload') return arguments.firstOrNull?.toString();
     return null;
@@ -621,15 +676,17 @@ class PluginManager {
         normalized.contains('device disconnected') ||
         normalized.contains('transport disconnected') ||
         normalized.contains('has not established an interconnect session') ||
-        normalized.contains('did not establish an interconnect session');
+        normalized.contains('did not establish an interconnect session') ||
+        normalized.contains('timed out');
   }
 
   String _permissionDescription(String method, String? resource) {
     final target = resource?.isNotEmpty == true ? ' $resource' : '';
     return switch (method) {
-      'file.pick' => 'select files from the native environment',
-      'file.unload' => 'export$target to the native environment',
+      'file.pick' => 'select files from the host',
+      'file.unload' => 'export a file$target',
       'network.fetch' => 'access$target',
+      'network.download' => 'download from$target',
       'interconnect.send' => 'communicate with$target',
       'interconnect.observe' => 'receive interconnect messages',
       'provider.register' => 'register a resource provider',
@@ -644,6 +701,17 @@ class PluginManager {
       'device.install' => 'install a file on$target',
       'protocol.observe' => 'observe the protocol of$target',
       'protocol.send' => 'send raw protocol data to$target',
+      'protocol.request' => 'send a protocol request to$target',
+      'watchface.list' => 'read watchface list from$target',
+      'watchface.set' => 'switch the watchface on$target',
+      'appside.list' => 'list cached app-side scripts',
+      'appside.sessions' => 'view app-side sessions',
+      'appside.events' => 'read app-side debug events',
+      'appside.start' => "start app-side$target",
+      'appside.stop' => "stop app-side$target",
+      'appside.send' => "send app-side message to watch$target",
+      'appside.inject' => "inject a simulated message into app-side$target",
+      'appside.clearEvents' => "clear app-side debug events$target",
       _ => method,
     };
   }
@@ -937,9 +1005,11 @@ class PluginManager {
   ) async {
     final packageName = arguments.firstOrNull?.toString() ?? '';
     final data = arguments.elementAtOrNull(1)?.toString() ?? '';
+    final deviceId = arguments.elementAtOrNull(2)?.toString();
     if (packageName.isEmpty) {
       throw const FormatException('Package name is required');
     }
+    if (deviceId != null && deviceId.isNotEmpty) _validateDevice(deviceId);
     final payload = Uint8List.fromList(utf8.encode(data));
     _log.info(
       'plugin $pluginId sending interconnect message to $packageName '
@@ -965,22 +1035,43 @@ class PluginManager {
     await send;
   }
 
-  List<Map<String, Object?>> _deviceList() => readDeviceState().pairedDevices
-      .map(
-        (device) => {
-          'id': device.addr,
-          'name': device.name,
-          'connectType': device.connectType,
-          if (device.codename != null) 'codename': device.codename,
-          'connected': readDeviceState().currentDevice?.addr == device.addr,
-        },
-      )
-      .toList(growable: false);
+  String? _deviceArg(List<Object?> arguments) {
+    final raw = arguments.firstOrNull?.toString() ?? '';
+    return raw.isEmpty ? null : raw;
+  }
 
-  Map<String, Object?> _deviceInfo() {
+  void _validateDevice(String deviceId) {
+    final addresses = deviceManager.connectedAddresses;
+    if (!addresses.contains(deviceId)) {
+      throw StateError('Device $deviceId is not connected');
+    }
+  }
+
+  List<Map<String, Object?>> _deviceList() {
+    final state = readDeviceState();
+    final connected = deviceManager.connectedAddresses;
+    return state.pairedDevices
+        .map(
+          (device) => {
+            'id': device.addr,
+            'name': device.name,
+            'connectType': device.connectType,
+            if (device.codename != null) 'codename': device.codename,
+            'connected': connected.contains(device.addr),
+            'current': state.currentDevice?.addr == device.addr,
+          },
+        )
+        .toList(growable: false);
+  }
+
+  Map<String, Object?> _deviceInfo(List<Object?> arguments) {
+    final id = _deviceArg(arguments);
     final state = readDeviceState();
     final device = state.currentDevice;
     if (device == null) throw StateError('No device is connected');
+    if (id != null && id != device.addr) {
+      throw StateError('Device $id is not the active device');
+    }
     return {
       'id': device.addr,
       'name': device.name,
@@ -991,6 +1082,10 @@ class PluginManager {
         'firmwareVersion': state.systemInfo!.firmwareVersion,
       },
     };
+  }
+
+  Future<void> _disconnectDevice(List<Object?> arguments) async {
+    await deviceManager.disconnect(_deviceArg(arguments));
   }
 
   Future<Map<String, Object?>> _connectDevice(List<Object?> arguments) async {
@@ -1008,10 +1103,12 @@ class PluginManager {
       authKey,
       connectType: target.connectType,
     );
-    return _deviceInfo();
+    return _deviceInfo(const []);
   }
 
-  Future<List<Map<String, Object?>>> _deviceApps() async {
+  Future<List<Map<String, Object?>>> _deviceApps(
+    List<Object?> arguments,
+  ) async {
     await deviceManager.fetchApps();
     return readDeviceState().apps
         .map(
@@ -1076,7 +1173,137 @@ class PluginManager {
   }
 
   Future<void> _sendProtocol(List<Object?> arguments) async {
-    await deviceManager.sendRaw(_bytes(arguments.firstOrNull));
+    final data = _bytes(arguments.firstOrNull);
+    final options = _jsonMap(arguments.elementAtOrNull(1));
+    _deviceArg([options['id']]);
+    await deviceManager.sendRaw(data);
+  }
+
+  Future<Map<String, Object?>> _sendProtocolRequest(
+    List<Object?> arguments,
+  ) async {
+    final data = _bytes(arguments.firstOrNull);
+    final options = _jsonMap(arguments.elementAtOrNull(1));
+    _deviceArg([options['id']]);
+    await deviceManager.sendRaw(data);
+    return {};
+  }
+
+  String _osArch() => pluginHostArchitecture();
+  String _osHostname() => pluginHostHostname();
+  String _osLocale() => pluginHostLocale();
+  String _osPlatform() => pluginHostPlatform();
+  String _osVersion() => pluginHostVersion();
+  String _osLanguage() => pluginHostLocale().split(RegExp('[-_]')).first;
+  String _osAppearance() {
+    final b = WidgetsBinding.instance.platformDispatcher.platformBrightness;
+    return b == Brightness.dark ? 'dark' : 'light';
+  }
+
+  int _osTimezone() => DateTime.now().timeZoneOffset.inMinutes;
+  Future<List<Map<String, Object?>>> _watchfaceList(
+    List<Object?> arguments,
+  ) async {
+    _deviceArg(arguments);
+    await deviceManager.fetchWatchfaces();
+    return readDeviceState().watchfaces
+        .map((wf) => {'id': wf.id, 'name': wf.name, 'current': wf.isCurrent})
+        .toList();
+  }
+
+  Future<void> _setWatchface(List<Object?> arguments) async {
+    final id = arguments.firstOrNull?.toString() ?? '';
+    if (id.isEmpty) throw const FormatException('watchface id required');
+    _deviceArg(arguments.skip(1).toList());
+    final state = readDeviceState();
+    final target = state.watchfaces.where((wf) => wf.id == id).firstOrNull;
+    if (target == null) throw StateError('Watchface not found: $id');
+    await deviceManager.setWatchface(target);
+  }
+
+  Future<List<int>> _appSideList() => deviceManager.listZeppOsAppSides();
+
+  Future<void> _appSideStart(List<Object?> arguments) async {
+    final appId = _parseAppSideId(arguments);
+    await deviceManager.startZeppOsAppSide(appId);
+  }
+
+  Future<void> _appSideStop(List<Object?> arguments) async {
+    final appId = _parseAppSideId(arguments);
+    await deviceManager.stopZeppOsAppSide(appId);
+  }
+
+  Future<void> _appSideSend(List<Object?> arguments) async {
+    final appId = _parseAppSideId(arguments);
+    final data = _decodeHex(arguments.elementAtOrNull(1)?.toString() ?? '');
+    await deviceManager.sendZeppOsAppSideMessage(appId, data);
+  }
+
+  Future<void> _appSideInject(List<Object?> arguments) async {
+    final appId = _parseAppSideId(arguments);
+    final data = _decodeHex(arguments.elementAtOrNull(1)?.toString() ?? '');
+    await deviceManager.injectZeppOsAppSideMessage(appId, data);
+  }
+
+  Future<List<Map<String, Object?>>> _appSideSessions() async {
+    final sessions = await deviceManager.zeppOsAppSideSessions();
+    return sessions
+        .map(
+          (s) => {
+            'appId': s.appId,
+            'version': s.version,
+            'port1': s.port1,
+            'port2': s.port2,
+            'extra': s.extra,
+            'watchSessionOpen': s.watchSessionOpen,
+          },
+        )
+        .toList(growable: false);
+  }
+
+  Future<List<Map<String, Object?>>> _appSideEvents(
+    List<Object?> arguments,
+  ) async {
+    final appId = _parseAppSideId(arguments);
+    final events = await deviceManager.zeppOsAppSideEvents(appId);
+    return events
+        .map(
+          (e) => {
+            'timestamp': e.timestamp.toIso8601String(),
+            'type': e.type,
+            'message': e.message,
+            if (e.direction != null) 'direction': e.direction,
+            if (e.source != null) 'source': e.source,
+            if (e.payload != null) 'payload': base64Encode(e.payload!),
+          },
+        )
+        .toList(growable: false);
+  }
+
+  Future<void> _appSideClearEvents(List<Object?> arguments) async {
+    final appId = _parseAppSideId(arguments);
+    await deviceManager.clearZeppOsAppSideEvents(appId);
+  }
+
+  int _parseAppSideId(List<Object?> arguments) {
+    final value = arguments.firstOrNull;
+    final parsed = value is num
+        ? value.toInt()
+        : int.tryParse(value?.toString() ?? '');
+    if (parsed == null || parsed <= 0) {
+      throw const FormatException('appId must be a positive integer');
+    }
+    return parsed;
+  }
+
+  static Uint8List _decodeHex(String value) {
+    if (value.length.isOdd || !RegExp(r'^[0-9a-fA-F]*$').hasMatch(value)) {
+      throw const FormatException('Invalid hex');
+    }
+    return Uint8List.fromList([
+      for (var i = 0; i < value.length; i += 2)
+        int.parse(value.substring(i, i + 2), radix: 16),
+    ]);
   }
 
   Future<String> _wasmLoad(
@@ -1337,37 +1564,122 @@ class PluginManager {
     return null;
   }
 
-  Object? _openPageWithNodes(String id, List<Object?> arguments) {
-    final nodes = _parseUiNodes(arguments.firstOrNull);
-    _openPages[id] = nodes;
+  Future<void> _openPageWithNodes(String id, List<Object?> arguments) async {
+    final tree = await _resolveUiAssets(
+      id,
+      _parseUiTree(arguments.firstOrNull),
+    );
+    _openPages[id] = tree;
     emitEvent(
-      CommandEvent('plugin.ui', data: {'id': id, 'nodes': nodes, 'page': true}),
+      CommandEvent('plugin.ui', data: {'id': id, 'nodes': tree, 'page': true}),
     );
     _emitDiagnosticState(id);
-    return null;
   }
 
-  Object? _updateSettingsUi(String id, List<Object?> arguments) {
-    final nodes = _parseUiNodes(arguments.firstOrNull);
-    _uiNodes[id] = nodes;
+  Future<void> _renderUi(String id, List<Object?> arguments) async {
+    final tree = await _resolveUiAssets(
+      id,
+      _parseUiTree(arguments.firstOrNull),
+    );
+    _uiNodes[id] = tree;
     _openPages.remove(id);
-    emitEvent(CommandEvent('plugin.ui', data: {'id': id, 'nodes': nodes}));
+    emitEvent(CommandEvent('plugin.ui', data: {'id': id, 'nodes': tree}));
     _emitDiagnosticState(id);
-    return null;
   }
 
-  List<Map<String, Object?>> _parseUiNodes(Object? value) {
+  Future<Map<String, Object?>> _resolveUiAssets(
+    String pluginId,
+    Map<String, Object?> node,
+  ) async {
+    final props = Map<String, Object?>.of(
+      (node['props'] as Map?)?.cast<String, Object?>() ?? const {},
+    );
+    if (node['type'] == 'Image') {
+      final source = props['src']?.toString() ?? '';
+      if (source.isNotEmpty) {
+        final bytes = await (await _storage).readFile(
+          pluginId,
+          PluginStoragePath.parse(source),
+        );
+        if (bytes.length > 4 * 1024 * 1024) {
+          throw const FormatException('Plugin UI images must not exceed 4 MiB');
+        }
+        props['data'] = base64Encode(bytes);
+      }
+    }
+    final rawChildren = node['children'];
+    final children = <Map<String, Object?>>[];
+    if (rawChildren is List) {
+      for (final child in rawChildren.whereType<Map>()) {
+        children.add(
+          await _resolveUiAssets(pluginId, child.cast<String, Object?>()),
+        );
+      }
+    }
+    return {'type': node['type'], 'props': props, 'children': children};
+  }
+
+  Future<Map<String, Object?>> _getRenderSize(String id) =>
+      _requestHost(id, 'renderSize', const {});
+
+  Future<Map<String, Object?>> _showDialog(String id, List<Object?> arguments) {
+    final opts = _jsonMap(arguments.firstOrNull);
+    return _requestHost(id, 'dialog', {
+      'title': opts['title']?.toString() ?? '',
+      'message': opts['message']?.toString() ?? '',
+      'buttons': opts['buttons'] ?? const <Object?>[],
+    });
+  }
+
+  /// Parses a UI tree. Accepts new tree format `{type, props, children}`
+  /// or legacy flat list `[{node_id, content, ...}]` (auto-wrapped in Column).
+  /// Both `ui.render` and `ui.update` (legacy) go through this parser.
+  Map<String, Object?> _parseUiTree(Object? value) {
     final raw = value is String ? jsonDecode(value) : value;
-    if (raw is! List) throw const FormatException('Plugin UI must be a list');
+    if (raw is List) {
+      // Legacy flat list → wrap in Column with default padding + centering
+      final nodes = _parseLegacyNodes(raw);
+      return {
+        'type': 'Column',
+        'props': const <String, Object?>{
+          'padding': 16,
+          'gap': 12,
+          'align': 'center',
+        },
+        'children': nodes,
+      };
+    }
+    if (raw is! Map) throw const FormatException('Plugin UI must be an object');
+    return _parseTreeNode(raw.cast<String, Object?>());
+  }
+
+  Map<String, Object?> _parseTreeNode(Map<String, Object?> node) {
+    final type = node['type']?.toString();
+    if (type == null || type.isEmpty) {
+      throw const FormatException('Plugin UI node must have a type');
+    }
+    final props = (node['props'] as Map?)?.cast<String, Object?>() ?? const {};
+    final rawChildren = node['children'];
+    final children = rawChildren is List
+        ? rawChildren
+              .whereType<Map>()
+              .map((c) => _parseTreeNode(c.cast<String, Object?>()))
+              .toList(growable: false)
+        : const <Map<String, Object?>>[];
+    if (children.length > 256) {
+      throw const FormatException('Plugin UI contains too many nodes');
+    }
+    return {'type': type, 'props': props, 'children': children};
+  }
+
+  List<Map<String, Object?>> _parseLegacyNodes(List raw) {
     if (raw.length > 256) {
       throw const FormatException('Plugin UI contains too many nodes');
     }
     final ids = <String>{};
     return raw
+        .whereType<Map>()
         .map((value) {
-          if (value is! Map) {
-            throw const FormatException('Plugin UI node must be an object');
-          }
           final node = value.cast<String, Object?>();
           final id = node['node_id']?.toString() ?? '';
           if (id.isEmpty || !ids.add(id)) {
@@ -1375,66 +1687,73 @@ class PluginManager {
               'Invalid or duplicate plugin UI node ID: $id',
             );
           }
-          final contentValue = node['content'];
-          if (contentValue is! Map) {
-            throw FormatException('Plugin UI node $id has no content');
-          }
-          final content = contentValue.cast<String, Object?>();
-          final type = content['type']?.toString() ?? '';
-          final payload = content['value'];
-          switch (type) {
-            case 'Text' || 'HtmlDocument':
-              if (payload is! String) {
-                throw FormatException('Plugin UI $type node $id requires text');
-              }
-              break;
+          final content =
+              (node['content'] as Map?)?.cast<String, Object?>() ?? const {};
+          final legacyType = content['type']?.toString();
+          final legacyValue = content['value'];
+          final disabled = node['disabled'] == true;
+          switch (legacyType) {
+            case 'Text':
+              return {
+                'type': 'Text',
+                'props': {'value': legacyValue?.toString() ?? ''},
+                'children': const <Map<String, Object?>>[],
+              };
+            case 'HtmlDocument':
+              return {
+                'type': 'HtmlDocument',
+                'props': {'value': legacyValue?.toString() ?? ''},
+                'children': const <Map<String, Object?>>[],
+              };
             case 'Button':
-              _validateUiCallbackPayload(id, type, payload, requireText: true);
-              break;
+              final button =
+                  (legacyValue as Map?)?.cast<String, Object?>() ?? const {};
+              return {
+                'type': 'Button',
+                'props': {
+                  'text': button['text']?.toString() ?? '',
+                  'primary': button['primary'] == true,
+                  'onClick': button['callback_fun_id']?.toString() ?? '',
+                  if (disabled) 'disabled': true,
+                },
+                'children': const <Map<String, Object?>>[],
+              };
             case 'Input':
-              _validateUiCallbackPayload(id, type, payload, requireText: true);
-              break;
+              final input =
+                  (legacyValue as Map?)?.cast<String, Object?>() ?? const {};
+              return {
+                'type': 'TextField',
+                'props': {
+                  'value': input['text']?.toString() ?? '',
+                  'onChange': input['callback_fun_id']?.toString() ?? '',
+                  if (disabled) 'disabled': true,
+                },
+                'children': const <Map<String, Object?>>[],
+              };
             case 'Dropdown':
-              final values = _validateUiCallbackPayload(id, type, payload);
-              final options = values['options'];
-              if (options is! List ||
-                  options.length > 256 ||
-                  options.any((option) => option is! String)) {
-                throw FormatException(
-                  'Plugin UI Dropdown node $id has invalid options',
-                );
-              }
-              break;
+              final dropdown =
+                  (legacyValue as Map?)?.cast<String, Object?>() ?? const {};
+              final options =
+                  (dropdown['options'] as List?)
+                      ?.map((o) => o.toString())
+                      .toList(growable: false) ??
+                  const <String>[];
+              return {
+                'type': 'Dropdown',
+                'props': {
+                  'options': options,
+                  'onChange': dropdown['callback_fun_id']?.toString() ?? '',
+                  if (disabled) 'disabled': true,
+                },
+                'children': const <Map<String, Object?>>[],
+              };
             default:
-              throw FormatException('Unsupported plugin UI node type: $type');
+              throw FormatException(
+                'Unsupported plugin UI node type: $legacyType',
+              );
           }
-          return {
-            'node_id': id,
-            'visibility': node['visibility'] != false,
-            'disabled': node['disabled'] == true,
-            'content': {'type': type, 'value': payload},
-          };
         })
         .toList(growable: false);
-  }
-
-  Map<String, Object?> _validateUiCallbackPayload(
-    String id,
-    String type,
-    Object? value, {
-    bool requireText = false,
-  }) {
-    if (value is! Map) {
-      throw FormatException('Plugin UI $type node $id requires an object');
-    }
-    final values = value.cast<String, Object?>();
-    if (values['callback_fun_id']?.toString().isEmpty != false) {
-      throw FormatException('Plugin UI $type node $id has no callback');
-    }
-    if (requireText && values['text'] is! String) {
-      throw FormatException('Plugin UI $type node $id has no text');
-    }
-    return values;
   }
 
   Future<Map<String, Object?>> _openUrl(String id, List<Object?> arguments) {

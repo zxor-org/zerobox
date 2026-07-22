@@ -8,7 +8,7 @@ import 'package:zerobox/src/core/logging/logging_service.dart';
 import 'package:zerobox/src/core/services/build_info_service.dart';
 import 'package:zerobox/src/core/services/shared_prefs_service.dart';
 
-const _brokerBaseUrl = 'https://auth.zxor.org';
+const _brokerBaseUrl = 'https://zb-api.zxor.org';
 const _clientAppId = 'zerobox';
 const _callbackUri = 'zerobox://oauth/bandbbs';
 
@@ -52,15 +52,14 @@ class BandBbsToken {
 
   static BandBbsToken? fromJson(Map<String, Object?> json) {
     final accessToken = json['access_token']?.toString() ?? '';
-    final refreshToken = json['refresh_token']?.toString() ?? '';
     final expiresAtRaw = json['expires_at']?.toString() ?? '';
     final expiresAt = DateTime.tryParse(expiresAtRaw);
-    if (accessToken.isEmpty || refreshToken.isEmpty || expiresAt == null) {
+    if (accessToken.isEmpty || expiresAt == null) {
       return null;
     }
     return BandBbsToken(
       accessToken: accessToken,
-      refreshToken: refreshToken,
+      refreshToken: json['refresh_token']?.toString() ?? '',
       tokenType: json['token_type']?.toString() ?? 'bearer',
       expiresAt: expiresAt.toUtc(),
       scope: json['scope']?.toString() ?? '',
@@ -77,6 +76,7 @@ class BandBbsToken {
 class BandBbsAuthState {
   const BandBbsAuthState({
     required this.token,
+    required this.session,
     required this.userId,
     required this.username,
     required this.avatarUrl,
@@ -84,7 +84,10 @@ class BandBbsAuthState {
     required this.lastError,
   });
 
+  /// BandBBS API token for bandbbs.cn requests.
   final BandBbsToken? token;
+  /// ZeroBox session token for zb-api.zxor.org requests.
+  final BandBbsToken? session;
   final String? userId;
   final String? username;
   final String? avatarUrl;
@@ -96,6 +99,8 @@ class BandBbsAuthState {
   BandBbsAuthState copyWith({
     BandBbsToken? token,
     bool clearToken = false,
+    BandBbsToken? session,
+    bool clearSession = false,
     String? userId,
     bool clearUserId = false,
     String? username,
@@ -108,6 +113,7 @@ class BandBbsAuthState {
   }) {
     return BandBbsAuthState(
       token: clearToken ? null : token ?? this.token,
+      session: clearSession ? null : session ?? this.session,
       userId: clearUserId ? null : userId ?? this.userId,
       username: clearUsername ? null : username ?? this.username,
       avatarUrl: clearAvatarUrl ? null : avatarUrl ?? this.avatarUrl,
@@ -118,6 +124,7 @@ class BandBbsAuthState {
 
   static const empty = BandBbsAuthState(
     token: null,
+    session: null,
     userId: null,
     username: null,
     avatarUrl: null,
@@ -128,6 +135,7 @@ class BandBbsAuthState {
 
 class BandBbsAuthNotifier extends Notifier<BandBbsAuthState> {
   static const _keyToken = 'bandbbs.oauth.token';
+  static const _keySession = 'bandbbs.oauth.session';
   static const _keyUserId = 'bandbbs.oauth.user_id';
   static const _keyUsername = 'bandbbs.oauth.username';
   static const _keyAvatarUrl = 'bandbbs.oauth.avatar_url';
@@ -145,22 +153,11 @@ class BandBbsAuthNotifier extends Notifier<BandBbsAuthState> {
   @override
   BandBbsAuthState build() {
     final prefs = SharedPrefsService.instance;
-    final tokenRaw = prefs.getString(_keyToken);
-    BandBbsToken? token;
-    if (tokenRaw != null) {
-      try {
-        final decoded = jsonDecode(tokenRaw);
-        if (decoded is Map<String, Object?>) {
-          token = BandBbsToken.fromJson(decoded);
-        } else if (decoded is Map) {
-          token = BandBbsToken.fromJson(decoded.cast<String, Object?>());
-        }
-      } catch (_) {
-        token = null;
-      }
-    }
+    BandBbsToken? token = _loadToken(prefs, _keyToken);
+    BandBbsToken? session = _loadToken(prefs, _keySession);
     final initial = BandBbsAuthState.empty.copyWith(
       token: token,
+      session: session,
       userId: prefs.getString(_keyUserId),
       username: prefs.getString(_keyUsername),
       avatarUrl: prefs.getString(_keyAvatarUrl),
@@ -170,6 +167,17 @@ class BandBbsAuthNotifier extends Notifier<BandBbsAuthState> {
       Future.microtask(() => _fetchTokenInfo(restoredToken));
     }
     return initial;
+  }
+
+  BandBbsToken? _loadToken(SharedPrefsService prefs, String key) {
+    final raw = prefs.getString(key);
+    if (raw == null) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, Object?>) return BandBbsToken.fromJson(decoded);
+      if (decoded is Map) return BandBbsToken.fromJson(decoded.cast<String, Object?>());
+    } catch (_) {}
+    return null;
   }
 
   Future<void> startLogin() async {
@@ -188,10 +196,7 @@ class BandBbsAuthNotifier extends Notifier<BandBbsAuthState> {
         'BandBBS OAuth start method=GET endpoint=${_endpoint(uri)} '
         'platform=${_platformName()} appVersion=${BuildInfoService.appVersion}',
       );
-      final launched = await launchUrl(
-        uri,
-        mode: LaunchMode.externalApplication,
-      );
+      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!launched) {
         throw StateError('failed to open BandBBS OAuth page');
       }
@@ -203,9 +208,7 @@ class BandBbsAuthNotifier extends Notifier<BandBbsAuthState> {
   }
 
   Future<bool> handleCallback(Uri uri) async {
-    if (uri.scheme != 'zerobox' ||
-        uri.host != 'oauth' ||
-        uri.path != '/bandbbs') {
+    if (uri.scheme != 'zerobox' || uri.host != 'oauth' || uri.path != '/bandbbs') {
       return false;
     }
     final ticket = uri.queryParameters['ticket']?.trim() ?? '';
@@ -231,9 +234,17 @@ class BandBbsAuthNotifier extends Notifier<BandBbsAuthState> {
           options: Options(headers: await _clientHeaders()),
         ),
       );
-      final token = BandBbsToken.fromTokenResponse(_objectMap(response.data));
+      final root = _objectMap(response.data);
+      // Top-level = ZeroBox session tokens.
+      final session = BandBbsToken.fromTokenResponse(root);
+      await SharedPrefsService.instance.setString(_keySession, jsonEncode(session.toJson()));
+      // Nested bandbbs = actual BandBBS API token.
+      final bandbbs = _objectMap(root['bandbbs']);
+      final token = bandbbs.isNotEmpty
+          ? BandBbsToken.fromTokenResponse(bandbbs)
+          : session;
       await _saveToken(token);
-      state = state.copyWith(token: token, isBusy: false, clearLastError: true);
+      state = state.copyWith(token: token, session: session, isBusy: false, clearLastError: true);
       await _fetchTokenInfo(token);
     } catch (e) {
       state = state.copyWith(isBusy: false, lastError: e.toString());
@@ -249,27 +260,45 @@ class BandBbsAuthNotifier extends Notifier<BandBbsAuthState> {
   }
 
   Future<BandBbsToken> refresh() async {
-    final oldToken = state.token;
-    if (oldToken == null) {
+    final oldSession = state.session;
+    if (oldSession == null) {
       throw StateError('BandBBS account is not signed in');
     }
-    final response = await _send<Object?>(
+    // Step 1: refresh ZeroBox session.
+    final sessionResp = await _send<Object?>(
       () async => _dio.post<Object?>(
         '/api/oauth/bandbbs/refresh',
-        data: {'refresh_token': oldToken.refreshToken},
+        data: {'refresh_token': oldSession.refreshToken},
         options: Options(headers: await _clientHeaders()),
       ),
     );
-    final token = BandBbsToken.fromTokenResponse(_objectMap(response.data));
-    await _saveToken(token);
-    state = state.copyWith(token: token, clearLastError: true);
-    await _fetchTokenInfo(token);
-    return token;
+    final newSession = BandBbsToken.fromTokenResponse(_objectMap(sessionResp.data));
+    await SharedPrefsService.instance.setString(_keySession, jsonEncode(newSession.toJson()));
+    state = state.copyWith(session: newSession, clearLastError: true);
+
+    // Step 2: refresh BandBBS API token using the new session.
+    final tokenResp = await _send<Object?>(
+      () async => _dio.post<Object?>(
+        '/api/oauth/bandbbs/token/refresh',
+        options: Options(
+          headers: {
+            ...await _clientHeaders(),
+            'Authorization': 'Bearer ${newSession.accessToken}',
+          },
+        ),
+      ),
+    );
+    final newToken = BandBbsToken.fromTokenResponse(_objectMap(tokenResp.data));
+    await _saveToken(newToken);
+    state = state.copyWith(token: newToken, clearLastError: true);
+    await _fetchTokenInfo(newToken);
+    return newToken;
   }
 
   Future<void> signOut() async {
     final prefs = SharedPrefsService.instance;
     await prefs.remove(_keyToken);
+    await prefs.remove(_keySession);
     await prefs.remove(_keyUserId);
     await prefs.remove(_keyUsername);
     await prefs.remove(_keyAvatarUrl);
@@ -286,10 +315,7 @@ class BandBbsAuthNotifier extends Notifier<BandBbsAuthState> {
   }
 
   Future<void> _saveToken(BandBbsToken token) async {
-    await SharedPrefsService.instance.setString(
-      _keyToken,
-      jsonEncode(token.toJson()),
-    );
+    await SharedPrefsService.instance.setString(_keyToken, jsonEncode(token.toJson()));
   }
 
   Future<void> _fetchTokenInfo(BandBbsToken token) async {
@@ -306,9 +332,7 @@ class BandBbsAuthNotifier extends Notifier<BandBbsAuthState> {
         await prefs.setString(_keyUserId, userId);
         state = state.copyWith(userId: userId);
       }
-    } catch (_) {
-      // User info is only for display. Token exchange success is enough here.
-    }
+    } catch (_) {}
     try {
       final response = await _send<Object?>(
         () async => Dio().get<Object?>(
@@ -321,19 +345,13 @@ class BandBbsAuthNotifier extends Notifier<BandBbsAuthState> {
       final me = _objectMap(_objectMap(response.data)['me']);
       final username = me['username']?.toString() ?? '';
       final avatarUrl = _objectMap(me['avatar_urls'])['m']?.toString() ?? '';
-      if (username.isNotEmpty) {
-        await prefs.setString(_keyUsername, username);
-      }
-      if (avatarUrl.isNotEmpty) {
-        await prefs.setString(_keyAvatarUrl, avatarUrl);
-      }
+      if (username.isNotEmpty) await prefs.setString(_keyUsername, username);
+      if (avatarUrl.isNotEmpty) await prefs.setString(_keyAvatarUrl, avatarUrl);
       state = state.copyWith(
         username: username.isNotEmpty ? username : null,
         avatarUrl: avatarUrl.isNotEmpty ? avatarUrl : null,
       );
-    } catch (_) {
-      // Avatar and nickname are only for display.
-    }
+    } catch (_) {}
   }
 
   String _platformName() {
@@ -386,11 +404,10 @@ class BandBbsAuthNotifier extends Notifier<BandBbsAuthState> {
   String _responseSummary(String path, Object? data) {
     final root = _objectMap(data);
     if (path == '/api/oauth2/token') {
-      final scopes = root['scope'];
       return _fields({
         'userId': root['user_id'],
         'expiresIn': root['expires_in'],
-        'scopeCount': scopes is Map ? scopes.length : null,
+        'scopeCount': root['scope'] is Map ? (root['scope'] as Map).length : null,
       });
     }
     if (path == '/api/me') {
@@ -398,15 +415,13 @@ class BandBbsAuthNotifier extends Notifier<BandBbsAuthState> {
       return _fields({'userId': me['user_id'], 'username': me['username']});
     }
     if (path == '/api/oauth/bandbbs/exchange' ||
-        path == '/api/oauth/bandbbs/refresh') {
+        path == '/api/oauth/bandbbs/refresh' ||
+        path == '/api/oauth/bandbbs/token/refresh') {
       return _fields({
         'tokenType': root['token_type'],
         'expiresIn': root['expires_in'],
-        'scope': root['scope'],
-        'accessTokenReceived':
-            root['access_token']?.toString().isNotEmpty == true,
-        'refreshTokenReceived':
-            root['refresh_token']?.toString().isNotEmpty == true,
+        'accessTokenReceived': root['access_token']?.toString().isNotEmpty == true,
+        'refreshTokenReceived': root['refresh_token']?.toString().isNotEmpty == true,
       });
     }
     return '';

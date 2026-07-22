@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:zerobox/src/core/models/bt_models.dart';
-import 'package:zerobox/src/device/core/event_bus.dart';
 import 'package:zerobox/src/device/core/system.dart';
 import 'package:zerobox/src/device/zeppos/zeppos_device_component.dart';
 
@@ -29,7 +28,9 @@ class ZeppOsAppsSystem extends System {
 
   Future<List<AppInfo>> fetchApps() async {
     final pending = _pendingList;
-    if (pending != null) return pending.future;
+    if (pending != null) {
+      return pending.future.timeout(const Duration(seconds: 8));
+    }
 
     final completer = Completer<List<AppInfo>>();
     _pendingList = completer;
@@ -38,11 +39,7 @@ class ZeppOsAppsSystem extends System {
         ..[0] = _appsCommand
         ..[1] = _outgoing
         ..[2] = _list;
-      await _component.sendToEndpoint(
-        endpoint,
-        request,
-        encrypted: encrypted,
-      );
+      await _component.sendToEndpoint(endpoint, request, encrypted: encrypted);
       return await completer.future.timeout(const Duration(seconds: 8));
     } finally {
       if (identical(_pendingList, completer)) _pendingList = null;
@@ -67,11 +64,7 @@ class ZeppOsAppsSystem extends System {
       ..[1] = _outgoing
       ..[2] = _delete;
     _writeUint32Le(payload, 16, id);
-    await _component.sendToEndpoint(
-      endpoint,
-      payload,
-      encrypted: encrypted,
-    );
+    await _component.sendToEndpoint(endpoint, payload, encrypted: encrypted);
   }
 
   void handlePayload(Uint8List payload) {
@@ -84,7 +77,6 @@ class ZeppOsAppsSystem extends System {
 
     final apps = _parseAppList(payload);
     _apps = List.unmodifiable(apps);
-    entity.emit(AppListUpdated(deviceId: entity.id, apps: _apps));
     final pending = _pendingList;
     if (pending != null && !pending.isCompleted) pending.complete(_apps);
   }
@@ -136,9 +128,10 @@ class ZeppOsAppsSystem extends System {
       '0x${id.toRadixString(16).padLeft(8, '0').toUpperCase()}';
 
   static int _versionCode(String version) {
-    final parts = RegExp(r'\d+').allMatches(version).take(3).map(
-      (match) => int.tryParse(match.group(0)!) ?? 0,
-    );
+    final parts = RegExp(r'\d+')
+        .allMatches(version)
+        .take(3)
+        .map((match) => int.tryParse(match.group(0)!) ?? 0);
     final values = [...parts, 0, 0, 0];
     return values[0] * 1000000 + values[1] * 1000 + values[2];
   }

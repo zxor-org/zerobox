@@ -125,5 +125,6 @@ abstract class BluetoothPlatform {
     String name,
     BluetoothConnectOptions options,
   );
-  Future<void> disconnect();
+  Future<void> disconnect(String address);
+  Future<void> disconnectAll();
 }

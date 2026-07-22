@@ -983,14 +983,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Sign in to your Amazfit account in Settings first';
 
   @override
-  String get unsupportedDeviceResourceTitle =>
-      'Unsupported device/resource type';
-
-  @override
-  String get unsupportedDeviceResourceMessage =>
-      'ZeroBox does not currently support this device or resource type. Do not attempt to install resources from this category, as unexpected issues may occur.';
-
-  @override
   String get understood => 'I understand';
 
   @override
@@ -1483,6 +1475,12 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get pluginPermissionSendProtocol =>
       'send raw protocol data to a device';
+
+  @override
+  String get pluginPermissionReadAppSide => 'read AppSide scripts and events';
+
+  @override
+  String get pluginPermissionOperateAppSide => 'manage AppSide sessions';
 
   @override
   String get pluginErrorTitle => 'Plugin runtime error';

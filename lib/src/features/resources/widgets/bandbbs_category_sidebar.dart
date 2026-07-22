@@ -4,7 +4,6 @@ import 'package:zerobox/src/app/generated/app_localizations.dart';
 import 'package:zerobox/src/data/bandbbs/bandbbs_resource_provider.dart';
 import 'package:zerobox/src/features/resources/application/resource_catalog_providers.dart';
 import 'package:zerobox/src/features/resources/controllers/resource_filter_controller.dart';
-import 'package:zerobox/src/features/resources/widgets/unsupported_resource_warning.dart';
 
 /// Responsive category sidebar for the BandBBS source, modeled after the
 /// bandbbs.cn category tree: expandable groups with aggregate resource
@@ -69,11 +68,7 @@ class _BandBbsCategorySidebarState
                     onToggle: (id) => setState(() {
                       if (!_expanded.add(id)) _expanded.remove(id);
                     }),
-                    onSelect: (node) async {
-                      if (needsUnsupportedResourceWarning(node.title)) {
-                        await showUnsupportedResourceWarning(context, l10n);
-                        if (!context.mounted) return;
-                      }
+                    onSelect: (node) {
                       ref
                           .read(resourceFiltersProvider.notifier)
                           .selectDevice(

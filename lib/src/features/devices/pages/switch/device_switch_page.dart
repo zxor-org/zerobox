@@ -169,7 +169,10 @@ class _DeviceSwitchPageState extends ConsumerState<DeviceSwitchPage> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Expanded(
-                            child: _ListWrapper(isFirst: true, child: savedList),
+                            child: _ListWrapper(
+                              isFirst: true,
+                              child: savedList,
+                            ),
                           ),
                           Container(
                             width: 1,
@@ -179,7 +182,10 @@ class _DeviceSwitchPageState extends ConsumerState<DeviceSwitchPage> {
                             ).colorScheme.outlineVariant.withValues(alpha: 0.5),
                           ),
                           Expanded(
-                            child: _ListWrapper(isFirst: false, child: scanList),
+                            child: _ListWrapper(
+                              isFirst: false,
+                              child: scanList,
+                            ),
                           ),
                         ],
                       )
@@ -205,7 +211,9 @@ class _DeviceSwitchPageState extends ConsumerState<DeviceSwitchPage> {
                               onComplete: () => setState(() {}),
                             ),
                           ),
-                          _SliverScanDeviceList(onComplete: () => setState(() {})),
+                          _SliverScanDeviceList(
+                            onComplete: () => setState(() {}),
+                          ),
                         ],
                       ),
               ),
@@ -277,9 +285,6 @@ class _DeviceSwitchPageState extends ConsumerState<DeviceSwitchPage> {
                           return _DeviceCard(
                             key: ValueKey('web-saved-${device.addr}'),
                             device: device,
-                            connected:
-                                device.addr == currentAddr &&
-                                !device.disconnected,
                             saved: true,
                           );
                         },
@@ -446,12 +451,19 @@ class _SavedDeviceList extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context)!;
     final state = ref.watch(deviceManagerProvider);
+    final currentAddr = state.currentDevice?.addr;
+    final sorted = [...state.pairedDevices]
+      ..sort((a, b) {
+        final aCurrent = a.addr == currentAddr ? 0 : 1;
+        final bCurrent = b.addr == currentAddr ? 0 : 1;
+        return aCurrent.compareTo(bCurrent);
+      });
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _SectionHeader(title: l10n.savedDevices, hiddenOnMobile: true),
-        if (state.pairedDevices.isEmpty)
+        if (sorted.isEmpty)
           const Flexible(
             child: SizedBox(height: 240, child: _EmptyState(message: '')),
           )
@@ -459,14 +471,12 @@ class _SavedDeviceList extends ConsumerWidget {
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.only(top: 8),
-              itemCount: state.pairedDevices.length,
+              itemCount: sorted.length,
               itemBuilder: (context, index) {
-                final device = state.pairedDevices[index];
+                final device = sorted[index];
                 return _DeviceCard(
                   key: ValueKey('saved-${device.addr}'),
                   device: device,
-                  connected:
-                      device.addr == selectedAddr && !device.disconnected,
                   saved: true,
                   onComplete: onComplete,
                 );
@@ -569,20 +579,26 @@ class _SliverSavedDeviceList extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(deviceManagerProvider);
+    final currentAddr = state.currentDevice?.addr;
+    final sorted = [...state.pairedDevices]
+      ..sort((a, b) {
+        final aCurrent = a.addr == currentAddr ? 0 : 1;
+        final bCurrent = b.addr == currentAddr ? 0 : 1;
+        return aCurrent.compareTo(bCurrent);
+      });
 
-    if (state.pairedDevices.isEmpty) {
+    if (sorted.isEmpty) {
       return const SliverToBoxAdapter(
         child: SizedBox(height: 240, child: _EmptyState(message: '')),
       );
     }
     return SliverList.builder(
-      itemCount: state.pairedDevices.length,
+      itemCount: sorted.length,
       itemBuilder: (context, index) {
-        final device = state.pairedDevices[index];
+        final device = sorted[index];
         return _DeviceCard(
           key: ValueKey('saved-${device.addr}'),
           device: device,
-          connected: device.addr == selectedAddr && !device.disconnected,
           saved: true,
           onComplete: onComplete,
         );
@@ -610,9 +626,8 @@ class _ScanSectionHeader extends ConsumerWidget {
         ),
         onPressed: state.scanning
             ? null
-            : () => ref
-                  .read(deviceManagerProvider.notifier)
-                  .startBluetoothScan(),
+            : () =>
+                  ref.read(deviceManagerProvider.notifier).startBluetoothScan(),
         tooltip: l10n.refresh,
       ),
     );
@@ -721,13 +736,11 @@ class _DeviceCard extends ConsumerStatefulWidget {
   const _DeviceCard({
     super.key,
     required this.device,
-    this.connected = false,
     this.saved = false,
     this.onComplete,
   });
 
   final MiWearState device;
-  final bool connected;
   final bool saved;
   final VoidCallback? onComplete;
 
@@ -738,16 +751,21 @@ class _DeviceCard extends ConsumerStatefulWidget {
 class _DeviceCardState extends ConsumerState<_DeviceCard> {
   bool _showInput = false;
   bool _showConnectionError = false;
-  // Only a connect tapped on this card may surface the inline error;
-  // background connects (startup auto-reconnect, CLI) must not pop the
-  // input open with an error the user never asked for.
   bool _connectInitiated = false;
   late final TextEditingController _authController;
+  late String _connectType;
 
   @override
   void initState() {
     super.initState();
     _authController = TextEditingController(text: widget.device.authkey ?? '');
+    final profile = DeviceRegistry.resolveIdentity(
+      name: widget.device.name,
+      codename: widget.device.codename,
+    );
+    _connectType = profile.preferredConnectType.name.isNotEmpty
+        ? profile.preferredConnectType.name
+        : widget.device.connectType;
   }
 
   @override
@@ -758,6 +776,13 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
       _showInput = false;
       _showConnectionError = false;
       _authController.text = widget.device.authkey ?? '';
+      final profile = DeviceRegistry.resolveIdentity(
+        name: widget.device.name,
+        codename: widget.device.codename,
+      );
+      _connectType = profile.preferredConnectType.name.isNotEmpty
+          ? profile.preferredConnectType.name
+          : widget.device.connectType;
     } else if (oldWidget.device.authkey != widget.device.authkey &&
         !_showInput) {
       _authController.text = widget.device.authkey ?? '';
@@ -783,7 +808,7 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
           widget.device.addr,
           widget.device.name,
           authKey,
-          connectType: widget.device.connectType,
+          connectType: _connectType,
         );
     widget.onComplete?.call();
     if (mounted) {
@@ -804,13 +829,20 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
     final l10n = AppLocalizations.of(context)!;
     final colorScheme = Theme.of(context).colorScheme;
     final state = ref.watch(deviceManagerProvider);
+    final manager = ref.read(deviceManagerProvider.notifier);
+    final connected = manager.connectedAddresses.contains(widget.device.addr);
+    final isCurrent = state.currentDevice?.addr == widget.device.addr;
+    final isActive =
+        isCurrent &&
+        state.protocolState == proto.ProtocolState.ready &&
+        !widget.device.disconnected;
     final profile = DeviceRegistry.resolveIdentity(
       name: widget.device.name,
       codename: widget.device.codename,
     );
     final isUnrecognized =
         !widget.saved && profile.id == DeviceRegistry.unknown.id;
-    final transportLabel = widget.device.connectType.toLowerCase() == 'spp'
+    final transportLabel = _connectType == ConnectType.spp.name
         ? l10n.deviceTransportSpp
         : l10n.deviceTransportBle;
     final isConnectionTarget = state.connectionTargetAddr == widget.device.addr;
@@ -834,7 +866,7 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 5),
-      color: widget.connected
+      color: connected
           ? colorScheme.primaryContainer.withValues(alpha: 0.3)
           : colorScheme.surfaceContainerHigh,
       shape: RoundedRectangleBorder(
@@ -844,7 +876,14 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
       child: Column(
         children: [
           InkWell(
-            onTap: widget.connected
+            onTap: connected && !isActive
+                ? () => manager.connect(
+                    widget.device.addr,
+                    widget.device.name,
+                    widget.device.authkey ?? '',
+                    connectType: _connectType,
+                  )
+                : connected
                 ? null
                 : () => setState(() => _showInput = !_showInput),
             borderRadius: BorderRadius.circular(StyleConstants.cardRadius),
@@ -925,7 +964,7 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
                         if (value == 'delete') {
                           await manager.removeDevice(widget.device.addr);
                         } else if (value == 'disconnect') {
-                          await manager.disconnect();
+                          await manager.disconnect(widget.device.addr);
                         } else if (value == 'share') {
                           await Future.delayed(
                             const Duration(milliseconds: 50),
@@ -949,7 +988,7 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
                         ),
                         PopupMenuItem(
                           value: 'disconnect',
-                          enabled: widget.connected,
+                          enabled: connected,
                           child: Row(
                             children: [
                               const Icon(Icons.power_off_outlined),
@@ -991,7 +1030,7 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
                         if (_showInput)
                           TextField(
                             controller: _authController,
-                            enabled: !state.connecting && !widget.connected,
+                            enabled: !state.connecting && !connected,
                             decoration: InputDecoration(
                               isDense: true,
                               labelText: l10n.authkeyPrompt,
@@ -1025,7 +1064,7 @@ class _DeviceCardState extends ConsumerState<_DeviceCard> {
                               l10n,
                               state,
                               fallbackDeviceName: widget.device.name,
-                              connectType: widget.device.connectType,
+                              connectType: _connectType,
                             ),
                             textAlign: TextAlign.center,
                             style: Theme.of(context).textTheme.bodySmall

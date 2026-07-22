@@ -18,7 +18,7 @@ abstract class CharacteristicTransport implements Transport {
   Future<void> sendToCharacteristic(
     Uint8List data,
     BleRequiredCharacteristic characteristic, {
-    bool withResponse = false,
+    bool? withResponse,
   });
 
   Future<StreamSubscription<Uint8List>?> subscribeToCharacteristic(

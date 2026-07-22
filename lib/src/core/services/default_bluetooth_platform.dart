@@ -27,7 +27,7 @@ class DefaultBluetoothPlatform implements BluetoothPlatform {
   var _activeScanTypes = <ConnectType>{};
   StreamSubscription<BluetoothEndpoint>? _bleSubscription;
   StreamSubscription<BluetoothEndpoint>? _sppSubscription;
-  BluetoothConnection? _connection;
+  final _connections = <String, BluetoothConnection>{};
 
   @override
   Stream<BluetoothEndpoint> get scanStream => _scanController.stream;
@@ -128,7 +128,13 @@ class DefaultBluetoothPlatform implements BluetoothPlatform {
     BluetoothConnectOptions options,
   ) async {
     await stopScan();
-    await disconnect();
+    if (options.connectType == ConnectType.spp) {
+      for (final entry in _connections.entries.toList()) {
+        if (entry.value.connectType == ConnectType.spp) {
+          await _disposeConnection(entry.key);
+        }
+      }
+    }
     _log.info('connecting to $name @ $address via ${options.connectType.name}');
 
     final BluetoothConnection connection;
@@ -151,14 +157,24 @@ class DefaultBluetoothPlatform implements BluetoothPlatform {
         );
         connection = _SppBluetoothConnection(sppConnection);
     }
-    _connection = connection;
+    _connections[address] = connection;
     return connection;
   }
 
   @override
-  Future<void> disconnect() async {
-    final connection = _connection;
-    _connection = null;
+  Future<void> disconnect(String address) async {
+    await _disposeConnection(address);
+  }
+
+  @override
+  Future<void> disconnectAll() async {
+    for (final address in _connections.keys.toList()) {
+      await _disposeConnection(address);
+    }
+  }
+
+  Future<void> _disposeConnection(String address) async {
+    final connection = _connections.remove(address);
     if (connection != null) {
       await connection.dispose();
     }
@@ -167,7 +183,7 @@ class DefaultBluetoothPlatform implements BluetoothPlatform {
   Future<void> dispose() async {
     await _bleSubscription?.cancel();
     await _sppSubscription?.cancel();
-    await disconnect();
+    await disconnectAll();
     await _scanController.close();
   }
 }
@@ -178,6 +194,7 @@ class _BleBluetoothConnection implements BluetoothConnection {
   final BleConnection _connection;
   final _incomingController = StreamController<Uint8List>.broadcast();
   final _incomingSubscriptions = <String, StreamSubscription<Uint8List>>{};
+  bool _disposed = false;
 
   @override
   String get deviceId => _connection.deviceId;
@@ -240,6 +257,8 @@ class _BleBluetoothConnection implements BluetoothConnection {
 
   @override
   Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
     for (final subscription in _incomingSubscriptions.values) {
       await subscription.cancel();
     }
@@ -256,6 +275,7 @@ class _SppBluetoothConnection implements BluetoothConnection {
 
   final RfcommConnection _connection;
   StreamSubscription<Uint8List>? _incomingSubscription;
+  bool _disposed = false;
 
   @override
   String get deviceId => _connection.deviceId;
@@ -301,6 +321,8 @@ class _SppBluetoothConnection implements BluetoothConnection {
 
   @override
   Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
     await _incomingSubscription?.cancel();
     await _connection.dispose();
   }

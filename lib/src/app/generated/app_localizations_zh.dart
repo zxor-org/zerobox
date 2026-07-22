@@ -951,13 +951,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsHuamiAccountRequired => '请先在设置中登录华米账号';
 
   @override
-  String get unsupportedDeviceResourceTitle => '尚未支持的设备/资源类型';
-
-  @override
-  String get unsupportedDeviceResourceMessage =>
-      'ZeroBox 暂不支持此设备或资源类型，请勿尝试安装该分区中的资源，以免出现不可预期的问题';
-
-  @override
   String get understood => '我知道了';
 
   @override
@@ -1420,6 +1413,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get pluginPermissionSendProtocol => '向设备发送原始协议数据';
+
+  @override
+  String get pluginPermissionReadAppSide => '读取 AppSide 脚本与事件';
+
+  @override
+  String get pluginPermissionOperateAppSide => '管理 AppSide 会话';
 
   @override
   String get pluginErrorTitle => '插件运行错误';

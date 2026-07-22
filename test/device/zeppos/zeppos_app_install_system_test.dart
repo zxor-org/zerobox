@@ -3,6 +3,9 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zerobox/src/device/core/ble_requirement.dart';
+import 'package:zerobox/src/device/core/ble_transport.dart';
+import 'package:zerobox/src/device/core/bluetooth_platform.dart';
+import 'package:zerobox/src/device/core/connect_type.dart';
 import 'package:zerobox/src/device/core/entity.dart';
 import 'package:zerobox/src/device/core/event_bus.dart';
 import 'package:zerobox/src/device/core/transport.dart';
@@ -11,7 +14,7 @@ import 'package:zerobox/src/device/zeppos/systems/zeppos_app_install_system.dart
 
 void main() {
   test('runs the Gadgetbridge Zepp OS firmware transfer sequence', () async {
-    final transport = _FakeCharacteristicTransport(totalBytes: 10);
+    final transport = _FakeConnection(totalBytes: 10);
     final entity = DeviceEntity(
       id: 'test',
       kind: 'zeppos',
@@ -52,10 +55,36 @@ void main() {
     expect(transport.dataWriteModes, everyElement(isFalse));
     expect(progress.last, 1);
   });
+
+  test(
+    'keeps firmware data writes unacknowledged through BleTransport',
+    () async {
+      final connection = _FakeConnection(totalBytes: 10);
+      final transport = BleTransport.zeppBluetooth(connection);
+      final entity = DeviceEntity(
+        id: 'test',
+        kind: 'zeppos',
+        transport: transport,
+        eventBus: DeviceEventBus(),
+      );
+      final system = ZeppOsAppInstallSystem();
+      entity.registerSystem(system);
+
+      await system.install(
+        ZeppOsInstallPackage(
+          type: ZeppOsPackageType.app,
+          bytes: Uint8List.fromList(List.generate(10, (index) => index)),
+          crc32: 0x12345678,
+        ),
+      );
+
+      expect(connection.dataWriteModes, everyElement(isFalse));
+    },
+  );
 }
 
-class _FakeCharacteristicTransport implements CharacteristicTransport {
-  _FakeCharacteristicTransport({required this.totalBytes});
+class _FakeConnection implements CharacteristicTransport, BluetoothConnection {
+  _FakeConnection({required this.totalBytes});
 
   final int totalBytes;
   final controlWrites = <Uint8List>[];
@@ -71,19 +100,38 @@ class _FakeCharacteristicTransport implements CharacteristicTransport {
   @override
   String get deviceName => 'test';
   @override
+  ConnectType get connectType => ConnectType.ble;
+  @override
   Stream<Uint8List> get incomingData => const Stream.empty();
   @override
   Stream<bool> get connectionState => const Stream.empty();
 
   @override
-  Future<void> send(Uint8List data) async {}
+  Future<void> send(
+    Uint8List data, {
+    BleRequiredCharacteristic? characteristic,
+    bool withResponse = false,
+  }) async {
+    await _write(data, characteristic!, withResponse);
+  }
+
+  @override
+  bool supportsCharacteristic(BleRequiredCharacteristic characteristic) => true;
 
   @override
   Future<void> sendToCharacteristic(
     Uint8List data,
     BleRequiredCharacteristic characteristic, {
-    bool withResponse = false,
+    bool? withResponse,
   }) async {
+    await _write(data, characteristic, withResponse ?? false);
+  }
+
+  Future<void> _write(
+    Uint8List data,
+    BleRequiredCharacteristic characteristic,
+    bool withResponse,
+  ) async {
     if (characteristic.characteristicUuid.contains('1531')) {
       controlWrites.add(Uint8List.fromList(data));
       final command = data[0];
@@ -114,6 +162,14 @@ class _FakeCharacteristicTransport implements CharacteristicTransport {
         ),
       );
     }
+  }
+
+  @override
+  Future<void> subscribe({
+    BleRequiredCharacteristic? characteristic,
+    void Function(Uint8List data)? onData,
+  }) async {
+    _notify = onData;
   }
 
   @override

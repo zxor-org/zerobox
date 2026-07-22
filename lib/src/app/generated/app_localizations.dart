@@ -1934,18 +1934,6 @@ abstract class AppLocalizations {
   /// **'Sign in to your Amazfit account in Settings first'**
   String get settingsHuamiAccountRequired;
 
-  /// No description provided for @unsupportedDeviceResourceTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Unsupported device/resource type'**
-  String get unsupportedDeviceResourceTitle;
-
-  /// No description provided for @unsupportedDeviceResourceMessage.
-  ///
-  /// In en, this message translates to:
-  /// **'ZeroBox does not currently support this device or resource type. Do not attempt to install resources from this category, as unexpected issues may occur.'**
-  String get unsupportedDeviceResourceMessage;
-
   /// No description provided for @understood.
   ///
   /// In en, this message translates to:
@@ -2839,6 +2827,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'send raw protocol data to a device'**
   String get pluginPermissionSendProtocol;
+
+  /// No description provided for @pluginPermissionReadAppSide.
+  ///
+  /// In en, this message translates to:
+  /// **'read AppSide scripts and events'**
+  String get pluginPermissionReadAppSide;
+
+  /// No description provided for @pluginPermissionOperateAppSide.
+  ///
+  /// In en, this message translates to:
+  /// **'manage AppSide sessions'**
+  String get pluginPermissionOperateAppSide;
 
   /// No description provided for @pluginErrorTitle.
   ///

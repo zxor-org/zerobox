@@ -9,42 +9,36 @@ import 'package:zerobox/src/device/zeppos/systems/zeppos_apps_system.dart';
 import 'package:zerobox/src/device/zeppos/zeppos_device_component.dart';
 
 void main() {
-  test('requests and parses the Gadgetbridge Zepp OS app list format', () async {
-    final fixture = _fixture();
-    final future = fixture.system.fetchApps();
+  test(
+    'requests and parses the Gadgetbridge Zepp OS app list format',
+    () async {
+      final fixture = _fixture();
+      final future = fixture.system.fetchApps();
 
-    expect(
-      _payload(fixture.transport.writes).sublist(0, 3),
-      [0x02, 0x01, 0x01],
-    );
+      expect(_payload(fixture.transport.writes).sublist(0, 3), [
+        0x02,
+        0x01,
+        0x01,
+      ]);
 
-    final response = Uint8List.fromList([
-      0x02,
-      0x00,
-      0x01,
-      ...List<int>.filled(13, 0),
-      ...'1a2b3c4d-2.3.4;0000002a-1.0;'.codeUnits,
-      0,
-    ]);
-    fixture.system.handlePayload(response);
+      final response = Uint8List.fromList([
+        0x02,
+        0x00,
+        0x01,
+        ...List<int>.filled(13, 0),
+        ...'1a2b3c4d-2.3.4;0000002a-1.0;'.codeUnits,
+        0,
+      ]);
+      fixture.system.handlePayload(response);
 
-    final apps = await future;
-    expect(apps, hasLength(2));
-    expect(apps.first.packageName, '0x1A2B3C4D');
-    expect(apps.first.versionCode, 2003004);
-    expect(apps.last.packageName, '0x0000002A');
-    expect(apps.every((app) => app.canRemove), isTrue);
-  });
-
-  test('encodes app launch through the watchface set endpoint', () async {
-    final fixture = _fixture();
-    fixture.system.launchEncrypted = false;
-
-    await fixture.system.launchApp('0x1A2B3C4D');
-
-    expect(_endpoint(fixture.transport.writes), ZeppOsAppsSystem.launchEndpoint);
-    expect(_payload(fixture.transport.writes), [0x07, 0x4d, 0x3c, 0x2b, 0x1a]);
-  });
+      final apps = await future;
+      expect(apps, hasLength(2));
+      expect(apps.first.packageName, '0x1A2B3C4D');
+      expect(apps.first.versionCode, 2003004);
+      expect(apps.last.packageName, '0x0000002A');
+      expect(apps.every((app) => app.canRemove), isTrue);
+    },
+  );
 
   test('encodes app uninstall through the apps endpoint', () async {
     final fixture = _fixture();
@@ -55,6 +49,19 @@ void main() {
     final payload = _payload(fixture.transport.writes);
     expect(payload.sublist(0, 3), [0x02, 0x01, 0x03]);
     expect(payload.sublist(16, 20), [0x2a, 0x00, 0x00, 0x00]);
+  });
+
+  test('encodes app launch through the watchface endpoint', () async {
+    final fixture = _fixture();
+    fixture.system.launchEncrypted = false;
+
+    await fixture.system.launchApp('0000002a');
+
+    expect(
+      _endpoint(fixture.transport.writes),
+      ZeppOsAppsSystem.launchEndpoint,
+    );
+    expect(_payload(fixture.transport.writes), [0x07, 0x2a, 0, 0, 0]);
   });
 }
 
@@ -72,7 +79,8 @@ void main() {
   return (system: system, transport: transport);
 }
 
-int _endpoint(List<Uint8List> chunks) => chunks.first[9] | (chunks.first[10] << 8);
+int _endpoint(List<Uint8List> chunks) =>
+    chunks.first[9] | (chunks.first[10] << 8);
 
 Uint8List _payload(List<Uint8List> chunks) {
   final bytes = BytesBuilder(copy: false);

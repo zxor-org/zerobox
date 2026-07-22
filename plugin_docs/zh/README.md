@@ -1,63 +1,99 @@
-# ZeroBox 插件系统 v1
+# ZeroBox 插件系统
 
-ZeroBox 插件使用 `.zbp` 扩展名。文件本身是 ZIP，根目录必须包含
-`manifest.json`。插件可选择 JavaScript、WASM 或 Hybrid 运行时。
+ZeroBox 插件是一个 `.zbp` 文件，本质是 ZIP 压缩包。根目录必须包含 `manifest.json`
+和入口脚本。插件运行在沙箱化的 QuickJS 环境中，通过全局 `ZeroBox` 对象访问宿主能力。
 
-## Manifest
+## 快速开始：Hello World
+
+创建一个计数器插件——点击按钮累加次数，显示当前计数。
+
+### 1. 创建 manifest.json
 
 ```json
 {
-  "id": "org.example.ebook-sync",
-  "name": "电子书同步",
+  "id": "com.example.counter",
+  "name": "计数器",
   "version": "1.0.0",
-  "author": "Example Developer",
-  "description": "同步电子书到设备",
+  "author": "你的名字",
+  "description": "一个简单的计数器插件",
   "api_level": 1,
-  "runtime": "hybrid",
+  "runtime": "js",
   "entry": "main.js",
-  "permissions": [
-    "ui",
-    "file",
-    "network",
-    "interconnect",
-    "provider",
-    "device",
-    "protocol"
-  ],
-  "website": "https://example.org",
-  "icon": "assets/icon.png"
+  "permissions": ["ui"],
+  "icon": "icon.png"
 }
 ```
 
-- `id`：稳定的反向域名标识，只允许小写字母、数字、点和连字符。
-- `version`：插件自身版本。
-- `api_level`：当前固定为 `1`。
-- `runtime`：`js`、`wasm` 或 `hybrid`。
-- `entry`：独立入口。Hybrid 插件的入口是 JavaScript，WASM 模块由插件按需加载。
-- `permissions`：粗粒度能力声明。未声明的能力无法调用。
+| 字段 | 说明 |
+|------|------|
+| `id` | 唯一标识，反向域名格式：`[a-z][a-z0-9]*([.-][a-z0-9]+)+` |
+| `name` | 插件显示名称 |
+| `version` | 语义化版本号 |
+| `runtime` | `js` / `wasm` / `hybrid` |
+| `entry` | 入口文件名，默认 `main.js` |
+| `permissions` | 能力声明：`ui` `file` `network` `interconnect` `provider` `device` `protocol` `appside` |
+| `icon` | 可选，PNG 图标路径 |
 
-## 权限
-
-`file` 沙箱读写和 `ui` 渲染属于低风险：Host 校验 manifest 后直接执行。
-文件选择/导出、联网、interconnect、provider 和设备只读操作属于中风险。
-连接、安装、卸载、启动应用和发送原始协议数据属于高风险。
-
-中高风险操作会阻断调用并显示授权对话框：允许本次、本次运行中允许、
-始终允许或拒绝。始终允许按具体操作和目标保存；卸载插件时一并删除。
-
-## 运行时
-
-JavaScript 入口导出或定义全局 `activate(plugin)`：
+### 2. 创建 main.js
 
 ```js
+// ZeroBox 加载插件后自动调用 activate
 globalThis.activate = async (plugin) => {
-  console.info(`Starting ${plugin.id} ${plugin.version}`);
+  let count = 0;
+
+  const { Column, Text, Button } = ZeroBox.ui;
+  const render = () => ZeroBox.ui.render(
+    Column({ gap: 12, padding: 16 }, [
+      Text(`计数器: ${count}`),
+      Button('点我 +1', {
+        onClick: ZeroBox.ui.action(() => count++, render),
+      }),
+    ]),
+  );
+
+  await render();
 };
 ```
 
-`PLUGIN` 包含 `id`、`name`、`version` 和 `runtimeVersion`。Host API 位于全局
-`ZeroBox`。Hybrid 与 JavaScript 使用相同入口，额外通过 `ZeroBox.wasm.load()`
-加载 `/plugin`、`/data` 或网络下载到沙箱中的 WASM。
+关键点：
+- 入口是全局函数 `activate(plugin)`，`plugin` 包含 `{id, name, version, runtimeVersion}`
+- UI 通过 `ZeroBox.ui.render(tree)` 渲染组件树
+- 组件事件直接接收函数；异步状态操作使用 `ZeroBox.ui.action(fn, render)`
+- `render()` 应返回 `ZeroBox.ui.render()` 的 Promise
 
-纯 WASM 插件使用独立 ABI，见 [wasm.md](wasm.md)。完整 JS API 见
-[api.md](api.md)。ABv1 兼容边界见 [legacy.md](legacy.md)。
+### 3. 准备图标
+
+将一张 PNG 图片命名为 `icon.png` 放在同一目录。
+
+### 4. 打包
+
+将 `manifest.json`、`main.js`、`icon.png` 打包成 ZIP（扩展名 `.zbp`）：
+
+```bash
+zip counter.zbp manifest.json main.js icon.png
+```
+
+### 5. 安装
+
+在 ZeroBox 插件页点击「导入插件」，选择 `counter.zbp` 即可。
+
+## Plugin UI
+
+原生插件使用 `Column`、`Row`、`Text`、`Button`、`TextField`、`Image` 等组件工厂构建 UI 树。完整组件和属性见 [ui.md](ui.md)。AstroBox v1 插件兼容范围另见 [legacy.md](legacy.md)。
+
+## API 文档
+
+| 命名空间 | 文档 | 说明 |
+|---------|------|------|
+| storage | [storage.md](storage.md) | 键值持久化存储 |
+| file | [file.md](file.md) | 沙箱文件系统 |
+| network | [network.md](network.md) | HTTP 请求 |
+| device | [device.md](device.md) | 设备管理与安装 |
+| watchface | [watchface.md](watchface.md) | 表盘管理 |
+| interconnect | [interconnect.md](interconnect.md) | 跨插件消息 |
+| protocol | [protocol.md](protocol.md) | 原始设备协议 |
+| provider | [provider.md](provider.md) | 资源提供者 |
+| os | [os.md](os.md) | 宿主环境信息 |
+| ui | [ui.md](ui.md) | 插件界面渲染 |
+| appside | [appside.md](appside.md) | Zepp OS AppSide 管理 |
+| — | [legacy.md](legacy.md) | ABv1 兼容模式说明 |

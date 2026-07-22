@@ -35,7 +35,9 @@ String localizedErrorMessage(AppLocalizations l10n, Object? error) {
   // The BLE and SPP drivers normalize native failures into these stable
   // shapes at the Dart boundary; match the shape, not native wording.
   if (normalized.contains('ble connect failed') ||
-      normalized.contains('spp connect failed')) {
+      normalized.contains('spp connect failed') ||
+      normalized.contains('ble device was not discovered') ||
+      normalized.contains('unknown deviceid')) {
     return l10n.errorBluetoothConnectFailed;
   }
 

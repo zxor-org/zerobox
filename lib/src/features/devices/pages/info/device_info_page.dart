@@ -38,6 +38,13 @@ class _DeviceInfoPageState extends ConsumerState<DeviceInfoPage> {
         ? '未提供'
         : 'Not provided';
     String shown(String value) => value.trim().isEmpty ? unavailable : value;
+    String shownCodename(String? value) {
+      if (value == null || value.trim().isEmpty) return '-';
+      return value.startsWith('zepp:')
+          ? value.substring('zepp:'.length)
+          : value;
+    }
+
     final items = <Widget>[
       if (device != null)
         _InfoGroup(
@@ -50,7 +57,10 @@ class _DeviceInfoPageState extends ConsumerState<DeviceInfoPage> {
               label: l10n.fieldConnectionType,
               value: device.connectType,
             ),
-            _InfoRow(label: l10n.fieldCodename, value: device.codename ?? '-'),
+            _InfoRow(
+              label: l10n.fieldCodename,
+              value: shownCodename(device.codename),
+            ),
           ],
         ),
       if (state.systemInfo != null)

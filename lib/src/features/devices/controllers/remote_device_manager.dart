@@ -211,6 +211,14 @@ class HostDeviceManager extends DeviceManager {
       // for a fresh failure (the premature input-field error).
       connectStatus: 1,
       protocolState: ProtocolState.connecting,
+      clearBattery: true,
+      clearSystemInfo: true,
+      apps: const [],
+      watchfaces: const [],
+      zeppOsMessages: const [],
+      xiaoAiActive: false,
+      xiaoAiFrameCount: 0,
+      xiaoAiCapabilities: const {},
       clearError: true,
     );
     try {
@@ -250,10 +258,15 @@ class HostDeviceManager extends DeviceManager {
   }
 
   @override
-  Future<void> disconnect() async {
+  Future<void> disconnect([String? address]) async {
     _connectGeneration += 1;
     _pendingConnectionAddr = null;
-    await _execute(const ZeroBoxCommand(method: 'device.disconnect'));
+    await _execute(
+      ZeroBoxCommand(
+        method: 'device.disconnect',
+        params: {if (address != null) 'device': address},
+      ),
+    );
     await _refreshSnapshot();
   }
 
@@ -671,5 +684,13 @@ class HostDeviceManager extends DeviceManager {
       imported += 1;
     }
     return imported;
+  }
+
+  @override
+  Set<String> get connectedAddresses {
+    return state.pairedDevices
+        .where((device) => !device.disconnected)
+        .map((device) => device.addr)
+        .toSet();
   }
 }

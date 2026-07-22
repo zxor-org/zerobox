@@ -40,6 +40,7 @@ import 'package:zerobox/src/device/zeppos/systems/zeppos_find_device_system.dart
 import 'package:zerobox/src/device/zeppos/systems/zeppos_services_system.dart';
 import 'package:zerobox/src/device/zeppos/systems/zeppos_screenshot_system.dart';
 import 'package:zerobox/src/device/zeppos/systems/zeppos_xiao_ai_system.dart';
+import 'package:zerobox/src/device/zeppos/systems/zeppos_watchface_system.dart';
 import 'package:zerobox/src/device/zeppos/zeppos_device_catalog.dart';
 import 'package:zerobox/src/device/zeppos/zeppos_device_factory.dart';
 import 'package:zerobox/src/features/accounts/models/mi_account_models.dart';
@@ -236,7 +237,7 @@ abstract class DeviceManager extends Notifier<DeviceManagerState> {
     DeviceKind kind = DeviceKind.xiaomi,
     String connectType = 'ble',
   });
-  Future<void> disconnect();
+  Future<void> disconnect([String? address]);
   Future<void> cancelConnect();
   Future<void> removeDevice(String addr);
   Future<void> refreshBattery();
@@ -283,6 +284,7 @@ abstract class DeviceManager extends Notifier<DeviceManagerState> {
   });
   Future<void> importSharedDevice(MiWearState device);
   Future<int> importMiCloudDevices(List<MiCloudDevice> devices);
+  Set<String> get connectedAddresses;
 }
 
 class LocalDeviceManager extends DeviceManager {
@@ -379,6 +381,8 @@ class LocalDeviceManager extends DeviceManager {
   bool _batteryRefreshInProgress = false;
   BluetoothConnection? _bluetoothConnection;
   DeviceEntity? _currentEntity;
+  final _pooledConnections = <String, BluetoothConnection>{};
+  final _pooledEntities = <String, DeviceEntity>{};
   final _scannedProfiles = <String, DeviceProfile>{};
   var _connectGeneration = 0;
 
@@ -393,7 +397,7 @@ class LocalDeviceManager extends DeviceManager {
           try {
             return _normalizeDeviceIdentity(
               MiWearState.fromJson(jsonDecode(e) as Map<String, dynamic>),
-            );
+            ).copyWith(disconnected: true);
           } catch (e, st) {
             _log.warning('failed to parse paired device', e, st);
             return null;
@@ -405,7 +409,9 @@ class LocalDeviceManager extends DeviceManager {
     _log.info('loaded ${paired.length} paired devices');
     return DeviceManagerState(
       pairedDevices: paired,
-      currentDevice: null,
+      // Keep the most recently used device selected for the device overview,
+      // while its process-local connection state starts offline.
+      currentDevice: paired.isEmpty ? null : paired.first,
       protocolState: ProtocolState.disconnected,
     );
   }
@@ -420,7 +426,9 @@ class LocalDeviceManager extends DeviceManager {
 
   Future<void> _savePairedDevices() async {
     final jsonList = state.pairedDevices
-        .map((d) => jsonEncode(d.toJson()))
+        // Connection state belongs to the current process. Persist paired
+        // device identity and credentials, never a stale online marker.
+        .map((d) => jsonEncode(d.copyWith(disconnected: true).toJson()))
         .toList();
     final saved = await SharedPrefsService.instance.setStringList(
       _keyPairedDevices,
@@ -501,12 +509,9 @@ class LocalDeviceManager extends DeviceManager {
     final resolvedProfile = _resolveEndpointProfile(endpoint);
     if (resolvedProfile.id != DeviceRegistry.unknown.id &&
         endpoint.connectType != resolvedProfile.preferredConnectType) {
-      _log.fine(
-        'scan ignore ${endpoint.connectType.name} endpoint '
-        '${endpoint.address} for ${resolvedProfile.id}; expected '
-        '${resolvedProfile.preferredConnectType.name}',
-      );
-      return;
+      // Keep the endpoint but correct its connect type so the user can still
+      // discover and pair the device. The actual connect flow picks the right
+      // transport later anyway.
     }
     // A discovered endpoint must retain its real transport. Previously a
     // ZeppOS Classic/RFCOMM result was relabelled with the profile's preferred
@@ -629,7 +634,12 @@ class LocalDeviceManager extends DeviceManager {
     final isMacOsSpp =
         defaultTargetPlatform == TargetPlatform.macOS &&
         connectType == ConnectType.spp;
-    final maxAttempts = isMacOsSpp
+    final isLinuxBle =
+        defaultTargetPlatform == TargetPlatform.linux &&
+        connectType == ConnectType.ble;
+    final maxAttempts = isLinuxBle
+        ? 1
+        : isMacOsSpp
         ? _macOsSppConnectMaxAttempts
         : _defaultConnectMaxAttempts;
     final retryDelay = isMacOsSpp
@@ -664,13 +674,13 @@ class LocalDeviceManager extends DeviceManager {
         _log.warning(
           '${connectType.name.toUpperCase()} connect attempt $attempt timed out',
         );
-        await _resetBluetoothAfterFailedConnect(connectType);
+        await _resetBluetoothAfterFailedConnect(addr, connectType);
       } catch (e) {
         lastError = e is Exception ? e : Exception(e.toString());
         _log.warning(
           '${connectType.name.toUpperCase()} connect attempt $attempt failed: $e',
         );
-        await _resetBluetoothAfterFailedConnect(connectType);
+        await _resetBluetoothAfterFailedConnect(addr, connectType);
       }
 
       if (attempt < maxAttempts) {
@@ -692,10 +702,11 @@ class LocalDeviceManager extends DeviceManager {
   }
 
   Future<void> _resetBluetoothAfterFailedConnect(
+    String address,
     ConnectType connectType,
   ) async {
     try {
-      await _bluetooth.disconnect().timeout(const Duration(seconds: 2));
+      await _bluetooth.disconnect(address).timeout(const Duration(seconds: 2));
     } catch (e) {
       _log.fine(
         '${connectType.name.toUpperCase()} disconnect after failed connect ignored: $e',
@@ -741,7 +752,10 @@ class LocalDeviceManager extends DeviceManager {
         ? 'codename:${identity.codename}'
         : 'name';
     var effectiveKind = kind == DeviceKind.xiaomi ? profile.kind : kind;
-    final requestedConnectType = connectType.toLowerCase().isEmpty
+    final requestedConnectType =
+        connectType.toLowerCase().isEmpty ||
+            (profile.preferredConnectType.name.isNotEmpty &&
+                profile.preferredConnectType.name != connectType.toLowerCase())
         ? profile.preferredConnectType.name
         : connectType.toLowerCase();
     final effectiveConnectType = requestedConnectType;
@@ -759,27 +773,92 @@ class LocalDeviceManager extends DeviceManager {
       connectionPhase: DeviceConnectionPhase.preparing,
       connectStatus: 1,
       protocolState: ProtocolState.connecting,
+      clearBattery: true,
+      clearSystemInfo: true,
+      apps: const [],
+      watchfaces: const [],
+      zeppOsMessages: const [],
+      xiaoAiActive: false,
+      xiaoAiFrameCount: 0,
+      xiaoAiCapabilities: const {},
       clearError: true,
     );
     try {
-      await stopBluetoothScan();
-      _throwIfConnectCancelled(generation);
-      await _cleanupConnection();
-      _throwIfConnectCancelled(generation);
-
       final transportType = effectiveConnectType == ConnectType.spp.name
           ? ConnectType.spp
           : ConnectType.ble;
+      await stopBluetoothScan();
+      _throwIfConnectCancelled(generation);
+      await _cleanupConnection(keepAlive: true, nextConnectType: transportType);
+      _throwIfConnectCancelled(generation);
+      if (transportType == ConnectType.spp) {
+        await _disconnectOtherPooledSpp(addr);
+        _throwIfConnectCancelled(generation);
+      }
       state = state.copyWith(
         connectionPhase: DeviceConnectionPhase.connectingTransport,
       );
-      _bluetoothConnection = await _connectBluetoothWithRetry(
-        addr,
-        displayName,
-        profile,
-        transportType,
-        generation,
-      );
+      final existingConnection = _pooledConnections[addr];
+      final existingEntity = _pooledEntities[addr];
+      if (existingConnection != null && existingEntity != null) {
+        _log.info('restoring pooled session for $addr');
+        _pooledConnections.remove(addr);
+        _pooledEntities.remove(addr);
+        _bluetoothConnection = existingConnection;
+        _currentEntity = existingEntity;
+        await _rawProtocolSubscription?.cancel();
+        _rawProtocolSubscription = existingEntity.rawIncomingData.listen(
+          _rawProtocolFrames.add,
+        );
+        final connected = MiWearState(
+          name: displayName,
+          addr: addr,
+          connectType: effectiveConnectType,
+          authkey: authKey,
+          codename: effectiveCodename,
+          disconnected: false,
+        );
+        final existingIndex = state.pairedDevices.indexWhere(
+          (device) => device.addr == addr,
+        );
+        final updatedPaired = List<MiWearState>.from(state.pairedDevices);
+        if (existingIndex >= 0) updatedPaired.removeAt(existingIndex);
+        updatedPaired.insert(0, connected);
+        state = state.copyWith(
+          currentDevice: connected,
+          pairedDevices: updatedPaired,
+          protocolState: ProtocolState.ready,
+          connecting: false,
+          connectStatus: 2,
+          clearBattery: true,
+          clearSystemInfo: true,
+          apps: const [],
+          watchfaces: const [],
+          zeppOsMessages: const [],
+          xiaoAiActive: false,
+          xiaoAiFrameCount: 0,
+          xiaoAiCapabilities: const {},
+          clearConnectionPhase: true,
+          clearError: true,
+        );
+        await _savePairedDevices();
+        _startBatteryRefreshLoop();
+        unawaited(_loadInitialDeviceData(existingEntity));
+        return;
+      }
+      if (existingConnection != null) {
+        _log.info('reusing pooled connection for $addr (no entity)');
+        _bluetoothConnection = existingConnection;
+        _pooledConnections.remove(addr);
+      } else {
+        _bluetoothConnection = await _connectBluetoothWithRetry(
+          addr,
+          displayName,
+          profile,
+          transportType,
+          generation,
+        );
+      }
       _throwIfConnectCancelled(generation);
       state = state.copyWith(
         connectionPhase: DeviceConnectionPhase.initializingProtocol,
@@ -884,18 +963,17 @@ class LocalDeviceManager extends DeviceManager {
       state = state.copyWith(
         currentDevice: connected,
         pairedDevices: updatedPaired,
-        connectionPhase: DeviceConnectionPhase.fetchingDeviceStatus,
         protocolState: ProtocolState.ready,
-      );
-      try {
-        await refreshBattery();
-      } catch (e, st) {
-        _log.warning('initial battery refresh failed', e, st);
-      }
-      _throwIfConnectCancelled(generation);
-      state = state.copyWith(
         connecting: false,
         connectStatus: 2,
+        clearBattery: true,
+        clearSystemInfo: true,
+        apps: const [],
+        watchfaces: const [],
+        zeppOsMessages: const [],
+        xiaoAiActive: false,
+        xiaoAiFrameCount: 0,
+        xiaoAiCapabilities: const {},
         clearConnectionPhase: true,
       );
       await _savePairedDevices();
@@ -903,11 +981,11 @@ class LocalDeviceManager extends DeviceManager {
       unawaited(_loadInitialDeviceData(entity));
     } on _DeviceConnectCancelled {
       _log.info('connect to $addr cancelled');
-      await _cleanupConnection();
+      await _finishCancelledConnect(addr);
     } catch (e, st) {
       if (generation != _connectGeneration) {
         _log.info('connect to $addr cancelled after error: $e');
-        await _cleanupConnection();
+        await _finishCancelledConnect(addr);
         return;
       }
       _log.severe('connect to $addr failed', e, st);
@@ -942,12 +1020,14 @@ class LocalDeviceManager extends DeviceManager {
     if (_currentEntity != entity) return;
     for (final operation in <(String, Future<void> Function())>[
       ('device data', refreshDeviceData),
-      ('app list', fetchApps),
       ('watchface list', fetchWatchfaces),
+      ('app list', fetchApps),
     ]) {
       if (_currentEntity != entity) return;
       try {
         await operation.$2();
+      } on UnsupportedError catch (e) {
+        _log.fine('initial ${operation.$1} unavailable: $e');
       } catch (e, st) {
         _log.warning('initial ${operation.$1} refresh failed', e, st);
       }
@@ -1038,7 +1118,14 @@ class LocalDeviceManager extends DeviceManager {
   }
 
   void _onDeviceEvent(DeviceEvent event) {
-    if (event.deviceId != state.currentDevice?.addr) return;
+    if (event.deviceId != state.currentDevice?.addr) {
+      if (event is TransportDisconnected &&
+          (_pooledConnections.containsKey(event.deviceId) ||
+              _pooledEntities.containsKey(event.deviceId))) {
+        unawaited(_handlePooledTransportDisconnect(event.deviceId));
+      }
+      return;
+    }
 
     switch (event) {
       case DeviceAuthenticated _:
@@ -1167,6 +1254,11 @@ class LocalDeviceManager extends DeviceManager {
       return;
     }
     final disconnected = current.copyWith(disconnected: true);
+    final alreadyPersistedOffline =
+        current.disconnected &&
+        state.pairedDevices
+            .where((device) => device.addr == current.addr)
+            .every((device) => device.disconnected);
     final updatedPaired = state.pairedDevices.map((d) {
       return d.addr == current.addr ? disconnected : d;
     }).toList();
@@ -1180,14 +1272,46 @@ class LocalDeviceManager extends DeviceManager {
       clearSystemInfo: true,
       clearError: true,
     );
-    _savePairedDevices();
+    if (!alreadyPersistedOffline) _savePairedDevices();
     _cleanupConnection();
   }
 
   @override
-  Future<void> disconnect() async {
+  Set<String> get connectedAddresses {
+    final addresses = <String>{};
+    final current = state.currentDevice;
+    if (current != null &&
+        !current.disconnected &&
+        state.protocolState == ProtocolState.ready) {
+      addresses.add(current.addr);
+    }
+    addresses.addAll(_pooledConnections.keys);
+    addresses.addAll(_pooledEntities.keys);
+    return addresses;
+  }
+
+  @override
+  Future<void> disconnect([String? address]) async {
     _connectGeneration += 1;
     final current = state.currentDevice;
+    final targetAddress = address ?? current?.addr;
+    final targetIsPooled =
+        targetAddress != null &&
+        (_pooledConnections.containsKey(targetAddress) ||
+            _pooledEntities.containsKey(targetAddress));
+    if (targetAddress != null &&
+        (current?.addr != targetAddress ||
+            (targetIsPooled && _currentEntity?.id != targetAddress))) {
+      await _disconnectPooledDevice(targetAddress);
+      final updatedPaired = state.pairedDevices.map((device) {
+        return device.addr == targetAddress
+            ? device.copyWith(disconnected: true)
+            : device;
+      }).toList();
+      state = state.copyWith(pairedDevices: updatedPaired);
+      await _savePairedDevices();
+      return;
+    }
     if (current == null) {
       await _cleanupConnection();
       state = state.copyWith(
@@ -1206,7 +1330,6 @@ class LocalDeviceManager extends DeviceManager {
     final updatedPaired = state.pairedDevices.map((d) {
       return d.addr == current.addr ? disconnected : d;
     }).toList();
-    await _cleanupConnection();
     state = state.copyWith(
       currentDevice: disconnected,
       pairedDevices: updatedPaired,
@@ -1219,16 +1342,59 @@ class LocalDeviceManager extends DeviceManager {
       clearConnectionTarget: true,
       clearConnectionPhase: true,
     );
+    await _cleanupConnection();
     await _savePairedDevices();
   }
 
   @override
   Future<void> cancelConnect() async {
     if (!state.connecting) return;
-    await disconnect();
+    _connectGeneration += 1;
+    state = state.copyWith(
+      connecting: false,
+      connectStatus: 0,
+      clearConnectionTarget: true,
+      clearConnectionPhase: true,
+      clearError: true,
+    );
   }
 
-  Future<void> _cleanupConnection() async {
+  Future<void> _finishCancelledConnect(String targetAddress) async {
+    final entity = _currentEntity;
+    if (entity != null && entity.id != targetAddress) {
+      state = state.copyWith(
+        connecting: false,
+        connectStatus: 2,
+        protocolState: ProtocolState.ready,
+        clearConnectionTarget: true,
+        clearConnectionPhase: true,
+        clearError: true,
+      );
+      return;
+    }
+    await _cleanupConnection();
+    final current = state.currentDevice;
+    final currentIsPooled =
+        current != null &&
+        (_pooledConnections.containsKey(current.addr) ||
+            _pooledEntities.containsKey(current.addr));
+    state = state.copyWith(
+      clearCurrentDevice: currentIsPooled,
+      connecting: false,
+      connectStatus: 0,
+      protocolState: ProtocolState.disconnected,
+      clearBattery: true,
+      clearSystemInfo: true,
+      clearConnectionTarget: true,
+      clearConnectionPhase: true,
+      clearError: true,
+    );
+  }
+
+  Future<void> _cleanupConnection({
+    bool keepAlive = false,
+    ConnectType? nextConnectType,
+  }) async {
     _batteryRefreshTimer?.cancel();
     _batteryRefreshTimer = null;
     final connection = _bluetoothConnection;
@@ -1237,21 +1403,114 @@ class LocalDeviceManager extends DeviceManager {
     _currentEntity = null;
     await _rawProtocolSubscription?.cancel();
     _rawProtocolSubscription = null;
+    String? disconnectedAddress;
 
     if (entity != null) {
-      _log.info('cleaning up connection to ${entity.id}');
+      final replacingSppWithSpp =
+          connection?.connectType == ConnectType.spp &&
+          nextConnectType == ConnectType.spp;
+      if (keepAlive && connection != null && !replacingSppWithSpp) {
+        _pooledConnections[entity.id] = connection;
+        _pooledEntities[entity.id] = entity;
+        _log.info(
+          'saved ${connection.connectType.name.toUpperCase()} session '
+          'for ${entity.id} to pool',
+        );
+      } else {
+        disconnectedAddress = entity.id;
+        _log.info('cleaning up connection to ${entity.id}');
+        await _runtime.removeDevice(entity.id);
+        await _bluetooth.disconnect(entity.id).catchError((
+          Object e,
+          StackTrace st,
+        ) {
+          _log.warning('Bluetooth connection dispose failed', e, st);
+        });
+      }
+    }
+    if (connection != null && entity == null) {
+      final address = state.connectionTargetAddr;
+      if (address != null && address.isNotEmpty) {
+        disconnectedAddress = address;
+        await _bluetooth.disconnect(address).catchError((
+          Object e,
+          StackTrace st,
+        ) {
+          _log.warning('Bluetooth connection dispose failed', e, st);
+        });
+      } else {
+        await connection.dispose().catchError((Object e, StackTrace st) {
+          _log.warning('Bluetooth connection dispose failed', e, st);
+        });
+      }
+    }
+    if (disconnectedAddress != null) {
+      await _markDeviceDisconnected(disconnectedAddress);
+    }
+  }
+
+  Future<void> _markDeviceDisconnected(String address) async {
+    var changed = false;
+    final paired = state.pairedDevices.map((device) {
+      if (device.addr != address || device.disconnected) return device;
+      changed = true;
+      return device.copyWith(disconnected: true);
+    }).toList();
+    final current = state.currentDevice;
+    final disconnectedCurrent = current?.addr == address
+        ? current!.copyWith(disconnected: true)
+        : current;
+    if (disconnectedCurrent != current) changed = true;
+    if (!changed) return;
+    state = state.copyWith(
+      pairedDevices: paired,
+      currentDevice: disconnectedCurrent,
+    );
+    await _savePairedDevices();
+  }
+
+  Future<void> _disconnectOtherPooledSpp(String keepAddress) async {
+    final addresses = _pooledConnections.entries
+        .where(
+          (entry) =>
+              entry.key != keepAddress &&
+              entry.value.connectType == ConnectType.spp,
+        )
+        .map((entry) => entry.key)
+        .toList(growable: false);
+    for (final address in addresses) {
+      await _disconnectPooledDevice(address);
+      await _markDeviceDisconnected(address);
+    }
+  }
+
+  Future<void> _disconnectPooledDevice(String address) async {
+    final connection = _pooledConnections.remove(address);
+    final entity = _pooledEntities.remove(address);
+    if (entity != null) {
+      _log.info('cleaning up pooled connection to $address');
       await _runtime.removeDevice(entity.id);
     }
-
-    final futures = <Future<void>>[];
-    if (connection != null && entity == null) {
-      futures.add(
-        connection.dispose().catchError((Object e, StackTrace st) {
-          _log.warning('Bluetooth connection dispose failed', e, st);
-        }),
-      );
+    if (connection != null) {
+      await _bluetooth.disconnect(address).catchError((
+        Object e,
+        StackTrace st,
+      ) {
+        _log.warning('Pooled Bluetooth connection dispose failed', e, st);
+      });
     }
-    await Future.wait(futures);
+  }
+
+  Future<void> _handlePooledTransportDisconnect(String address) async {
+    _log.warning('pooled transport disconnected: $address');
+    await _disconnectPooledDevice(address);
+    final updatedPaired = state.pairedDevices.map((device) {
+      return device.addr == address
+          ? device.copyWith(disconnected: true)
+          : device;
+    }).toList();
+    state = state.copyWith(pairedDevices: updatedPaired);
+    await _savePairedDevices();
   }
 
   @override
@@ -1262,6 +1521,8 @@ class LocalDeviceManager extends DeviceManager {
     final removedCurrent = state.currentDevice?.addr == addr;
     if (removedCurrent) {
       await _cleanupConnection();
+    } else {
+      await _disconnectPooledDevice(addr);
     }
     state = state.copyWith(
       pairedDevices: updatedPaired,
@@ -1296,11 +1557,13 @@ class LocalDeviceManager extends DeviceManager {
       zeppBatterySystem.encrypted =
           services[ZeppOsBatterySystem.endpoint] ?? true;
       final battery = await zeppBatterySystem.fetchBatteryInfo();
+      if (_currentEntity != entity) return;
       state = state.copyWith(battery: battery);
       return;
     }
     final infoSystem = entity.system<XiaomiInfoSystem>()!;
     final battery = await infoSystem.fetchBatteryInfo();
+    if (_currentEntity != entity) return;
     state = state.copyWith(battery: battery);
   }
 
@@ -1310,12 +1573,9 @@ class LocalDeviceManager extends DeviceManager {
     if (entity == null || state.protocolState != ProtocolState.ready) {
       throw ProtocolException('Device not ready');
     }
-    if (entity.system<ZeppOsBatterySystem>() != null) {
-      await refreshBattery();
-      return;
-    }
     await refreshBattery();
     await fetchSystemInfo();
+    if (entity.system<ZeppOsBatterySystem>() != null) return;
     await fetchStorageInfo();
   }
 
@@ -1455,6 +1715,7 @@ class LocalDeviceManager extends DeviceManager {
       zeppInfoSystem.encrypted =
           services[ZeppOsDeviceInfoSystem.endpoint] ?? false;
       final info = await zeppInfoSystem.fetchDeviceInfo();
+      if (_currentEntity != entity) return;
       state = state.copyWith(systemInfo: info);
       return;
     }
@@ -1463,6 +1724,7 @@ class LocalDeviceManager extends DeviceManager {
       throw UnsupportedError('Device information is unavailable');
     }
     final info = await _fetchDeviceInfoWithEuiccFallback(infoSystem);
+    if (_currentEntity != entity) return;
     state = state.copyWith(systemInfo: info);
   }
 
@@ -1499,10 +1761,7 @@ class LocalDeviceManager extends DeviceManager {
     }
     final zeppAppsSystem = entity.system<ZeppOsAppsSystem>();
     if (zeppAppsSystem != null) {
-      await _configureZeppOsAppsSystem(entity, zeppAppsSystem);
-      final apps = await zeppAppsSystem.fetchApps();
-      _log.info('event: ZeppOS app list ${apps.length}');
-      state = state.copyWith(apps: apps);
+      await _refreshZeppOsApps(entity, zeppAppsSystem);
       return;
     }
     final resourceSystem = entity.system<XiaomiResourceSystem>();
@@ -1534,7 +1793,15 @@ class LocalDeviceManager extends DeviceManager {
     if (entity == null || state.protocolState != ProtocolState.ready) {
       throw ProtocolException('Device not ready');
     }
-    final infoSystem = entity.system<XiaomiInfoSystem>()!;
+    final zeppWatchfaceSystem = entity.system<ZeppOsWatchfaceSystem>();
+    if (zeppWatchfaceSystem != null) {
+      await _refreshZeppOsWatchfaces(entity, zeppWatchfaceSystem);
+      return;
+    }
+    final infoSystem = entity.system<XiaomiInfoSystem>();
+    if (infoSystem == null) {
+      throw UnsupportedError('This device does not support watchface listing');
+    }
     final watchfaces = await infoSystem.fetchInstalledWatchfaces();
     state = state.copyWith(watchfaces: watchfaces);
   }
@@ -1547,11 +1814,7 @@ class LocalDeviceManager extends DeviceManager {
     }
     final zeppAppsSystem = entity.system<ZeppOsAppsSystem>();
     if (zeppAppsSystem != null) {
-      await _configureZeppOsAppsSystem(
-        entity,
-        zeppAppsSystem,
-        requireLaunch: true,
-      );
+      await _configureZeppOsAppsSystem(entity, zeppAppsSystem);
       _log.info('opening ZeppOS app ${app.packageName}');
       await zeppAppsSystem.launchApp(app.packageName);
       return;
@@ -1653,9 +1916,8 @@ class LocalDeviceManager extends DeviceManager {
 
   Future<void> _configureZeppOsAppsSystem(
     DeviceEntity entity,
-    ZeppOsAppsSystem appsSystem, {
-    bool requireLaunch = false,
-  }) async {
+    ZeppOsAppsSystem appsSystem,
+  ) async {
     final servicesSystem = entity.system<ZeppOsServicesSystem>();
     if (servicesSystem == null) {
       throw StateError(
@@ -1673,16 +1935,75 @@ class LocalDeviceManager extends DeviceManager {
     // isEncrypted(). Endpoint 0x00a0 must stay clear-text even if a device's
     // advertised services flags are ambiguous.
     appsSystem.encrypted = false;
-    if (requireLaunch &&
-        !services.containsKey(ZeppOsAppsSystem.launchEndpoint)) {
-      throw UnsupportedError(
-        'This Zepp OS device does not support launching apps',
-      );
-    }
     if (services.containsKey(ZeppOsAppsSystem.launchEndpoint)) {
       appsSystem.launchEncrypted =
           services[ZeppOsAppsSystem.launchEndpoint] ?? true;
     }
+  }
+
+  Future<void> _refreshZeppOsApps(
+    DeviceEntity entity,
+    ZeppOsAppsSystem appsSystem,
+  ) async {
+    await _configureZeppOsAppsSystem(entity, appsSystem);
+    final allApps = await appsSystem.fetchApps();
+    final watchfaceIds = state.watchfaces.map((item) => item.id).toSet();
+    final versions = {
+      for (final app in allApps) app.packageName: app.versionCode,
+    };
+    final apps = allApps
+        .where((app) => !watchfaceIds.contains(app.packageName))
+        .toList(growable: false);
+    final watchfaces = state.watchfaces
+        .map(
+          (watchface) => watchface.copyWith(
+            versionCode: versions[watchface.id] ?? watchface.versionCode,
+          ),
+        )
+        .toList(growable: false);
+    _log.info(
+      'ZeppOS package catalog: ${apps.length} apps, '
+      '${watchfaces.length} watchfaces',
+    );
+    state = state.copyWith(apps: apps, watchfaces: watchfaces);
+  }
+
+  Future<void> _refreshZeppOsWatchfaces(
+    DeviceEntity entity,
+    ZeppOsWatchfaceSystem watchfaceSystem,
+  ) async {
+    await _configureZeppOsWatchfaceSystem(entity, watchfaceSystem);
+    final watchfaces = await watchfaceSystem.fetchWatchfaces();
+    final versions = {
+      for (final app in state.apps) app.packageName: app.versionCode,
+    };
+    state = state.copyWith(
+      watchfaces: watchfaces
+          .map(
+            (watchface) => watchface.copyWith(
+              versionCode: versions[watchface.id] ?? watchface.versionCode,
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  Future<void> _configureZeppOsWatchfaceSystem(
+    DeviceEntity entity,
+    ZeppOsWatchfaceSystem watchfaceSystem,
+  ) async {
+    final servicesSystem = entity.system<ZeppOsServicesSystem>();
+    if (servicesSystem == null) {
+      throw StateError('Zepp OS services discovery is unavailable');
+    }
+    final services = await servicesSystem.fetchSupportedServices();
+    if (!services.containsKey(ZeppOsWatchfaceSystem.endpoint)) {
+      throw UnsupportedError(
+        'This Zepp OS device does not support watchface management',
+      );
+    }
+    watchfaceSystem.encrypted =
+        services[ZeppOsWatchfaceSystem.endpoint] ?? true;
   }
 
   @override
@@ -1690,6 +2011,18 @@ class LocalDeviceManager extends DeviceManager {
     final entity = _currentEntity;
     if (entity == null || state.protocolState != ProtocolState.ready) {
       throw ProtocolException('Device not ready');
+    }
+    final zeppAppsSystem = entity.system<ZeppOsAppsSystem>();
+    if (zeppAppsSystem != null) {
+      await _configureZeppOsAppsSystem(entity, zeppAppsSystem);
+      _log.info('uninstalling ZeppOS watchface ${watchface.id}');
+      await zeppAppsSystem.uninstallApp(watchface.id);
+      state = state.copyWith(
+        watchfaces: state.watchfaces
+            .where((item) => item.id != watchface.id)
+            .toList(),
+      );
+      return;
     }
     _log.info('uninstalling watchface ${watchface.id}');
     final packet = pb.WearPacket(
@@ -1708,6 +2041,18 @@ class LocalDeviceManager extends DeviceManager {
     final entity = _currentEntity;
     if (entity == null || state.protocolState != ProtocolState.ready) {
       throw ProtocolException('Device not ready');
+    }
+    final zeppWatchfaceSystem = entity.system<ZeppOsWatchfaceSystem>();
+    if (zeppWatchfaceSystem != null) {
+      await _configureZeppOsWatchfaceSystem(entity, zeppWatchfaceSystem);
+      _log.info('setting ZeppOS watchface ${watchface.id}');
+      await zeppWatchfaceSystem.setWatchface(watchface.id);
+      state = state.copyWith(
+        watchfaces: state.watchfaces
+            .map((item) => item.copyWith(isCurrent: item.id == watchface.id))
+            .toList(),
+      );
+      return;
     }
     _log.info('setting watchface ${watchface.id}');
     final packet = pb.WearPacket(

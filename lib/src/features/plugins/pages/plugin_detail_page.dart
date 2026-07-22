@@ -10,8 +10,8 @@ import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
 import 'package:zerobox/src/commands/command_protocol.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
 import 'package:zerobox/src/host/application_host_provider.dart';
-import 'package:zerobox/src/features/resources/widgets/community_html_content.dart';
 import 'package:zerobox/src/app/window/window_launcher.dart';
+import 'package:zerobox/src/features/plugins/widgets/plugin_ui_tree.dart';
 
 import 'plugins_page.dart';
 
@@ -42,7 +42,7 @@ class _PluginDetailPageState extends ConsumerState<PluginDetailPage>
   late final ZeroBoxCommandBus _host;
   Future<void>? _loadFuture;
   Map<String, Object?>? _plugin;
-  List<Map<String, Object?>> _nodes = const [];
+  Object? _nodes;
   Object? _error;
 
   @override
@@ -90,7 +90,7 @@ class _PluginDetailPageState extends ConsumerState<PluginDetailPage>
       );
       if (mounted) {
         setState(() {
-          _nodes = _nodeList(nodes);
+          _nodes = nodes;
           _error = null;
         });
       }
@@ -102,7 +102,7 @@ class _PluginDetailPageState extends ConsumerState<PluginDetailPage>
   void _handleEvent(CommandEvent event) {
     if (event.event == 'plugin.ui' &&
         event.data['id']?.toString() == widget.pluginId) {
-      final nodes = _nodeList(event.data['nodes']);
+      final nodes = event.data['nodes'];
       if (event.data['page'] == true) {
         unawaited(_openNodePage(nodes));
       } else if (mounted) {
@@ -114,7 +114,7 @@ class _PluginDetailPageState extends ConsumerState<PluginDetailPage>
 
   Future<void> _invoke(String callback, [String? value]) async {
     try {
-      final nodes = await _execute(
+      await _execute(
         ZeroBoxCommand(
           method: 'plugin.invoke',
           params: {
@@ -124,7 +124,6 @@ class _PluginDetailPageState extends ConsumerState<PluginDetailPage>
           },
         ),
       );
-      if (mounted) setState(() => _nodes = _nodeList(nodes));
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -133,16 +132,21 @@ class _PluginDetailPageState extends ConsumerState<PluginDetailPage>
     }
   }
 
-  Future<void> _openNodePage(List<Map<String, Object?>> nodes) async {
+  Future<void> _openNodePage(Object? nodes) async {
     if (!mounted) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (context) => _PluginNodePage(
-          title:
+        builder: (context) => Scaffold(
+          appBar: SysAppBar(
+            secondary: true,
+            title: Text(
               _plugin?['name']?.toString() ??
-              AppLocalizations.of(context)!.pluginFeatures,
-          nodes: nodes,
-          onInvoke: _invoke,
+                  AppLocalizations.of(context)!.pluginFeatures,
+            ),
+          ),
+          body: PageContainer(
+            child: PluginUITree(root: nodes, onInvoke: _invoke),
+          ),
         ),
       ),
     );
@@ -199,7 +203,7 @@ class _PluginDetailPageState extends ConsumerState<PluginDetailPage>
                 child: TabBarView(
                   controller: _tabs,
                   children: [
-                    _PluginFeatureView(nodes: _nodes, onInvoke: _invoke),
+                    PluginUITree(root: _nodes, onInvoke: _invoke),
                     _PluginInformation(plugin: plugin, onUninstall: _remove),
                   ],
                 ),
@@ -228,13 +232,6 @@ class _PluginDetailPageState extends ConsumerState<PluginDetailPage>
     }
     return result.value;
   }
-
-  List<Map<String, Object?>> _nodeList(Object? value) =>
-      (value as List?)
-          ?.whereType<Map>()
-          .map((node) => node.cast<String, Object?>())
-          .toList(growable: false) ??
-      const [];
 }
 
 class _PluginHeader extends StatelessWidget {
@@ -341,172 +338,6 @@ class _PluginHeader extends StatelessWidget {
       ],
     );
   }
-}
-
-class _PluginFeatureView extends StatelessWidget {
-  const _PluginFeatureView({required this.nodes, required this.onInvoke});
-  final List<Map<String, Object?>> nodes;
-  final Future<void> Function(String callback, [String? value]) onInvoke;
-
-  @override
-  Widget build(BuildContext context) {
-    final visible = nodes.where((node) => node['visibility'] != false).toList();
-    if (visible.isEmpty) {
-      return Center(
-        child: Text(AppLocalizations.of(context)!.pluginNoFeatures),
-      );
-    }
-    return ListView.separated(
-      padding: const EdgeInsets.only(top: 16, bottom: 8),
-      itemCount: visible.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 12),
-      itemBuilder: (context, index) {
-        final node = visible[index];
-        final content =
-            (node['content'] as Map?)?.cast<String, Object?>() ?? const {};
-        final type = content['type']?.toString();
-        final value = content['value'];
-        final disabled = node['disabled'] == true;
-        switch (type) {
-          case 'Text':
-            return Center(
-              child: Text(value?.toString() ?? '', textAlign: TextAlign.center),
-            );
-          case 'Button':
-            final button = (value as Map).cast<String, Object?>();
-            final callback = button['callback_fun_id']?.toString() ?? '';
-            return Center(
-              child: button['primary'] == true
-                  ? FilledButton(
-                      onPressed: disabled ? null : () => onInvoke(callback),
-                      child: Text(button['text']?.toString() ?? ''),
-                    )
-                  : FilledButton.tonal(
-                      onPressed: disabled ? null : () => onInvoke(callback),
-                      child: Text(button['text']?.toString() ?? ''),
-                    ),
-            );
-          case 'Dropdown':
-            final dropdown = (value as Map).cast<String, Object?>();
-            final options =
-                (dropdown['options'] as List?)
-                    ?.map((item) => item.toString())
-                    .toList(growable: false) ??
-                const <String>[];
-            return Center(
-              child: DropdownMenu<String>(
-                enabled: !disabled,
-                dropdownMenuEntries: options
-                    .map((item) => DropdownMenuEntry(value: item, label: item))
-                    .toList(growable: false),
-                onSelected: (selected) {
-                  if (selected != null) {
-                    onInvoke(
-                      dropdown['callback_fun_id']?.toString() ?? '',
-                      selected,
-                    );
-                  }
-                },
-              ),
-            );
-          case 'Input':
-            final input = (value as Map).cast<String, Object?>();
-            return Center(
-              child: _PluginInput(
-                key: ValueKey(node['node_id']),
-                initialValue: input['text']?.toString() ?? '',
-                enabled: !disabled,
-                onSubmitted: (text) =>
-                    onInvoke(input['callback_fun_id']?.toString() ?? '', text),
-              ),
-            );
-          case 'HtmlDocument':
-            return Center(
-              child: CommunityHtmlContent(html: value?.toString() ?? ''),
-            );
-          default:
-            return const SizedBox.shrink();
-        }
-      },
-    );
-  }
-}
-
-class _PluginNodePage extends StatelessWidget {
-  const _PluginNodePage({
-    required this.title,
-    required this.nodes,
-    required this.onInvoke,
-  });
-
-  final String title;
-  final List<Map<String, Object?>> nodes;
-  final Future<void> Function(String callback, [String? value]) onInvoke;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: SysAppBar(secondary: true, title: Text(title)),
-      body: PageContainer(
-        child: _PluginFeatureView(nodes: nodes, onInvoke: onInvoke),
-      ),
-    );
-  }
-}
-
-class _PluginInput extends StatefulWidget {
-  const _PluginInput({
-    super.key,
-    required this.initialValue,
-    required this.enabled,
-    required this.onSubmitted,
-  });
-  final String initialValue;
-  final bool enabled;
-  final ValueChanged<String> onSubmitted;
-
-  @override
-  State<_PluginInput> createState() => _PluginInputState();
-}
-
-class _PluginInputState extends State<_PluginInput> {
-  late final TextEditingController _controller;
-  late final FocusNode _focusNode;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.initialValue);
-    _focusNode = FocusNode()..addListener(_onFocusChanged);
-  }
-
-  @override
-  void didUpdateWidget(covariant _PluginInput oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!_focusNode.hasFocus && widget.initialValue != _controller.text) {
-      _controller.text = widget.initialValue;
-    }
-  }
-
-  void _onFocusChanged() {
-    if (!_focusNode.hasFocus) widget.onSubmitted(_controller.text);
-  }
-
-  @override
-  void dispose() {
-    _focusNode.removeListener(_onFocusChanged);
-    _focusNode.dispose();
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => TextField(
-    controller: _controller,
-    focusNode: _focusNode,
-    enabled: widget.enabled,
-    textAlign: TextAlign.center,
-  );
 }
 
 class _PluginInformation extends StatelessWidget {

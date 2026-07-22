@@ -18,7 +18,10 @@ class ZeppOsBatterySystem extends System {
       entity.getRequired<ZeppOsDeviceComponent>();
 
   Future<BatteryStatus> fetchBatteryInfo() async {
-    if (_pending != null) return _pending!.future;
+    final pending = _pending;
+    if (pending != null) {
+      return pending.future.timeout(const Duration(seconds: 8));
+    }
     final completer = Completer<BatteryStatus>();
     _pending = completer;
     try {

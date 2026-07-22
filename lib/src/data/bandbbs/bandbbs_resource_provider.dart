@@ -125,7 +125,8 @@ class BandBbsCatalog implements CommunityResourceCatalog {
     }
 
     for (final category in categories) {
-      if (!showAllCategories && _isBlockedCategory(category.title)) {
+      if (_isRemovedCategory(category.title) ||
+          (!showAllCategories && _isBlockedCategory(category.title))) {
         markBlocked(category);
       }
     }
@@ -164,6 +165,13 @@ class BandBbsCatalog implements CommunityResourceCatalog {
     if (match == null) return false;
     final generation = int.tryParse(match.group(1)!);
     return generation != null && generation <= 6;
+  }
+
+  static bool _isRemovedCategory(String title) {
+    final normalized = title.toLowerCase().replaceAll(RegExp(r'\s+'), '');
+    return RegExp(
+      r'^(?:小米手环7pro|xiaomismartband7pro|小米手环8|xiaomismartband8)(?:系列|series)?$',
+    ).hasMatch(normalized);
   }
 
   @override
@@ -293,7 +301,8 @@ class BandBbsCatalog implements CommunityResourceCatalog {
       stack.add(holder);
     }
     int aggregate(_NodeHolder holder) {
-      if (!showAllCategories && _isBlockedCategory(holder.category.title)) {
+      if (_isRemovedCategory(holder.category.title) ||
+          (!showAllCategories && _isBlockedCategory(holder.category.title))) {
         holder.children = const [];
         holder.aggregate = 0;
         return 0;

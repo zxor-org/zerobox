@@ -351,7 +351,9 @@ class BleGattDriver {
     int? desiredMtu = 517,
     bool attemptPair = true,
   }) async {
-    const connectTimeout = Duration(seconds: 12);
+    final connectTimeout = defaultTargetPlatform == TargetPlatform.linux
+        ? const Duration(seconds: 8)
+        : const Duration(seconds: 12);
     await stopScan();
     var effectiveDeviceId = deviceId;
     _log.info('[$effectiveDeviceId] initiating BLE connection');
@@ -364,15 +366,19 @@ class BleGattDriver {
     );
     await connection.start();
     try {
-      await UniversalBle.connect(
-        effectiveDeviceId,
-        timeout: connectTimeout,
-      ).timeout(
-        connectTimeout,
-        onTimeout: () {
-          throw TimeoutException('UniversalBle.connect timed out');
-        },
-      );
+      if (defaultTargetPlatform == TargetPlatform.linux) {
+        await _connectLinux(effectiveDeviceId, connectTimeout);
+      } else {
+        await UniversalBle.connect(
+          effectiveDeviceId,
+          timeout: connectTimeout,
+        ).timeout(
+          connectTimeout,
+          onTimeout: () {
+            throw TimeoutException('UniversalBle.connect timed out');
+          },
+        );
+      }
     } on TimeoutException {
       // CoreBluetooth (and some other backends) has no connect timeout of its
       // own: a peripheral that is already linked to another host simply never
@@ -390,7 +396,32 @@ class BleGattDriver {
       );
     } catch (e) {
       final deviceNotFound = e.toString().contains('deviceNotFound');
-      if (kIsWeb && deviceNotFound) {
+      if (defaultTargetPlatform == TargetPlatform.linux && deviceNotFound) {
+        _log.warning(
+          '[$effectiveDeviceId] Linux BlueZ cache missed; '
+          'scanning once before retrying',
+        );
+        await connection.dispose();
+        effectiveDeviceId = await _rediscoverLinuxDevice(
+          effectiveDeviceId,
+          connectTimeout,
+        );
+        connection = BleConnection(
+          deviceId: effectiveDeviceId,
+          deviceName: deviceName,
+        );
+        await connection.start();
+        try {
+          await _connectLinux(effectiveDeviceId, connectTimeout);
+        } catch (retryError) {
+          _log.severe(
+            '[$effectiveDeviceId] Linux BLE retry failed',
+            retryError,
+          );
+          await connection.dispose();
+          rethrow;
+        }
+      } else if (kIsWeb && deviceNotFound) {
         _log.warning(
           '[$effectiveDeviceId] Web Bluetooth device cache missed; '
           'requesting the device again before connecting',
@@ -508,6 +539,101 @@ class BleGattDriver {
 
     _log.info('[$deviceId] BLE connection ready');
     return connection;
+  }
+
+  Future<String> _rediscoverLinuxDevice(
+    String deviceId,
+    Duration timeout,
+  ) async {
+    final normalized = deviceId.toLowerCase();
+    try {
+      await startScan(timeout: timeout);
+      final deadline = DateTime.now().add(timeout);
+      while (DateTime.now().isBefore(deadline)) {
+        for (final endpoint in _scanResults.values) {
+          if (endpoint.address.toLowerCase() == normalized) {
+            return endpoint.address;
+          }
+        }
+        try {
+          final state = await UniversalBle.getConnectionState(
+            deviceId,
+            timeout: const Duration(milliseconds: 500),
+          );
+          if (state == BleConnectionState.connected) {
+            _log.info(
+              '[$deviceId] Linux connection completed while warming cache',
+            );
+            return deviceId;
+          }
+        } catch (error) {
+          _log.fine(
+            '[$deviceId] Linux cache warm-up state poll ignored: $error',
+          );
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      // UniversalBle's Linux backend can learn the BlueZ device during a scan
+      // without forwarding a fresh advertisement through scanStream. The
+      // warmed cache is still worth retrying before reporting a failure.
+      _log.info(
+        '[$deviceId] Linux scan did not emit the target; '
+        'retrying with the warmed BlueZ cache',
+      );
+      return deviceId;
+    } finally {
+      await stopScan();
+    }
+  }
+
+  Future<void> _connectLinux(String deviceId, Duration timeout) async {
+    Object? connectError;
+    StackTrace? connectStackTrace;
+    var connectCompleted = false;
+    unawaited(
+      UniversalBle.connect(deviceId, timeout: timeout).then<void>(
+        (_) => connectCompleted = true,
+        onError: (Object error, StackTrace stackTrace) {
+          connectError = error;
+          connectStackTrace = stackTrace;
+        },
+      ),
+    );
+
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      if (connectCompleted) return;
+      try {
+        final state = await UniversalBle.getConnectionState(
+          deviceId,
+          timeout: const Duration(milliseconds: 500),
+        );
+        if (state == BleConnectionState.connected) {
+          _log.info('[$deviceId] Linux connection confirmed from BlueZ state');
+          return;
+        }
+      } catch (error) {
+        _log.fine('[$deviceId] Linux connection state poll ignored: $error');
+      }
+      if (connectError != null) {
+        if (connectError.toString().contains('org.bluez.Error.InProgress')) {
+          _log.info(
+            '[$deviceId] BlueZ connection already in progress; '
+            'waiting for its result',
+          );
+          connectError = null;
+          connectStackTrace = null;
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+          continue;
+        }
+        Error.throwWithStackTrace(connectError!, connectStackTrace!);
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    if (connectError != null) {
+      Error.throwWithStackTrace(connectError!, connectStackTrace!);
+    }
+    throw TimeoutException('UniversalBle.connect timed out', timeout);
   }
 
   Future<void> dispose() async {

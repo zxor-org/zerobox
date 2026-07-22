@@ -77,6 +77,8 @@ class ResourceFiltersNotifier extends Notifier<ResourceFilters> {
   @override
   ResourceFilters build() => const ResourceFilters();
 
+  void reset() => state = ResourceFilters();
+
   void setQuery(String value) => state = state.copyWith(query: value);
   void setType(CommunityResourceType? value) =>
       state = state.copyWith(type: value);

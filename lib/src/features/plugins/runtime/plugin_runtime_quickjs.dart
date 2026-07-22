@@ -45,6 +45,7 @@ class _QuickJsPluginRuntime implements PluginRuntime {
         );
       },
     );
+    runtime.enableHandlePromises();
     _runtime = runtime;
     _hostCall = hostCall;
 
@@ -79,7 +80,7 @@ class _QuickJsPluginRuntime implements PluginRuntime {
     _evaluate(runtime, utf8.decode(entryBytes), name: '$pluginId/main.js');
     final started = runtime.evaluate('__zbStartPlugin()');
     if (started.isError) throw StateError(started.stringResult);
-    await _resolveResult(runtime, started.rawResult);
+    await _resolveResult(runtime, started);
   }
 
   @override
@@ -97,7 +98,7 @@ class _QuickJsPluginRuntime implements PluginRuntime {
       '__zbInvokeRegistered(${jsonEncode(callbackId)}, ${jsonEncode(arguments)})',
     );
     if (result.isError) throw StateError(result.stringResult);
-    return _resolveResult(runtime, result.rawResult);
+    return _resolveResult(runtime, result);
   }
 
   @override
@@ -107,7 +108,7 @@ class _QuickJsPluginRuntime implements PluginRuntime {
       '__zbDispatchEvent(${jsonEncode(name)}, ${jsonEncode(payload)})',
     );
     if (result.isError) throw StateError(result.stringResult);
-    await _resolveResult(runtime, result.rawResult);
+    await _resolveResult(runtime, result);
   }
 
   @override
@@ -143,13 +144,17 @@ class _QuickJsPluginRuntime implements PluginRuntime {
 
   Future<Object?> _resolveResult(
     QuickJsRuntime2 runtime,
-    Object? rawResult,
+    JsEvalResult result,
   ) async {
     await runtime.dispatch();
-    if (rawResult is! Future) return rawResult;
-    final value = await rawResult;
+    if (!result.isPromise && result.rawResult is! Future) {
+      return result.rawResult;
+    }
+    final resolved = result.isPromise
+        ? await runtime.handlePromise(result)
+        : await result.rawResult as Object?;
     await runtime.dispatch();
-    return value;
+    return resolved is JsEvalResult ? resolved.stringResult : resolved;
   }
 
   Object? _setTimer(List<Object?> arguments) {
@@ -183,7 +188,7 @@ class _QuickJsPluginRuntime implements PluginRuntime {
     try {
       final result = runtime.evaluate('__zbFireTimer($id)');
       if (result.isError) throw StateError(result.stringResult);
-      await _resolveResult(runtime, result.rawResult);
+      await _resolveResult(runtime, result);
     } catch (error) {
       await Future.sync(
         () => _hostCall?.call('log.error', ['Timer $id failed: $error']),

@@ -181,7 +181,7 @@ class BleTransport implements CharacteristicTransport {
   Future<void> sendToCharacteristic(
     Uint8List data,
     BleRequiredCharacteristic characteristic, {
-    bool withResponse = false,
+    bool? withResponse,
   }) async {
     final gate = _exclusiveWriteGate;
     if (gate != null &&
@@ -190,7 +190,7 @@ class BleTransport implements CharacteristicTransport {
         )) {
       await gate.future;
     }
-    final effectiveWithResponse = withResponse || _defaultWithResponse;
+    final effectiveWithResponse = withResponse ?? _defaultWithResponse;
     _log.fine(
       '[$deviceId] sending ${data.length} bytes to '
       '${characteristic.characteristicUuid}',

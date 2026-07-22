@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zerobox/src/app/generated/app_localizations.dart';
+import 'package:zerobox/src/app/utils/error_localization.dart';
 import 'package:zerobox/src/app/widgets/page_container.dart';
 import 'package:zerobox/src/app/widgets/sys_app_bar.dart';
 import 'package:zerobox/src/core/constants/style_constants.dart';
@@ -27,12 +28,25 @@ class DevicesPage extends ConsumerStatefulWidget {
 
 class _DevicesPageState extends ConsumerState<DevicesPage> {
   bool _dragging = false;
+  String? _lastErrorToast;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final state = ref.watch(deviceManagerProvider);
     final device = state.currentDevice;
+
+    ref.listen<DeviceManagerState>(deviceManagerProvider, (previous, next) {
+      if (next.error == null) _lastErrorToast = null;
+      if (next.error == null || next.error == previous?.error) return;
+      if (ModalRoute.of(context)?.isCurrent != true) return;
+      final message = localizedErrorMessage(l10n, next.error);
+      if (message == _lastErrorToast) return;
+      _lastErrorToast = message;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    });
 
     final isReady = state.protocolState == proto.ProtocolState.ready;
     void reconnectCurrent() {

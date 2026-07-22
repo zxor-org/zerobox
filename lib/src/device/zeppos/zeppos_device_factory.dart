@@ -16,6 +16,7 @@ import 'package:zerobox/src/device/zeppos/systems/zeppos_find_device_system.dart
 import 'package:zerobox/src/device/zeppos/systems/zeppos_services_system.dart';
 import 'package:zerobox/src/device/zeppos/systems/zeppos_screenshot_system.dart';
 import 'package:zerobox/src/device/zeppos/systems/zeppos_xiao_ai_system.dart';
+import 'package:zerobox/src/device/zeppos/systems/zeppos_watchface_system.dart';
 import 'package:zerobox/src/device/zeppos/zeppos_device_component.dart';
 
 class ZeppOsDeviceFactory implements DeviceEntityFactory {
@@ -51,6 +52,7 @@ class ZeppOsDeviceFactory implements DeviceEntityFactory {
     final findDeviceSystem = ZeppOsFindDeviceSystem();
     final xiaoAiSystem = ZeppOsXiaoAiSystem();
     final screenshotSystem = ZeppOsScreenshotSystem();
+    final watchfaceSystem = ZeppOsWatchfaceSystem();
     component.onPayload = (payload) {
       entity.emit(
         ZeppOsEndpointMessageReceived(
@@ -81,8 +83,11 @@ class ZeppOsDeviceFactory implements DeviceEntityFactory {
       } else if (payload.endpoint == ZeppOsXiaoAiSystem.xiaoAiEndpoint ||
           payload.endpoint == ZeppOsXiaoAiSystem.zeppFlowEndpoint) {
         xiaoAiSystem.handlePayload(payload.endpoint, payload.payload);
-      } else if (payload.endpoint == ZeppOsScreenshotSystem.fileTransferEndpoint) {
+      } else if (payload.endpoint ==
+          ZeppOsScreenshotSystem.fileTransferEndpoint) {
         screenshotSystem.handlePayload(payload.endpoint, payload.payload);
+      } else if (payload.endpoint == ZeppOsWatchfaceSystem.endpoint) {
+        watchfaceSystem.handlePayload(payload.payload);
       }
     };
     entity.registerSystem(authSystem);
@@ -95,6 +100,7 @@ class ZeppOsDeviceFactory implements DeviceEntityFactory {
     entity.registerSystem(findDeviceSystem);
     entity.registerSystem(xiaoAiSystem);
     entity.registerSystem(screenshotSystem);
+    entity.registerSystem(watchfaceSystem);
 
     return entity;
   }
